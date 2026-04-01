@@ -18,6 +18,8 @@ import (
 
 const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+const TopologyDirect = "DIRECT"
+
 type Cookie struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -91,10 +93,17 @@ func httpGet(endpoint string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if strings.Contains(resp.Request.URL.String(), "challenge") {
+		return nil, fmt.Errorf("VK captcha required - open %s in browser and solve it", resp.Request.URL.String())
+	}
 	return io.ReadAll(resp.Body)
 }
 
 func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error) {
+	if cfg.AppID == "" || cfg.APIVersion == "" {
+		return nil, fmt.Errorf("config incomplete: app_id=%q api=%q", cfg.AppID, cfg.APIVersion)
+	}
+
 	auth := func(bearer string) map[string]string {
 		return map[string]string{"Authorization": "Bearer " + bearer}
 	}
@@ -118,8 +127,11 @@ func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error
 	}
 
 	log.Println("[auth] Getting call settings...")
-	r, _ = httpPost("https://api.vk.com/method/calls.getSettings",
+	r, err = httpPost("https://api.vk.com/method/calls.getSettings",
 		url.Values{"v": {cfg.APIVersion}}, auth(vkToken))
+	if err != nil {
+		return nil, fmt.Errorf("calls.getSettings: %w", err)
+	}
 	var settings struct {
 		Response struct {
 			Settings struct {
@@ -130,14 +142,20 @@ func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error
 	}
 	json.Unmarshal(r, &settings)
 	appKey := settings.Response.Settings.PublicKey
+	if appKey == "" {
+		return nil, fmt.Errorf("empty public_key, response: %s", string(r))
+	}
 	env := "production"
 	if settings.Response.Settings.IsDev {
 		env = "development"
 	}
 
 	log.Printf("[auth] Creating call peer_id=%s...", peerId)
-	r, _ = httpPost("https://api.vk.com/method/calls.start",
+	r, err = httpPost("https://api.vk.com/method/calls.start",
 		url.Values{"v": {cfg.APIVersion}, "peer_id": {peerId}}, auth(vkToken))
+	if err != nil {
+		return nil, fmt.Errorf("calls.start: %w", err)
+	}
 	var call struct {
 		Response struct {
 			CallID           string `json:"call_id"`
@@ -150,12 +168,21 @@ func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error
 	}
 	json.Unmarshal(r, &call)
 	c := call.Response
+	if c.CallID == "" {
+		return nil, fmt.Errorf("empty call_id, response: %s", string(r))
+	}
+	if c.OKJoinLink == "" {
+		return nil, fmt.Errorf("empty ok_join_link, response: %s", string(r))
+	}
 	log.Printf("[auth] call_id: %s", c.CallID)
 	log.Printf("[auth] join_link: %s", c.JoinLink)
 
 	log.Println("[auth] Getting call token...")
-	r, _ = httpPost("https://api.vk.com/method/messages.getCallToken",
+	r, err = httpPost("https://api.vk.com/method/messages.getCallToken",
 		url.Values{"v": {cfg.APIVersion}, "env": {env}}, auth(vkToken))
+	if err != nil {
+		return nil, fmt.Errorf("messages.getCallToken: %w", err)
+	}
 	var ct struct {
 		Response struct {
 			Token      string `json:"token"`
@@ -163,6 +190,12 @@ func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error
 		} `json:"response"`
 	}
 	json.Unmarshal(r, &ct)
+	if ct.Response.Token == "" {
+		return nil, fmt.Errorf("empty call token, response: %s", string(r))
+	}
+	if ct.Response.APIBaseURL == "" {
+		return nil, fmt.Errorf("empty api_base_url, response: %s", string(r))
+	}
 
 	log.Println("[auth] OK.ru auth...")
 	apiBaseURL := strings.TrimRight(ct.Response.APIBaseURL, "/")
@@ -173,30 +206,42 @@ func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error
 		"device_id": "headless-go-1", "client_version": cfg.AppVersion,
 		"client_type": "SDK_JS", "auth_token": ct.Response.Token, "version": 3,
 	})
-	r, _ = httpPost(apiBaseURL, url.Values{
+	r, err = httpPost(apiBaseURL, url.Values{
 		"method": {"auth.anonymLogin"}, "application_key": {appKey},
 		"format": {"json"}, "session_data": {string(sd)},
 	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("auth.anonymLogin: %w", err)
+	}
 	var okAuth struct {
 		SessionKey string `json:"session_key"`
 	}
 	json.Unmarshal(r, &okAuth)
+	if okAuth.SessionKey == "" {
+		return nil, fmt.Errorf("empty session_key, response: %s", string(r))
+	}
 
 	log.Println("[auth] Joining conversation...")
 	ms, _ := json.Marshal(map[string]bool{
 		"isAudioEnabled": false, "isVideoEnabled": true, "isScreenSharingEnabled": false,
 	})
-	r, _ = httpPost(apiBaseURL, url.Values{
+	r, err = httpPost(apiBaseURL, url.Values{
 		"method": {"vchat.joinConversationByLink"}, "session_key": {okAuth.SessionKey},
 		"application_key": {appKey}, "format": {"json"}, "joinLink": {c.OKJoinLink},
 		"isVideo": {"true"}, "isAudio": {"false"}, "mediaSettings": {string(ms)},
 	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("vchat.joinConversationByLink: %w", err)
+	}
 	var jr struct {
 		Endpoint   string     `json:"endpoint"`
 		TurnServer TurnServer `json:"turn_server"`
 		StunServer StunServer `json:"stun_server"`
 	}
 	json.Unmarshal(r, &jr)
+	if jr.Endpoint == "" {
+		return nil, fmt.Errorf("empty WS endpoint, response: %s", string(r))
+	}
 
 	return &CallInfo{
 		CallID: c.CallID, JoinLink: c.JoinLink, ShortLink: c.ShortCredentials.LinkWithPassword,
@@ -206,17 +251,15 @@ func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error
 }
 
 type Bridge struct {
-	mu                sync.Mutex
-	vkWs              *websocket.Conn
-	pionWs            *websocket.Conn
-	vkSeq             int
-	pionReqID         int
-	pionPending       map[int]chan json.RawMessage
-	pendingOffer      json.RawMessage
-	remotePeerId      *int64
-	pendingCandidates []json.RawMessage
-	iceServers        []map[string]interface{}
-	connected         bool
+	mu          sync.Mutex
+	vkWs        *websocket.Conn
+	pionWs      *websocket.Conn
+	vkSeq       int
+	pionReqID   int
+	pionPending map[int]chan json.RawMessage
+	iceServers  []map[string]interface{}
+	topology    string
+	p2p         *P2PHandler
 }
 
 func (b *Bridge) vkSend(command string, extra map[string]interface{}) {
@@ -280,92 +323,6 @@ func (b *Bridge) pionRequest(msgType string, data interface{}) (json.RawMessage,
 	}
 }
 
-func (b *Bridge) resetPion() {
-	log.Println("[bridge] Resetting Pion PC for reconnection...")
-	b.pionRequest("reset", map[string]interface{}{})
-
-	// Re-send ICE servers so Pion creates a fresh PC
-	b.pionSend("ice-servers", b.iceServers)
-
-	// Create new offer
-	offerRaw, err := b.pionRequest("create-offer", map[string]interface{}{})
-	if err != nil {
-		log.Printf("[bridge] Reset create-offer failed: %v", err)
-		return
-	}
-	b.mu.Lock()
-	b.pendingOffer = offerRaw
-	b.pendingCandidates = nil
-	b.mu.Unlock()
-	log.Printf("[bridge] New offer ready after reset, length: %d", len(offerRaw))
-}
-
-func (b *Bridge) sendOfferToPeer(participantId int64) {
-	b.mu.Lock()
-	offer := b.pendingOffer
-	candidates := b.pendingCandidates
-	b.pendingOffer = nil
-	b.pendingCandidates = nil
-	b.mu.Unlock()
-
-	if offer != nil {
-		log.Printf("[bridge] Sending offer to peer %d", participantId)
-		var offerObj struct {
-			Type string `json:"type"`
-			SDP  string `json:"sdp"`
-		}
-		json.Unmarshal(offer, &offerObj)
-		sdpStr, _ := json.Marshal(offerObj.SDP)
-		b.mu.Lock()
-		b.vkSeq++
-		seq := b.vkSeq
-		raw := fmt.Sprintf(`{"command":"transmit-data","sequence":%d,"participantId":%d,"data":{"sdp":{"type":%q,"sdp":%s}}}`,
-			seq, participantId, offerObj.Type, sdpStr)
-		if b.vkWs != nil {
-			b.vkWs.WriteMessage(websocket.TextMessage, []byte(raw))
-		}
-		b.mu.Unlock()
-		log.Printf("[vk-ws] -> transmit-data (offer)")
-	}
-
-	for _, cand := range candidates {
-		var c interface{}
-		json.Unmarshal(cand, &c)
-		b.vkSend("transmit-data", map[string]interface{}{
-			"participantId": participantId,
-			"data":          map[string]interface{}{"candidate": c},
-		})
-	}
-	if len(candidates) > 0 {
-		log.Printf("[bridge] Flushed %d ICE candidates", len(candidates))
-	}
-}
-
-func (b *Bridge) onRegisteredPeer(participantId int64) {
-	b.mu.Lock()
-	oldPeer := b.remotePeerId
-	isConnected := b.connected
-	b.remotePeerId = &participantId
-	b.mu.Unlock()
-
-	log.Printf("[bridge] Remote peer registered: %d (connected=%v)", participantId, isConnected)
-
-	// Reset Pion if connection is dead or peer changed
-	needsReset := false
-	if oldPeer != nil && *oldPeer != participantId {
-		log.Printf("[bridge] New peer %d replacing old peer %d", participantId, *oldPeer)
-		needsReset = true
-	} else if oldPeer != nil && !isConnected {
-		log.Printf("[bridge] Same peer %d re-registered, connection dead, resetting", participantId)
-		needsReset = true
-	}
-	if needsReset {
-		b.resetPion()
-	}
-
-	b.sendOfferToPeer(participantId)
-}
-
 func (b *Bridge) handleVKMessage(raw []byte) {
 	var msg map[string]interface{}
 	if err := json.Unmarshal(raw, &msg); err != nil {
@@ -384,54 +341,56 @@ func (b *Bridge) handleVKMessage(raw []byte) {
 
 		case "transmitted-data":
 			data, _ := msg["data"].(map[string]interface{})
-			if data == nil {
-				break
-			}
-			if cand, ok := data["candidate"]; ok {
-				log.Println("[bridge] Remote ICE candidate from VK")
-				candJSON, _ := json.Marshal(cand)
-				b.pionSend("remote-ice-candidate", json.RawMessage(candJSON))
-			}
-			if sdp, ok := data["sdp"].(map[string]interface{}); ok {
-				sdpType, _ := sdp["type"].(string)
-				log.Printf("[bridge] Remote SDP from VK: %s", sdpType)
-				sdpJSON, _ := json.Marshal(sdp)
-				if sdpType == "answer" {
-					b.pionRequest("set-remote-description", json.RawMessage(sdpJSON))
-				} else if sdpType == "offer" {
-					b.pionRequest("set-remote-description", json.RawMessage(sdpJSON))
-					answerRaw, err := b.pionRequest("create-answer", map[string]interface{}{})
-					if err == nil {
-						b.mu.Lock()
-						pid := b.remotePeerId
-						b.mu.Unlock()
-						if pid != nil {
-							var answer interface{}
-							json.Unmarshal(answerRaw, &answer)
-							b.vkSend("transmit-data", map[string]interface{}{
-								"participantId": *pid,
-								"data":          map[string]interface{}{"sdp": answer},
-							})
-						}
-					}
-				}
+			if data != nil && b.topology == TopologyDirect && b.p2p != nil {
+				b.p2p.OnTransmittedData(data)
 			}
 
 		case "registered-peer":
-			if pid, ok := msg["participantId"].(float64); ok {
-				b.onRegisteredPeer(int64(pid))
+			pid, _ := msg["participantId"].(float64)
+			if b.topology == TopologyDirect && b.p2p != nil {
+				b.p2p.OnRegisteredPeer(int64(pid))
 			}
 
+		case "topology-changed":
+			//todo - kill session on topology = SERVER; SFU is not supported
+			topo, _ := msg["topology"].(string)
+			log.Printf("[vk-ws]    Topology changed to %s", topo)
+			b.topology = topo
+
 		case "participant-joined", "participant-added":
-			log.Println("[vk-ws]    Participant event")
+			if pid, ok := msg["participantId"].(float64); ok {
+				log.Printf("[vk-ws]    Participant event: %d", int64(pid))
+			} else {
+				log.Println("[vk-ws]    Participant event")
+			}
+
+		case "participant-left":
+			if pid, ok := msg["participantId"].(float64); ok {
+				log.Printf("[vk-ws]    Participant %d left", int64(pid))
+			}
+
+		case "hungup":
+			if pid, ok := msg["participantId"].(float64); ok {
+				log.Printf("[vk-ws]    Participant %d hung up", int64(pid))
+			} else {
+				log.Println("[vk-ws]    Participant hung up")
+			}
 
 		default:
-			// Log unknown notifications briefly
+			snippet, _ := json.Marshal(msg)
+			if len(snippet) > 1000 {
+				snippet = append(snippet[:1000], '.', '.', '.')
+			}
+			log.Printf("[vk-ws]    unhandled: %s", string(snippet))
 		}
 
 	case "response":
 		seq, _ := msg["sequence"].(float64)
-		log.Printf("[vk-ws] <- response seq=%d", int(seq))
+		snippet, _ := json.Marshal(msg)
+		if len(snippet) > 1000 {
+			snippet = append(snippet[:1000], '.', '.', '.')
+		}
+		log.Printf("[vk-ws] <- response seq=%d: %s", int(seq), string(snippet))
 
 	case "error":
 		errMsg, _ := msg["message"].(string)
@@ -466,46 +425,16 @@ func (b *Bridge) handlePionMessage(raw []byte) {
 	switch msg.Type {
 	case "ice-candidate":
 		log.Println("[pion] <- ice-candidate")
-		b.mu.Lock()
-		pid := b.remotePeerId
-		b.mu.Unlock()
-		if pid != nil {
-			var cand interface{}
-			json.Unmarshal(msg.Data, &cand)
-			b.vkSend("transmit-data", map[string]interface{}{
-				"participantId": *pid,
-				"data":          map[string]interface{}{"candidate": cand},
-			})
-		} else {
-			b.mu.Lock()
-			b.pendingCandidates = append(b.pendingCandidates, msg.Data)
-			b.mu.Unlock()
+		if b.p2p != nil {
+			b.p2p.OnPionICECandidate(msg.Data)
 		}
 
 	case "connection-state":
 		var state string
 		json.Unmarshal(msg.Data, &state)
 		log.Printf("[pion] <- connection-state: %s", state)
-		b.mu.Lock()
-		switch state {
-		case "connected":
-			b.connected = true
-			b.mu.Unlock()
-			log.Println("\n  TUNNEL CONNECTED\n")
-		case "disconnected":
-			b.connected = false
-			b.mu.Unlock()
-			log.Println("[bridge] Connection disconnected, waiting for peer to rejoin")
-		case "failed":
-			b.connected = false
-			b.mu.Unlock()
-			log.Println("[bridge] Connection failed, waiting for peer to rejoin")
-		case "closed":
-			b.connected = false
-			b.mu.Unlock()
-			log.Println("[bridge] Connection closed")
-		default:
-			b.mu.Unlock()
+		if b.p2p != nil {
+			b.p2p.OnConnectionState(state)
 		}
 
 	case "remote-track":
@@ -549,7 +478,6 @@ func (b *Bridge) run(callInfo *CallInfo, cfg VKConfig, pionAddr string) {
 		})
 	}
 	b.iceServers = iceServers
-	b.pionSend("ice-servers", iceServers)
 
 	// Start reading Pion messages before making requests
 	go func() {
@@ -563,15 +491,10 @@ func (b *Bridge) run(callInfo *CallInfo, cfg VKConfig, pionAddr string) {
 		}
 	}()
 
-	// Create offer from Pion, queue it until a peer joins
-	offerRaw, err := b.pionRequest("create-offer", map[string]interface{}{})
-	if err != nil {
-		log.Fatalf("[bridge] Create offer failed: %v", err)
-	}
-	b.mu.Lock()
-	b.pendingOffer = offerRaw
-	b.mu.Unlock()
-	log.Printf("[bridge] Pion offer ready, length: %d", len(offerRaw))
+	// Start in P2P mode - creates PC and offer
+	b.topology = TopologyDirect
+	b.p2p = NewP2PHandler(b)
+	b.p2p.Init()
 
 	// Connect to VK signaling WebSocket
 	wsURL := callInfo.WSEndpoint +
@@ -637,7 +560,10 @@ func main() {
 	cookieStr := loadCookies(*cookiesPath)
 
 	log.Println("[config] Fetching live config from VK bundle...")
-	cfg := fetchConfig()
+	cfg, err := fetchConfig()
+	if err != nil {
+		log.Fatalf("[config] %v", err)
+	}
 
 	callInfo, err := createAndJoinCall(cookieStr, *peerId, cfg)
 	if err != nil {

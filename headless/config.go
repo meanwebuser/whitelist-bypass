@@ -15,62 +15,55 @@ type VKConfig struct {
 	ProtocolVersion string
 }
 
-func fetchConfig() VKConfig {
-	defaults := VKConfig{
-		AppID:           "",
-		APIVersion:      "",
-		SDKVersion:      "",
-		AppVersion:      "",
-		ProtocolVersion: "",
-	}
+func fetchConfig() (VKConfig, error) {
+	var cfg VKConfig
 
 	// Discover current bundle URL
 	page, err := httpGet("https://vk.com")
 	if err != nil {
-		log.Printf("[config] Failed to fetch vk.com: %v, using defaults", err)
-		return defaults
+		return cfg, fmt.Errorf("failed to fetch vk.com: %w", err)
 	}
 
-	bundleRe := regexp.MustCompile(`https://st\.vk\.com/dist/core_spa/core_spa_vk\.[a-f0-9]+\.js`)
+	bundleRe := regexp.MustCompile(`https://[a-z0-9.-]+/dist/core_spa/core_spa_vk\.[a-f0-9]+\.js`)
 	bundleURL := bundleRe.FindString(string(page))
 	if bundleURL == "" {
-		log.Printf("[config] Bundle URL not found in page, using defaults")
-		return defaults
+		snippet := string(page)
+		if len(snippet) > 500 {
+			snippet = snippet[:500]
+		}
+		return cfg, fmt.Errorf("bundle URL not found in page (length: %d): %s", len(page), snippet)
 	}
 	log.Printf("[config] Found bundle: %s", bundleURL)
 
 	bundle, err := httpGet(bundleURL)
 	if err != nil {
-		log.Printf("[config] Failed to fetch bundle: %v, using defaults", err)
-		return defaults
+		return cfg, fmt.Errorf("failed to fetch bundle: %w", err)
 	}
 	bundleStr := string(bundle)
 	chunksBase := bundleURL[:strings.LastIndex(bundleURL, "core_spa_vk.")] + "chunks/"
 
 	// Extract app_id and API version from the main bundle
 	if m := regexp.MustCompile(`[,;]u=(\d{7,8}),_=\d{7,8},p=\d{8,9}`).FindStringSubmatch(bundleStr); m != nil {
-		defaults.AppID = m[1]
+		cfg.AppID = m[1]
 	} else {
-		log.Printf("[config] WARNING: app_id not found in bundle")
+		return cfg, fmt.Errorf("app_id not found in bundle")
 	}
 	if m := regexp.MustCompile(`\d+:\(e,t,n\)=>\{"use strict";n\.d\(t,\{m:\(\)=>r\}\);const r="(5\.\d+)"\}`).FindStringSubmatch(bundleStr); m != nil {
-		defaults.APIVersion = m[1]
+		cfg.APIVersion = m[1]
 	} else {
-		log.Printf("[config] WARNING: apiVersion not found in bundle")
+		return cfg, fmt.Errorf("apiVersion not found in bundle")
 	}
-	log.Printf("[config] app_id=%s api=%s", defaults.AppID, defaults.APIVersion)
+	log.Printf("[config] app_id=%s api=%s", cfg.AppID, cfg.APIVersion)
 
 	// Find webCallsBridge chunk
 	bridgeRef := regexp.MustCompile(`core_spa/chunks/webCallsBridge\.([a-f0-9]+)\.js`).FindStringSubmatch(bundleStr)
 	if bridgeRef == nil {
-		log.Printf("[config] webCallsBridge chunk not found, using defaults for SDK")
-		return defaults
+		return cfg, fmt.Errorf("webCallsBridge chunk not found in bundle")
 	}
 	bridgeURL := chunksBase + "webCallsBridge." + bridgeRef[1] + ".js"
 	bridgeData, err := httpGet(bridgeURL)
 	if err != nil {
-		log.Printf("[config] Failed to fetch bridge chunk: %v", err)
-		return defaults
+		return cfg, fmt.Errorf("failed to fetch bridge chunk: %w", err)
 	}
 	bridgeStr := string(bridgeData)
 
@@ -123,23 +116,23 @@ func fetchConfig() VKConfig {
 		}
 
 		log.Printf("[config] Found SDK in chunk %s", chunkId)
-		defaults.SDKVersion = sv[1]
+		cfg.SDKVersion = sv[1]
 		if av := appVerRe.FindStringSubmatch(chunkStr); av != nil {
-			defaults.AppVersion = av[1]
+			cfg.AppVersion = av[1]
 		} else {
 			log.Printf("[config] WARNING: appVersion not found in SDK chunk")
 		}
 		if pv := protoVerRe.FindStringSubmatch(chunkStr); pv != nil {
-			defaults.ProtocolVersion = pv[1]
+			cfg.ProtocolVersion = pv[1]
 		} else {
 			log.Printf("[config] WARNING: protocolVersion not found in SDK chunk")
 		}
 		break
 	}
 
-	if defaults.SDKVersion == "" {
-		log.Printf("[config] WARNING: sdkVersion not found in any chunk")
+	if cfg.SDKVersion == "" {
+		return cfg, fmt.Errorf("sdkVersion not found in any chunk")
 	}
-	log.Printf("[config] sdk=%s app=%s proto=%s", defaults.SDKVersion, defaults.AppVersion, defaults.ProtocolVersion)
-	return defaults
+	log.Printf("[config] sdk=%s app=%s proto=%s", cfg.SDKVersion, cfg.AppVersion, cfg.ProtocolVersion)
+	return cfg, nil
 }
