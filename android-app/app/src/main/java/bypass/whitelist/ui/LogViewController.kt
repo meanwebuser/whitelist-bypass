@@ -1,6 +1,7 @@
 package bypass.whitelist.ui
 
 import android.content.Intent
+import android.text.method.ScrollingMovementMethod
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
@@ -12,6 +13,10 @@ class LogViewController(
     private val logView: TextView,
     private val logWriter: LogWriter,
 ) {
+    init {
+        logView.movementMethod = ScrollingMovementMethod.getInstance()
+    }
+
     fun append(msg: String) {
         val (line, evicted) = logWriter.append(msg)
         activity.runOnUiThread {
