@@ -13,8 +13,15 @@ var logCapture = "if(!window.__logCaptureInstalled){window.__logCaptureInstalled
 var relayPath = app.isPackaged
   ? path.join(process.resourcesPath, process.platform === 'win32' ? 'relay.exe' : 'relay')
   : path.join(__dirname, '..', 'relay', process.platform === 'win32' ? 'relay.exe' : 'relay');
+var headlessPath = app.isPackaged
+  ? path.join(process.resourcesPath, process.platform === 'win32' ? 'headless-creator.exe' : 'headless-creator')
+  : path.join(__dirname, '..', 'headless', process.platform === 'win32' ? 'headless-creator.exe' : 'headless-creator');
+var headlessPath = app.isPackaged
+  ? path.join(process.resourcesPath, process.platform === 'win32' ? 'headless-creator.exe' : 'headless-creator')
+  : path.join(__dirname, '..', 'headless', process.platform === 'win32' ? 'headless-creator.exe' : 'headless-creator');
 
-var tabs = new Map(); // tabId -> { relay, tunnelMode, platform, dcPort, pionPort }
+var tabs = new Map(); // tabId -> { relay, tunnelMode, platform, dcPort, pionPort, isBot }
+var callStatusCache = new Map();
 var nextPortBase = 10000;
 var mainWindow = null;
 var botManager = null;
@@ -66,6 +73,15 @@ function loadHook(url, tab) {
   var hookFile = isTelemost ? 'dc-creator-telemost.js' : 'dc-creator-vk.js';
   var hook = fs.readFileSync(path.join(hooksDir, hookFile), 'utf8');
   return logCapture + 'window.WS_PORT=' + tab.dcPort + ';' + hook;
+}
+
+async function getVKCookieString() {
+  var ses = session.fromPartition('persist:creator');
+  var all = await ses.cookies.get({});
+  var vkCookies = all.filter(function(c) {
+    return c.domain && (c.domain.indexOf('vk.com') !== -1 || c.domain.indexOf('vk.ru') !== -1);
+  });
+  return vkCookies.map(function(c) { return c.name + '=' + c.value; }).join('; ');
 }
 
 function startRelay(tab) {
@@ -205,10 +221,26 @@ function createWindow() {
           botManager.sendMessage(foundPeerId, 'Call created!\n ' + link);
         }
       }
+
+      if (msg.indexOf('[CALL_STATUS]') !== -1) {
+        console.log('[MAIN] Received call status:', msg);
+        if (msg.indexOf(':') !== -1) {
+          var parts = msg.split('[CALL_STATUS] ')[1];
+          var colonIndex = parts.indexOf(':');
+          if (colonIndex !== -1) {
+            var tabId = parts.substring(0, colonIndex);
+            var status = parts.substring(colonIndex + 1);
+            callStatusCache.set(tabId, status);
+            console.log('[MAIN] Cached status for', tabId, ':', status);
+          }
+        }
+      }
     });
     wvContents.on('destroyed', function() {
       var ac = autoclickers.get(wvContents.id);
       if (ac) { ac.telemost.stop(); ac.vk.stop(); autoclickers.delete(wvContents.id); }
+      callStatusCache.forEach(function(status, tabId) {
+      });
     });
   });
 }
@@ -237,6 +269,38 @@ ipcMain.handle('start-relay', async function(e, tabId) {
   startRelay(tab);
 });
 
+ipcMain.handle('start-headless', async function(e, tabId) {
+  var tab = await getTab(tabId);
+  tab.tunnelMode = 'headless-vk';
+  var cookieStr = await getVKCookieString();
+  if (!cookieStr) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('relay-log', { tabId: tabId, msg: 'No VK cookies found. Please log into VK first.' });
+    }
+    return;
+  }
+  killRelay(tab);
+  var args = ['--cookie-string', cookieStr, '--resources', 'default'];
+  var proc = spawn(headlessPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  tab.relay = proc;
+  var onData = function(data) {
+    data.toString().trim().split('\n').forEach(function(msg) {
+      if (!msg) return;
+      console.log('[headless:' + tabId + ']', msg);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('relay-log', { tabId: tabId, msg: msg });
+      }
+    });
+  };
+  proc.stdout.on('data', onData);
+  proc.stderr.on('data', onData);
+  proc.on('close', function(code) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('relay-log', { tabId: tabId, msg: 'Headless exited with code ' + code });
+    }
+  });
+});
+
 ipcMain.handle('close-tab', function(e, tabId) {
   var tab = tabs.get(tabId);
   if (tab) {
@@ -256,11 +320,35 @@ ipcMain.handle('start-bot', function(e, settings) {
 
     var tabId = 'bot-tab-' + Date.now();
     var ports = await allocPorts();
-    tabs.set(tabId, { relay: null, tunnelMode: tabConfig.mode, platform: tabConfig.platform || 'vk', dcPort: ports.dc, pionPort: ports.pion, peerId: tabConfig.peerId });
+    tabs.set(tabId, { relay: null, tunnelMode: tabConfig.mode, platform: tabConfig.platform || 'vk', dcPort: ports.dc, pionPort: ports.pion, peerId: tabConfig.peerId, isBot: true });
     botTabs.add(tabId);
 
     mainWindow.webContents.send('create-bot-tab', { tabId: tabId, mode: tabConfig.mode, peerId: tabConfig.peerId, platform: tabConfig.platform || 'vk' });
     console.log('[BOT] Created tab:', tabId, 'mode:', tabConfig.mode, 'platform:', tabConfig.platform, 'peerId:', tabConfig.peerId);
+  }, function() {
+    var result = [];
+    tabs.forEach(function(tab, tabId) {
+      result.push({ 
+        id: tabId, 
+        platform: tab.platform, 
+        mode: tab.tunnelMode, 
+        isBot: tab.isBot === true,
+        callStatus: callStatusCache.get(tabId) || 'inactive'
+      });
+    });
+    return result;
+  }, function(tabId) {
+    var tab = tabs.get(tabId);
+    if (tab) {
+      killRelay(tab);
+      tabs.delete(tabId);
+      botTabs.delete(tabId);
+      callStatusCache.delete(tabId);
+      console.log('[BOT] Closed tab:', tabId);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('close-bot-tab', { tabId: tabId });
+      }
+    }
   });
   botManager.onError = function(msg) {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -278,6 +366,17 @@ ipcMain.handle('stop-bot', function() {
   }
   return { success: true };
 });
+
+ipcMain.handle('get-cookies', async function(e, domain) {
+  var ses = session.fromPartition('persist:creator');
+  var all = await ses.cookies.get({});
+  var vkCookies = all.filter(function(c) {
+    return c.domain && (c.domain.indexOf('vk.com') !== -1 || c.domain.indexOf('vk.ru') !== -1);
+  });
+  console.log('[COOKIES] total:', all.length, 'vk:', vkCookies.length);
+  return vkCookies;
+});
+
 
 app.whenReady().then(createWindow);
 

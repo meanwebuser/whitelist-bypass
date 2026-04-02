@@ -10,5 +10,8 @@ contextBridge.exposeInMainWorld('bridge', {
   stopBot: function() { return ipcRenderer.invoke('stop-bot'); },
   onCreateBotTab: function(cb) { ipcRenderer.on('create-bot-tab', function(e, data) { cb(data); }); },
   getCallCreatorCode: function(scriptFile) { return ipcRenderer.invoke('get-call-creator-code', scriptFile); },
-  onBotError: function(cb) { ipcRenderer.on('bot-error', function(e, msg) { cb(msg); }); }
+  onBotError: function(cb) { ipcRenderer.on('bot-error', function(e, msg) { cb(msg); }); },
+  getCookies: function(domain) { return ipcRenderer.invoke('get-cookies', domain); },
+  startHeadless: function(tabId) { return ipcRenderer.invoke('start-headless', tabId); },
+  onCloseBotTab: function(cb) { ipcRenderer.on('close-bot-tab', function(e, data) { cb(data); }); }
 });

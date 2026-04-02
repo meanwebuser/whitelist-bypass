@@ -61,6 +61,7 @@ body { font-family: -apple-system, sans-serif; background: #1a1a1a; color: #e0e0
     <div class="tab-add" onclick="addTab()" title="New tab">+</div>
   </div>
   <div class="tab-bar-actions">
+    <div class="tab-settings" onclick="copyCookies()" title="Export VK cookies to cookies.json for headless mode" style="cursor:pointer">Export Cookies</div>
     <div class="tab-settings" onclick="openSettings()" title="Settings">Settings</div>
     <div class="tab-bot" id="tabBot" onclick="toggleBot()">Bot: Off</div>
   </div>
@@ -68,6 +69,7 @@ body { font-family: -apple-system, sans-serif; background: #1a1a1a; color: #e0e0
 <div class="toolbar" id="toolbar" style="display:none">
   <button class="btn-vk" onclick="loadURL('https://vk.com/im')">VK</button>
   <button class="btn-telemost" onclick="loadURL('https://telemost.yandex.ru/')">Telemost</button>
+  <button class="btn-vk" onclick="startHeadlessVK()" style="opacity:0.8">Headless VK</button>
   <span style="margin-left:auto;font-size:11px;color:#888">Tunnel:</span>
   <select id="modeSelect" style="padding:2px 6px;border:1px solid #555;border-radius:6px;font-size:11px;cursor:pointer;font-weight:500;background:#333;color:#e0e0e0;outline:none" onchange="onModeChange(this.value)">
     <option value="dc">DC</option>
@@ -79,6 +81,17 @@ body { font-family: -apple-system, sans-serif; background: #1a1a1a; color: #e0e0
   <div class="welcome" id="welcome">
     <h1>Whitelist Bypass - Creator</h1>
     <p>Click + to add a tab</p>
+  </div>
+  <div class="headless-info" id="headlessInfo" style="display:none;padding:24px;color:#e0e0e0;font-family:monospace;font-size:14px">
+    <div style="font-size:18px;font-weight:bold;margin-bottom:16px">Headless VK</div>
+    <div id="headlessStatus" style="color:#888">Starting...</div>
+    <div id="headlessCallInfo" style="margin-top:16px;display:none">
+      <div style="margin-bottom:8px"><span style="color:#888">Join link:</span> <a id="headlessJoinLink" href="#" style="color:#4fc3f7;cursor:pointer" onclick="copyToClipboard(this.textContent)"></a></div>
+      <div style="margin-bottom:8px"><span style="color:#888">Short:</span> <a id="headlessShortLink" href="#" style="color:#4fc3f7;cursor:pointer" onclick="copyToClipboard(this.textContent)"></a></div>
+      <div style="margin-bottom:8px"><span style="color:#888">TURN:</span> <span id="headlessTurn"></span></div>
+      <div style="margin-bottom:8px"><span style="color:#888">Protocol:</span> <span id="headlessProtocol"></span></div>
+    </div>
+    <div id="headlessTunnel" style="margin-top:16px;display:none;color:#4caf50;font-weight:bold;font-size:16px">TUNNEL CONNECTED</div>
   </div>
 </div>
 <div class="logs" id="logsPanel" style="display:none">
@@ -129,10 +142,26 @@ function closeError() {
 window.bridge.onBotError(function(msg) {
   showError(msg);
   botRunning = false;
+  localStorage.setItem('botEnabled', 'false');
   var btn = document.getElementById('tabBot');
   btn.textContent = 'Bot: Off';
   btn.classList.remove('running');
 });
+
+function copyCookies() {
+  window.bridge.getCookies('.vk.com').then(function(cookies) {
+    if (!cookies.length) {
+      showError('No VK cookies found.\nPlease log into VK first.');
+      return;
+    }
+    var simple = cookies.map(function(c) { return { name: c.name, value: c.value }; });
+    var blob = new Blob([JSON.stringify(simple, null, 2)], { type: 'application/json' });
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'cookies.json';
+    link.click();
+  });
+}
 
 var tabsState = {}; // tabId -> { wv, mode, relayLogs, hookLogs }
 var activeTabId = null;
@@ -141,6 +170,14 @@ var botRunning = false;
 
 var savedSettings = localStorage.getItem('botSettings');
 var botSettings = savedSettings ? JSON.parse(savedSettings) : { token: '', groupId: '', userId: '' };
+
+if (localStorage.getItem('botEnabled') === 'true' && botSettings.token && botSettings.groupId) {
+  botRunning = true;
+  var btn = document.getElementById('tabBot');
+  btn.textContent = 'Bot: On';
+  btn.classList.add('running');
+  window.bridge.startBot(botSettings);
+}
 
 function openSettings() {
   document.getElementById('settingsPopup').classList.add('visible');
@@ -168,6 +205,7 @@ function toggleBot() {
     return;
   }
   botRunning = !botRunning;
+  localStorage.setItem('botEnabled', botRunning ? 'true' : 'false');
   var btn = document.getElementById('tabBot');
   if (botRunning) {
     btn.textContent = 'Bot: On';
@@ -182,8 +220,16 @@ function toggleBot() {
 
 function addTab() {
   var tabId = 'tab-' + (nextTabId++);
-  tabsState[tabId] = { wv: null, url: '', mode: 'dc', relayLogs: '', hookLogs: '', name: '' };
+  tabsState[tabId] = { wv: null, url: '', mode: 'dc', relayLogs: '', hookLogs: '', name: '', isBot: false };
   window.bridge.startRelay(tabId);
+  renderTabs();
+  selectTab(tabId);
+}
+
+function startHeadlessVK() {
+  var tabId = 'tab-' + (nextTabId++);
+  tabsState[tabId] = { wv: null, url: '', mode: 'headless-vk', relayLogs: '', hookLogs: '', name: 'Headless VK', isBot: false, headless: true };
+  window.bridge.startHeadless(tabId);
   renderTabs();
   selectTab(tabId);
 }
@@ -262,7 +308,6 @@ function renderContent() {
   var welcome = document.getElementById('welcome');
   var toolbar = document.getElementById('toolbar');
   var logsPanel = document.getElementById('logsPanel');
-  // Hide all webviews
   var wvs = content.querySelectorAll('webview');
   for (var i = 0; i < wvs.length; i++) wvs[i].classList.add('hidden');
 
@@ -273,14 +318,33 @@ function renderContent() {
     return;
   }
   welcome.style.display = 'none';
-  toolbar.style.display = 'flex';
   logsPanel.style.display = 'flex';
 
   var t = tabsState[activeTabId];
-  document.getElementById('modeSelect').value = t.mode;
+  var headlessInfo = document.getElementById('headlessInfo');
+  if (t.headless) {
+    toolbar.style.display = 'none';
+    headlessInfo.style.display = 'block';
+    document.getElementById('headlessStatus').textContent = t.headlessStatus || 'Starting...';
+    var ci = t.callInfo;
+    if (ci) {
+      document.getElementById('headlessCallInfo').style.display = 'block';
+      document.getElementById('headlessJoinLink').textContent = ci.joinLink || '';
+      document.getElementById('headlessShortLink').textContent = ci.shortLink || '';
+      document.getElementById('headlessTurn').textContent = ci.turn || '';
+      document.getElementById('headlessProtocol').textContent = ci.protocol || '';
+    } else {
+      document.getElementById('headlessCallInfo').style.display = 'none';
+    }
+    document.getElementById('headlessTunnel').style.display = t.tunnelConnected ? 'block' : 'none';
+  } else {
+    toolbar.style.display = 'flex';
+    headlessInfo.style.display = 'none';
+    document.getElementById('modeSelect').value = t.mode;
+    if (t.wv) t.wv.classList.remove('hidden');
+  }
   document.getElementById('relayLog').textContent = t.relayLogs || '';
   document.getElementById('hookLog').textContent = t.hookLogs || '';
-  if (t.wv) t.wv.classList.remove('hidden');
   scrollLogs();
 }
 
@@ -313,7 +377,17 @@ function loadURL(url) {
     window.bridge.getHookCode(tabId, wv.getURL()).then(function(code) {
       wv.executeJavaScript(code).catch(function() {});
     });
-    
+
+    window.bridge.getCallCreatorCode('call-checker.js').then(function(checkerCode) {
+      console.log('[UI] Injecting call checker for tab:', tabId);
+      var injectCode = 'window.__CALL_CHECKER_TAB_ID = "' + tabId + '"; ' + checkerCode;
+      wv.executeJavaScript(injectCode).catch(function(err) {
+        console.log('[UI] Call checker inject error:', err);
+      });
+    }).catch(function(err) {
+      console.log('[UI] Failed to get call-checker.js:', err);
+    });
+
     if (tabsState[tabId] && tabsState[tabId].isBot) {
       setTimeout(function() {
         var scriptFile = tabsState[tabId].platform === 'telemost' ? 'tm-call-creator.js' : 'vk-call-creator.js';
@@ -330,6 +404,10 @@ function loadURL(url) {
     wv.executeJavaScript('window.__hookInstalled = false').catch(function() {});
     window.bridge.getHookCode(tabId, wv.getURL()).then(function(code) {
       wv.executeJavaScript(code).catch(function() {});
+    });
+    window.bridge.getCallCreatorCode('call-checker.js').then(function(checkerCode) {
+      var injectCode = 'window.__CALL_CHECKER_TAB_ID = "' + tabId + '"; ' + checkerCode;
+      wv.executeJavaScript(injectCode).catch(function() {});
     });
   });
   t.wv = wv;
@@ -364,7 +442,6 @@ function saveLogs() {
   a.click();
 }
 
-// Poll hook logs from active tab's webview
 setInterval(function() {
   if (!activeTabId || !tabsState[activeTabId] || !tabsState[activeTabId].wv) return;
   tabsState[activeTabId].wv.executeJavaScript('(window.__hookLogs && window.__hookLogs.length) ? window.__hookLogs.splice(0) : []')
@@ -379,10 +456,10 @@ setInterval(function() {
     }).catch(function() {});
 }, 500);
 
-// Relay logs from main process
 window.bridge.onRelayLog(function(tabId, msg) {
   if (tabsState[tabId]) {
     tabsState[tabId].relayLogs += (tabsState[tabId].relayLogs ? '\n' : '') + msg;
+    if (tabsState[tabId].headless) parseHeadlessLog(tabId, msg);
   }
   if (tabId === activeTabId) {
     var el = document.getElementById('relayLog');
@@ -392,29 +469,68 @@ window.bridge.onRelayLog(function(tabId, msg) {
   }
 });
 
-// Bot tab creation
+function parseHeadlessLog(tabId, msg) {
+  var t = tabsState[tabId];
+  if (!t) return;
+  var trimmed = msg.trim();
+  if (trimmed === 'CALL CREATED') {
+    t.callInfo = {};
+    t.headlessStatus = 'Call created';
+  }
+  if (trimmed.indexOf('join_link:') !== -1) {
+    if (!t.callInfo) t.callInfo = {};
+    t.callInfo.joinLink = trimmed.split('join_link:')[1].trim();
+  }
+  if (trimmed.indexOf('short:') !== -1) {
+    if (!t.callInfo) t.callInfo = {};
+    t.callInfo.shortLink = trimmed.split('short:')[1].trim();
+  }
+  if (trimmed.indexOf('TURN:') !== -1) {
+    if (!t.callInfo) t.callInfo = {};
+    t.callInfo.turn = trimmed.split('TURN:')[1].trim();
+  }
+  if (trimmed.indexOf('protocol:') !== -1) {
+    if (!t.callInfo) t.callInfo = {};
+    t.callInfo.protocol = trimmed.split('protocol:')[1].trim();
+  }
+  if (trimmed === 'TUNNEL CONNECTED') {
+    t.tunnelConnected = true;
+    t.headlessStatus = 'Tunnel connected';
+  }
+  if (tabId === activeTabId) renderContent();
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text);
+}
+
 window.bridge.onCreateBotTab(function(data) {
   console.log('[BOT] Creating tab:', data);
   var tabId = data.tabId;
   var mode = data.mode;
   var peerId = data.peerId;
   var platform = data.platform || 'vk';
-  
+
   if (!tabsState[tabId]) {
     var botName = platform === 'telemost' ? 'Bot-Telemost' : 'Bot-VK';
     tabsState[tabId] = { wv: null, url: '', mode: mode, relayLogs: '', hookLogs: '', name: botName, isBot: true, peerId: peerId, platform: platform };
   }
-  
+
   selectTab(tabId);
-  
+
   document.getElementById('modeSelect').value = mode;
   window.bridge.setTunnelMode(tabId, mode);
-  
+
   if (platform === 'telemost') {
     loadURL('https://telemost.yandex.ru/');
   } else {
     loadURL('https://vk.com/im');
   }
+});
+
+window.bridge.onCloseBotTab(function(data) {
+  console.log('[BOT] Closing tab:', data.tabId);
+  closeTab(data.tabId);
 });
 </script>
 </body>
