@@ -258,6 +258,7 @@ type Bridge struct {
 	vkSeq      int
 	iceServers []webrtc.ICEServer
 	topology   string
+	peers      map[int64]struct{}
 	relay      Relay
 	newRelay   func() Relay
 	p2p        *P2PHandler
@@ -316,26 +317,44 @@ func (b *Bridge) handleVKMessage(raw []byte) {
 			}
 
 		case "topology-changed":
-			//todo - kill session on topology = SERVER; SFU is not supported
 			topo, _ := msg["topology"].(string)
 			log.Printf("[vk-ws]    Topology changed to %s", topo)
 			b.topology = topo
+			if topo != TopologyDirect {
+				log.Printf("[vk-ws]    SFU not supported, kicking %d peers", len(b.peers))
+				for pid := range b.peers {
+					b.vkSend("remove-participant", map[string]interface{}{
+						"participantId": pid,
+						"ban":           false,
+					})
+				}
+			}
 
 		case "participant-joined", "participant-added":
 			if pid, ok := msg["participantId"].(float64); ok {
-				log.Printf("[vk-ws]    Participant event: %d", int64(pid))
-			} else {
-				log.Println("[vk-ws]    Participant event")
+				b.peers[int64(pid)] = struct{}{}
+				log.Printf("[vk-ws]    Participant %d joined (total: %d)", int64(pid), len(b.peers))
+				if b.topology != TopologyDirect {
+					log.Printf("[vk-ws]    Kicking peer %d (SFU topology)", int64(pid))
+					b.vkSend("remove-participant", map[string]interface{}{
+						"participantId": int64(pid),
+						"ban":           false,
+					})
+					log.Println("[FATAL] SFU topology is not supported, exiting")
+					os.Exit(1)
+				}
 			}
 
 		case "participant-left":
 			if pid, ok := msg["participantId"].(float64); ok {
-				log.Printf("[vk-ws]    Participant %d left", int64(pid))
+				delete(b.peers, int64(pid))
+				log.Printf("[vk-ws]    Participant %d left (total: %d)", int64(pid), len(b.peers))
 			}
 
 		case "hungup":
 			if pid, ok := msg["participantId"].(float64); ok {
-				log.Printf("[vk-ws]    Participant %d hung up", int64(pid))
+				delete(b.peers, int64(pid))
+				log.Printf("[vk-ws]    Participant %d hung up (total: %d)", int64(pid), len(b.peers))
 			} else {
 				log.Println("[vk-ws]    Participant hung up")
 			}
@@ -399,6 +418,7 @@ func (b *Bridge) initRelay() {
 		b.relay.Close()
 	}
 	b.topology = TopologyDirect
+	b.peers = make(map[int64]struct{})
 	b.relay = b.newRelay()
 	b.p2p = NewP2PHandler(b)
 	b.p2p.Init()
