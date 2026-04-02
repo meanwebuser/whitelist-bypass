@@ -34,3 +34,14 @@ cp ../hooks/video-vk.js ../android-app/app/src/main/assets/video-vk.js
 cp ../hooks/video-telemost.js ../android-app/app/src/main/assets/video-telemost.js
 
 echo "Done. .aar size: $(du -h mobile.aar | cut -f1)"
+
+echo ""
+echo "Building desktop relay..."
+go build -o relay .
+
+echo "Building headless-creator..."
+cd "$(dirname "$0")/headless"
+go build -o headless-creator .
+
+echo "Done."
+ls -lh "$(dirname "$0")/relay/relay" "$(dirname "$0")/headless/headless-creator"

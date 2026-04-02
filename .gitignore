@@ -4,3 +4,5 @@ relay/relay-*
 prebuilts/
 cookies.json
 pion-light/
+headless/headless-creator
+relay/relay
