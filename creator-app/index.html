@@ -142,6 +142,7 @@ function closeError() {
 window.bridge.onBotError(function(msg) {
   showError(msg);
   botRunning = false;
+  localStorage.setItem('botEnabled', 'false');
   var btn = document.getElementById('tabBot');
   btn.textContent = 'Bot: Off';
   btn.classList.remove('running');
@@ -170,6 +171,14 @@ var botRunning = false;
 var savedSettings = localStorage.getItem('botSettings');
 var botSettings = savedSettings ? JSON.parse(savedSettings) : { token: '', groupId: '', userId: '' };
 
+if (localStorage.getItem('botEnabled') === 'true' && botSettings.token && botSettings.groupId) {
+  botRunning = true;
+  var btn = document.getElementById('tabBot');
+  btn.textContent = 'Bot: On';
+  btn.classList.add('running');
+  window.bridge.startBot(botSettings);
+}
+
 function openSettings() {
   document.getElementById('settingsPopup').classList.add('visible');
   document.getElementById('vkToken').value = botSettings.token;
@@ -196,6 +205,7 @@ function toggleBot() {
     return;
   }
   botRunning = !botRunning;
+  localStorage.setItem('botEnabled', botRunning ? 'true' : 'false');
   var btn = document.getElementById('tabBot');
   if (botRunning) {
     btn.textContent = 'Bot: On';

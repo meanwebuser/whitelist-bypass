@@ -126,9 +126,11 @@ Download and run the Electron app from [GitHub Releases](../../releases). It bun
 
 1. Open the app
 2. Select tunnel mode (DC or Pion Video)
-3. Click "VK Call" or "Telemost"
-4. Log in, create a call
+3. Click "VK" or "Telemost"
+4. Log in, **create a new call** from the app
 5. Copy the join link, send it to the joiner
+
+**Important:** The call must be created from within the Creator app. Joining an existing call from the app will not work - the JS hooks must be present from the moment the call starts.
 
 ### Joiner side (censored, Android)
 
