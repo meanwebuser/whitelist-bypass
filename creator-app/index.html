@@ -69,6 +69,7 @@ body { font-family: -apple-system, sans-serif; background: #1a1a1a; color: #e0e0
 <div class="toolbar" id="toolbar" style="display:none">
   <button class="btn-vk" onclick="loadURL('https://vk.com/im')">VK</button>
   <button class="btn-telemost" onclick="loadURL('https://telemost.yandex.ru/')">Telemost</button>
+  <button class="btn-vk" onclick="startHeadlessVK()" style="opacity:0.8">Headless VK</button>
   <span style="margin-left:auto;font-size:11px;color:#888">Tunnel:</span>
   <select id="modeSelect" style="padding:2px 6px;border:1px solid #555;border-radius:6px;font-size:11px;cursor:pointer;font-weight:500;background:#333;color:#e0e0e0;outline:none" onchange="onModeChange(this.value)">
     <option value="dc">DC</option>
@@ -80,6 +81,17 @@ body { font-family: -apple-system, sans-serif; background: #1a1a1a; color: #e0e0
   <div class="welcome" id="welcome">
     <h1>Whitelist Bypass - Creator</h1>
     <p>Click + to add a tab</p>
+  </div>
+  <div class="headless-info" id="headlessInfo" style="display:none;padding:24px;color:#e0e0e0;font-family:monospace;font-size:14px">
+    <div style="font-size:18px;font-weight:bold;margin-bottom:16px">Headless VK</div>
+    <div id="headlessStatus" style="color:#888">Starting...</div>
+    <div id="headlessCallInfo" style="margin-top:16px;display:none">
+      <div style="margin-bottom:8px"><span style="color:#888">Join link:</span> <a id="headlessJoinLink" href="#" style="color:#4fc3f7;cursor:pointer" onclick="copyToClipboard(this.textContent)"></a></div>
+      <div style="margin-bottom:8px"><span style="color:#888">Short:</span> <a id="headlessShortLink" href="#" style="color:#4fc3f7;cursor:pointer" onclick="copyToClipboard(this.textContent)"></a></div>
+      <div style="margin-bottom:8px"><span style="color:#888">TURN:</span> <span id="headlessTurn"></span></div>
+      <div style="margin-bottom:8px"><span style="color:#888">Protocol:</span> <span id="headlessProtocol"></span></div>
+    </div>
+    <div id="headlessTunnel" style="margin-top:16px;display:none;color:#4caf50;font-weight:bold;font-size:16px">TUNNEL CONNECTED</div>
   </div>
 </div>
 <div class="logs" id="logsPanel" style="display:none">
@@ -204,6 +216,14 @@ function addTab() {
   selectTab(tabId);
 }
 
+function startHeadlessVK() {
+  var tabId = 'tab-' + (nextTabId++);
+  tabsState[tabId] = { wv: null, url: '', mode: 'headless-vk', relayLogs: '', hookLogs: '', name: 'Headless VK', isBot: false, headless: true };
+  window.bridge.startHeadless(tabId);
+  renderTabs();
+  selectTab(tabId);
+}
+
 function closeTab(tabId, e) {
   if (e) e.stopPropagation();
   var t = tabsState[tabId];
@@ -288,14 +308,33 @@ function renderContent() {
     return;
   }
   welcome.style.display = 'none';
-  toolbar.style.display = 'flex';
   logsPanel.style.display = 'flex';
 
   var t = tabsState[activeTabId];
-  document.getElementById('modeSelect').value = t.mode;
+  var headlessInfo = document.getElementById('headlessInfo');
+  if (t.headless) {
+    toolbar.style.display = 'none';
+    headlessInfo.style.display = 'block';
+    document.getElementById('headlessStatus').textContent = t.headlessStatus || 'Starting...';
+    var ci = t.callInfo;
+    if (ci) {
+      document.getElementById('headlessCallInfo').style.display = 'block';
+      document.getElementById('headlessJoinLink').textContent = ci.joinLink || '';
+      document.getElementById('headlessShortLink').textContent = ci.shortLink || '';
+      document.getElementById('headlessTurn').textContent = ci.turn || '';
+      document.getElementById('headlessProtocol').textContent = ci.protocol || '';
+    } else {
+      document.getElementById('headlessCallInfo').style.display = 'none';
+    }
+    document.getElementById('headlessTunnel').style.display = t.tunnelConnected ? 'block' : 'none';
+  } else {
+    toolbar.style.display = 'flex';
+    headlessInfo.style.display = 'none';
+    document.getElementById('modeSelect').value = t.mode;
+    if (t.wv) t.wv.classList.remove('hidden');
+  }
   document.getElementById('relayLog').textContent = t.relayLogs || '';
   document.getElementById('hookLog').textContent = t.hookLogs || '';
-  if (t.wv) t.wv.classList.remove('hidden');
   scrollLogs();
 }
 
@@ -410,6 +449,7 @@ setInterval(function() {
 window.bridge.onRelayLog(function(tabId, msg) {
   if (tabsState[tabId]) {
     tabsState[tabId].relayLogs += (tabsState[tabId].relayLogs ? '\n' : '') + msg;
+    if (tabsState[tabId].headless) parseHeadlessLog(tabId, msg);
   }
   if (tabId === activeTabId) {
     var el = document.getElementById('relayLog');
@@ -418,6 +458,41 @@ window.bridge.onRelayLog(function(tabId, msg) {
     el.scrollTop = el.scrollHeight;
   }
 });
+
+function parseHeadlessLog(tabId, msg) {
+  var t = tabsState[tabId];
+  if (!t) return;
+  var trimmed = msg.trim();
+  if (trimmed === 'CALL CREATED') {
+    t.callInfo = {};
+    t.headlessStatus = 'Call created';
+  }
+  if (trimmed.indexOf('join_link:') !== -1) {
+    if (!t.callInfo) t.callInfo = {};
+    t.callInfo.joinLink = trimmed.split('join_link:')[1].trim();
+  }
+  if (trimmed.indexOf('short:') !== -1) {
+    if (!t.callInfo) t.callInfo = {};
+    t.callInfo.shortLink = trimmed.split('short:')[1].trim();
+  }
+  if (trimmed.indexOf('TURN:') !== -1) {
+    if (!t.callInfo) t.callInfo = {};
+    t.callInfo.turn = trimmed.split('TURN:')[1].trim();
+  }
+  if (trimmed.indexOf('protocol:') !== -1) {
+    if (!t.callInfo) t.callInfo = {};
+    t.callInfo.protocol = trimmed.split('protocol:')[1].trim();
+  }
+  if (trimmed === 'TUNNEL CONNECTED') {
+    t.tunnelConnected = true;
+    t.headlessStatus = 'Tunnel connected';
+  }
+  if (tabId === activeTabId) renderContent();
+}
+
+function copyToClipboard(text) {
+  navigator.clipboard.writeText(text);
+}
 
 window.bridge.onCreateBotTab(function(data) {
   console.log('[BOT] Creating tab:', data);

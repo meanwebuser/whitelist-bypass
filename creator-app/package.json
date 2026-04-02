@@ -29,7 +29,8 @@
       "target": "dmg",
       "icon": "resources/icon.icns",
       "extraResources": [
-        { "from": "../relay/relay-darwin", "to": "relay" }
+        { "from": "../relay/relay-darwin", "to": "relay" },
+        { "from": "../headless/headless-darwin", "to": "headless-creator" }
       ]
     },
     "win": {
@@ -37,14 +38,16 @@
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "icon": "resources/icon.ico",
       "extraResources": [
-        { "from": "../relay/relay-bundle.exe", "to": "relay.exe" }
+        { "from": "../relay/relay-bundle.exe", "to": "relay.exe" },
+        { "from": "../headless/headless-bundle.exe", "to": "headless-creator.exe" }
       ]
     },
     "linux": {
       "target": "AppImage",
       "icon": "resources/icon.png",
       "extraResources": [
-        { "from": "../relay/relay-bundle", "to": "relay" }
+        { "from": "../relay/relay-bundle", "to": "relay" },
+        { "from": "../headless/headless-bundle", "to": "headless-creator" }
       ]
     }
   }

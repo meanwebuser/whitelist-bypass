@@ -501,7 +501,8 @@ func (b *Bridge) run(callInfo *CallInfo, cfg VKConfig) {
 }
 
 func main() {
-	cookiesPath := flag.String("cookies", "cookies.json", "path to cookies.json")
+	cookiesPath := flag.String("cookies", "", "path to cookies.json")
+	cookieString := flag.String("cookie-string", "", "raw cookie string (name=val; name=val)")
 	peerId := flag.String("peer-id", "", "VK peer_id for the call")
 	resources := flag.String("resources", "default", "resource mode: default, moderate, unlimited")
 	flag.Parse()
@@ -530,7 +531,14 @@ func main() {
 	}
 	log.Printf("[config] resources=%s read-buf=%d max-dc-buf=%d mem-limit=%d", *resources, readBuf, maxDCBuf, memLimit)
 
-	cookieStr := loadCookies(*cookiesPath)
+	var cookieStr string
+	if *cookieString != "" {
+		cookieStr = *cookieString
+	} else if *cookiesPath != "" {
+		cookieStr = loadCookies(*cookiesPath)
+	} else {
+		log.Fatal("Either --cookies or --cookie-string is required")
+	}
 
 	log.Println("[config] Fetching live config from VK bundle...")
 	cfg, err := fetchConfig()
