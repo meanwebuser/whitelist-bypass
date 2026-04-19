@@ -1,16 +1,13 @@
-package pion
+package joiner
 
 import (
-	"bufio"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,17 +17,6 @@ import (
 	"whitelist-bypass/relay/common"
 	"whitelist-bypass/relay/tunnel"
 )
-
-func init() {
-	// Android doesn't have /etc/resolv.conf or standard CA paths.
-	// Point Go's x509 to the system CA store so TLS verification works.
-	if _, err := os.Stat("/system/etc/security/cacerts"); err == nil {
-		os.Setenv("SSL_CERT_DIR", "/system/etc/security/cacerts")
-	}
-}
-
-const headlessUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-const sctpReceiveBufferSize = 4 * 1024 * 1024
 
 type VKHeadlessAuthParams struct {
 	SessionKey      string `json:"sessionKey"`
@@ -59,6 +45,11 @@ type VKJoinResponse struct {
 type VKHeadlessJoiner struct {
 	logFn       func(string, ...any)
 	OnConnected func(tunnel.DataTunnel)
+	ResolveFn      ResolveFunc
+	Status         StatusEmitter
+	PCConfig       PeerConnectionConfigurer
+	AddTracks      AddTunnelTracksFunc
+	ReadTrackFn    ReadTrackFunc
 
 	authParams   *VKHeadlessAuthParams
 	joinResp     *VKJoinResponse
@@ -75,73 +66,51 @@ type VKHeadlessJoiner struct {
 	pendingICE  []webrtc.ICECandidateInit
 }
 
-func NewVKHeadlessJoiner(logFn func(string, ...any)) *VKHeadlessJoiner {
-	if logFn == nil {
-		logFn = log.Printf
+func NewVKHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc, status StatusEmitter, pcConfig PeerConnectionConfigurer, addTracks AddTunnelTracksFunc, readTrackFn ReadTrackFunc) *VKHeadlessJoiner {
+	return &VKHeadlessJoiner{
+		logFn:       logFn,
+		ResolveFn:   resolveFn,
+		Status:      status,
+		PCConfig:    pcConfig,
+		AddTracks:   addTracks,
+		ReadTrackFn: readTrackFn,
 	}
-	return &VKHeadlessJoiner{logFn: logFn}
 }
 
-func (h *VKHeadlessJoiner) DC() *webrtc.DataChannel {
-	return h.dc
+func (h *VKHeadlessJoiner) RunWithParams(jsonParams string) {
+	var params VKHeadlessAuthParams
+	if err := json.Unmarshal([]byte(jsonParams), &params); err != nil {
+		h.logFn("headless: failed to parse auth params: %v", err)
+		h.Status.EmitStatusError("bad params: " + err.Error())
+		return
+	}
+	h.authParams = &params
+	h.logFn("headless: auth params received")
+	h.logFn("headless:   appVersion=%s protocolVersion=%s", params.AppVersion, params.ProtocolVersion)
+	h.Status.EmitStatus(common.StatusConnecting)
+
+	if err := h.joinCall(); err != nil {
+		h.logFn("headless: joinCall failed: %v", err)
+		h.Status.EmitStatusError(err.Error())
+		return
+	}
+	h.connectSFU()
 }
 
-var stdinReader = bufio.NewReader(os.Stdin)
-var stdinMu sync.Mutex
-
-func readStdinLine() (string, error) {
-	stdinMu.Lock()
-	defer stdinMu.Unlock()
-	line, err := stdinReader.ReadString('\n')
-	if err != nil {
-		return "", err
+func (h *VKHeadlessJoiner) Close() {
+	StopCaptchaProxy()
+	h.vkMu.Lock()
+	ws := h.vkWs
+	h.vkWs = nil
+	h.vkMu.Unlock()
+	if ws != nil {
+		ws.Close()
 	}
-	return strings.TrimSpace(line), nil
-}
-
-func requestResolve(hostname string) (string, error) {
-	stdinMu.Lock()
-	fmt.Printf("RESOLVE:%s\n", hostname)
-	stdinMu.Unlock()
-	line, err := readStdinLine()
-	if err != nil {
-		return "", fmt.Errorf("read resolve response: %w", err)
+	if h.vp8tunnel != nil {
+		h.vp8tunnel.Stop()
 	}
-	if line == "" {
-		return "", fmt.Errorf("empty resolve for %s", hostname)
-	}
-	return line, nil
-}
-
-func (h *VKHeadlessJoiner) Run() {
-	h.logFn("headless: waiting for auth params on stdin...")
-	common.EmitStatus(common.StatusReady)
-	for {
-		line, err := readStdinLine()
-		if err != nil {
-			h.logFn("headless: stdin closed: %v", err)
-			return
-		}
-		if strings.HasPrefix(line, "JOIN:") {
-			jsonData := strings.TrimPrefix(line, "JOIN:")
-			var params VKHeadlessAuthParams
-			if err := json.Unmarshal([]byte(jsonData), &params); err != nil {
-				h.logFn("headless: failed to parse auth params: %v", err)
-				continue
-			}
-			h.authParams = &params
-			h.logFn("headless: auth params received")
-			h.logFn("headless:   appVersion=%s protocolVersion=%s", params.AppVersion, params.ProtocolVersion)
-			common.EmitStatus(common.StatusConnecting)
-
-			if err := h.joinCall(); err != nil {
-				h.logFn("headless: joinCall failed: %v", err)
-				common.EmitStatusError(err.Error())
-				return
-			}
-			h.connectSFU()
-			return
-		}
+	if h.pc != nil {
+		h.pc.Close()
 	}
 }
 
@@ -151,7 +120,7 @@ func (h *VKHeadlessJoiner) joinCall() error {
 	if err != nil {
 		return fmt.Errorf("bad apiBaseURL: %w", err)
 	}
-	resolvedIP, err := requestResolve(parsed.Hostname())
+	resolvedIP, err := h.ResolveFn(parsed.Hostname())
 	if err != nil {
 		return fmt.Errorf("resolve %s: %w", parsed.Hostname(), err)
 	}
@@ -185,7 +154,7 @@ func (h *VKHeadlessJoiner) joinCall() error {
 		return fmt.Errorf("new request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", headlessUA)
+	req.Header.Set("User-Agent", common.UserAgent)
 
 	h.logFn("headless: calling joinConversationByLink...")
 	resp, err := client.Do(req)
@@ -215,7 +184,7 @@ func (h *VKHeadlessJoiner) connectSFU() {
 	}
 
 	hostname := parsed.Hostname()
-	resolvedIP, err := requestResolve(hostname)
+	resolvedIP, err := h.ResolveFn(hostname)
 	if err != nil {
 		h.logFn("headless: DNS resolve failed: %s", common.MaskError(err))
 		return
@@ -239,7 +208,7 @@ func (h *VKHeadlessJoiner) connectSFU() {
 	}
 
 	header := http.Header{}
-	header.Set("User-Agent", headlessUA)
+	header.Set("User-Agent", common.UserAgent)
 	header.Set("Origin", "https://vk.com")
 
 	ws, _, err := dialer.Dial(wsURL, header)
@@ -315,6 +284,7 @@ func (h *VKHeadlessJoiner) readLoop() {
 		_, msg, err := h.vkWs.ReadMessage()
 		if err != nil {
 			h.logFn("headless: WS closed: %s", common.MaskError(err))
+			h.Status.EmitStatus(common.StatusTunnelLost)
 			return
 		}
 		if string(msg) == "ping" {
@@ -361,11 +331,10 @@ func (h *VKHeadlessJoiner) handleVKMessage(raw []byte) {
 		case "participant-joined", "participant-added":
 			h.logFn("headless: <- %s", notif)
 		case "participant-left":
-			h.logFn("headless: <- %s: %s", notif, string(raw))
+			h.logFn("headless: <- %s", notif)
 		case "hungup":
-			h.logFn("headless: <- %s: %s", notif, string(raw))
 			h.logFn("headless: ERROR: call ended (hungup)")
-			common.EmitStatusError("call ended")
+			h.Status.EmitStatusError("call ended")
 		}
 
 	case "response":
@@ -423,9 +392,11 @@ func (h *VKHeadlessJoiner) initPC() {
 	mode := h.authParams.TunnelMode
 
 	settingEngine := webrtc.SettingEngine{}
-	settingEngine.SetNet(&AndroidNet{})
 	settingEngine.DisableCloseByDTLS(true)
 	settingEngine.DetachDataChannels()
+	if h.PCConfig != nil {
+		h.PCConfig.ConfigureSettingEngine(&settingEngine)
+	}
 
 	pc, err := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine)).NewPeerConnection(webrtc.Configuration{
 		ICEServers: iceServers,
@@ -439,7 +410,7 @@ func (h *VKHeadlessJoiner) initPC() {
 	h.logFn("headless: tunnel mode: %s", mode)
 
 	if mode == "video" {
-		h.sampleTrack = AddTunnelTracks(pc, h.logFn, "headless")
+		h.sampleTrack = h.AddTracks(pc, h.logFn, "headless")
 	}
 
 	negotiated := true
@@ -456,7 +427,7 @@ func (h *VKHeadlessJoiner) initPC() {
 			h.logFn("headless: tunnel DC open")
 			if mode == "dc" {
 				h.logFn("headless: === DC TUNNEL CONNECTED ===")
-				common.EmitStatus(common.StatusTunnelConnected)
+				h.Status.EmitStatus(common.StatusTunnelConnected)
 				if h.OnConnected != nil {
 					h.OnConnected(tunnel.NewDCTunnel(dc, common.RTPBufSize, h.logFn))
 				}
@@ -477,14 +448,14 @@ func (h *VKHeadlessJoiner) initPC() {
 		h.logFn("headless: PC state: %s", state.String())
 		if state == webrtc.PeerConnectionStateFailed {
 			h.logFn("headless: ERROR: connection failed")
-			common.EmitStatusError("connection failed")
+			h.Status.EmitStatusError("connection failed")
 		} else if state == webrtc.PeerConnectionStateDisconnected {
 			h.logFn("headless: ERROR: connection lost")
-			common.EmitStatus(common.StatusTunnelLost)
+			h.Status.EmitStatus(common.StatusTunnelLost)
 		}
 		if mode == "video" && state == webrtc.PeerConnectionStateConnected && h.vp8tunnel == nil {
 			h.logFn("headless: === TUNNEL CONNECTED ===")
-			common.EmitStatus(common.StatusTunnelConnected)
+			h.Status.EmitStatus(common.StatusTunnelConnected)
 			h.vp8tunnel = tunnel.NewVP8DataTunnel(h.sampleTrack, h.logFn)
 			h.vp8tunnel.Start(25)
 			if h.OnConnected != nil {
@@ -495,7 +466,7 @@ func (h *VKHeadlessJoiner) initPC() {
 	if mode == "video" {
 		pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			h.logFn("headless: remote track: %s", track.Codec().MimeType)
-			go ReadTrack(track, h.vp8tunnel, h.logFn, "headless")
+			go h.ReadTrackFn(track, h.vp8tunnel, h.logFn, "headless")
 		})
 	}
 

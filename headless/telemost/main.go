@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -76,7 +77,6 @@ type Bridge struct {
 	subSeq    int
 	peers     map[string]string
 	readBuf   int
-	maxDCBuf  uint64
 }
 
 func tmRequest(method, path string, body interface{}, cookieStr string, cfg TMConfig) ([]byte, int, error) {
@@ -505,10 +505,9 @@ func (b *Bridge) initRelay() {
 
 	relay := NewSFURelay()
 	relay.readBufSize = b.readBuf
-	relay.maxDCBuf = b.maxDCBuf
 	relay.OnConnected = func(tun *tunnel.VP8DataTunnel) {
-		tunnel.NewRelayBridge(tun, "creator", b.readBuf, log.Printf)
-		fmt.Println("\n  TUNNEL CONNECTED\n")
+		tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
+		fmt.Print("\n  TUNNEL CONNECTED\n")
 	}
 	relay.OnPubICE = func(cand *webrtc.ICECandidate) {
 		if cand == nil {
@@ -635,20 +634,16 @@ func main() {
 	flag.Parse()
 
 	var readBuf int
-	var maxDCBuf uint64
 	var memLimit int64
 	switch *resources {
 	case "moderate":
 		readBuf = 16384
-		maxDCBuf = 1 << 20
 		memLimit = 64 << 20
 	case "default":
 		readBuf = 32768
-		maxDCBuf = 4 << 20
 		memLimit = 128 << 20
 	case "unlimited":
 		readBuf = common.RTPBufSize
-		maxDCBuf = 8 << 20
 		memLimit = 256 << 20
 	default:
 		log.Fatalf("[config] unknown resources mode: %s", *resources)
@@ -656,7 +651,8 @@ func main() {
 	if memLimit > 0 {
 		debug.SetMemoryLimit(memLimit)
 	}
-	log.Printf("[config] resources=%s read-buf=%d max-dc-buf=%d mem-limit=%d", *resources, readBuf, maxDCBuf, memLimit)
+	common.MaskingEnabled = true
+	log.Printf("[config] resources=%s read-buf=%d mem-limit=%d", *resources, readBuf, memLimit)
 
 	var cookieStr string
 	if *cookieString != "" {
@@ -664,7 +660,12 @@ func main() {
 	} else if *cookiesPath != "" {
 		cookieStr = common.LoadCookies(*cookiesPath)
 	} else {
-		log.Fatal("Either --cookies or --cookie-string is required")
+		fmt.Println("WAITING_FOR_COOKIES")
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil || strings.TrimSpace(line) == "" {
+			log.Fatal("No cookies received on stdin")
+		}
+		cookieStr = strings.TrimSpace(line)
 	}
 
 	log.Println("[config] Fetching live config from Telemost bundle...")
@@ -694,7 +695,6 @@ func main() {
 		cookieStr: cookieStr,
 		peers:     make(map[string]string),
 		readBuf:   readBuf,
-		maxDCBuf:  maxDCBuf,
 	}
 	bridge.run()
 }

@@ -8,8 +8,8 @@ import { IPC } from '../constants';
   getHookCode(tabId: string, url: string) {
     return ipcRenderer.invoke(IPC.GET_HOOK_CODE, tabId, url);
   },
-  setTunnelMode(tabId: string, mode: string) {
-    return ipcRenderer.invoke(IPC.SET_TUNNEL_MODE, tabId, mode);
+  setTunnelMode(tabId: string, mode: string, platform?: string) {
+    return ipcRenderer.invoke(IPC.SET_TUNNEL_MODE, tabId, mode, platform);
   },
   startRelay(tabId: string) {
     return ipcRenderer.invoke(IPC.START_RELAY, tabId);
@@ -37,6 +37,9 @@ import { IPC } from '../constants';
   },
   startHeadless(tabId: string, platform: string) {
     return ipcRenderer.invoke(IPC.START_HEADLESS, tabId, platform);
+  },
+  sendBotCallLink(tabId: string, link: string) {
+    return ipcRenderer.invoke(IPC.SEND_BOT_CALL_LINK, tabId, link);
   },
   onCloseBotTab(cb: (data: any) => void) {
     ipcRenderer.on(IPC.CLOSE_BOT_TAB, (_e, data) => cb(data));

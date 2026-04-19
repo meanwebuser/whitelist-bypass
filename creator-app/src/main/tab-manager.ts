@@ -188,6 +188,14 @@ export class TabManager {
     proc.stderr?.on('data', onData);
   }
 
+  sendBotCallLink(tabId: string, link: string): void {
+    if (!this.botTabIds.has(tabId) || !this._botManager) return;
+    const tab = this.tabs.get(tabId);
+    if (!tab || tab.peerId == null) return;
+    console.log(`[MAIN] Headless call link for bot tab ${tabId}:`, link);
+    this._botManager.sendMessage(tab.peerId, `Call created!\n${link}`);
+  }
+
   startRelay(tabId: string, tab: TabState): void {
     this.killRelay(tabId, tab);
     const port = tab.tunnelMode === TunnelMode.PionVideo ? tab.pionPort : tab.dcPort;
@@ -222,11 +230,12 @@ export class TabManager {
     }
     this.killRelay(tabId, tab);
     const binaryPath = isTelemost ? this.headlessTelemostPath : this.headlessVKPath;
-    const proc = spawn(binaryPath, ['--cookie-string', cookieStr, '--resources', 'default'], {
-      stdio: ['ignore', 'pipe', 'pipe'],
+    const proc = spawn(binaryPath, ['--resources', 'default'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     tab.relay = proc;
     this.attachProcessOutput(proc, tabId);
+    proc.stdin?.write(cookieStr + '\n');
     proc.on('close', (code) => {
       this.sendLog(tabId, `Headless exited with code ${code}`);
     });
@@ -246,31 +255,23 @@ export class TabManager {
 
   async loadHook(tabId: string, url: string, tab: TabState): Promise<string> {
     const isTelemost = url.includes('telemost.yandex');
-    const newPlatform = isTelemost ? Platform.Telemost : Platform.VK;
+    tab.platform = isTelemost ? Platform.Telemost : Platform.VK;
 
-    if (newPlatform !== tab.platform && tab.tunnelMode === TunnelMode.PionVideo) {
-      tab.platform = newPlatform;
-      this.killRelay(tabId, tab);
-      setTimeout(() => this.startRelay(tabId, tab), RELAY_RESTART_DELAY_MS);
-    } else {
-      tab.platform = newPlatform;
-    }
-
-    if (tab.tunnelMode === TunnelMode.PionVideo) {
+    if (isTelemost || tab.tunnelMode === TunnelMode.PionVideo) {
       const hookFile = isTelemost ? 'video-telemost.js' : 'video-vk.js';
       const hook = await fs.readFile(path.join(this.hooksDir, hookFile), 'utf8');
       return LOG_CAPTURE_SNIPPET + `window.PION_PORT=${tab.pionPort};window.IS_CREATOR=true;` + hook;
     }
 
-    const hookFile = isTelemost ? 'dc-creator-telemost.js' : 'dc-creator-vk.js';
-    const hook = await fs.readFile(path.join(this.hooksDir, hookFile), 'utf8');
+    const hook = await fs.readFile(path.join(this.hooksDir, 'dc-creator-vk.js'), 'utf8');
     return LOG_CAPTURE_SNIPPET + `window.WS_PORT=${tab.dcPort};` + hook;
   }
 
-  setTunnelMode(tabId: string, mode: TunnelMode): void {
-    const tab = this.tabs.get(tabId);
-    if (!tab) return;
+  async setTunnelMode(tabId: string, mode: TunnelMode, platform?: Platform): Promise<void> {
+    const tab = await this.getOrCreateTab(tabId);
     tab.tunnelMode = mode;
+    if (platform) tab.platform = platform;
+    if (mode === TunnelMode.HeadlessVK || mode === TunnelMode.HeadlessTelemost) return;
     this.killRelay(tabId, tab);
     setTimeout(() => this.startRelay(tabId, tab), RELAY_RESTART_DELAY_MS);
   }

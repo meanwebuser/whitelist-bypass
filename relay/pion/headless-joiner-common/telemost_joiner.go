@@ -1,11 +1,11 @@
-package pion
+package joiner
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -21,19 +21,22 @@ import (
 )
 
 const (
-	tmAPIBase    = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
-	tmOrigin     = "https://telemost.yandex.ru"
-	tmPingPeriod = 5 * time.Second
-	tmUserAgent  = "Mozilla/5.0 (X11; Linux aarch64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	TmAPIBase    = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
+	TmOrigin     = "https://telemost.yandex.ru"
+	TmPingPeriod = 5 * time.Second
 )
 
 type TelemostHeadlessJoiner struct {
 	logFn       func(string, ...any)
 	OnConnected func(tunnel.DataTunnel)
+	ResolveFn      ResolveFunc
+	Status         StatusEmitter
+	PCConfig       PeerConnectionConfigurer
+	AddTracks      AddTunnelTracksFunc
+	ReadTrackFn    ReadTrackFunc
 
 	joinLink    string
 	displayName string
-	tunnelMode  string
 
 	ws   *websocket.Conn
 	wsMu sync.Mutex
@@ -50,8 +53,6 @@ type TelemostHeadlessJoiner struct {
 
 	sampleTrack *webrtc.TrackLocalStaticSample
 	vp8tunnel   *tunnel.VP8DataTunnel
-	pubDC       *webrtc.DataChannel
-	dcReady     chan struct{}
 
 	httpClient *http.Client
 	instanceID string
@@ -64,86 +65,92 @@ type TelemostHeadlessJoiner struct {
 	iceServers  []webrtc.ICEServer
 }
 
-func NewTelemostHeadlessJoiner(logFn func(string, ...any)) *TelemostHeadlessJoiner {
-	if logFn == nil {
-		logFn = log.Printf
+func NewTelemostHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc, status StatusEmitter, pcConfig PeerConnectionConfigurer, addTracks AddTunnelTracksFunc, readTrackFn ReadTrackFunc) *TelemostHeadlessJoiner {
+	return &TelemostHeadlessJoiner{
+		logFn:       logFn,
+		ResolveFn:   resolveFn,
+		Status:      status,
+		PCConfig:    pcConfig,
+		AddTracks:   addTracks,
+		ReadTrackFn: readTrackFn,
+		instanceID:  uuid.New().String(),
 	}
-	return &TelemostHeadlessJoiner{logFn: logFn, instanceID: uuid.New().String(), dcReady: make(chan struct{})}
 }
 
-func (j *TelemostHeadlessJoiner) SetJoinLink(link string) {
-	j.joinLink = link
-}
-
-func (j *TelemostHeadlessJoiner) SetDisplayName(name string) {
-	j.displayName = name
-}
-
-func (j *TelemostHeadlessJoiner) Run() {
-	j.logFn("telemost-joiner: waiting for auth params on stdin...")
-	common.EmitStatus(common.StatusReady)
-	for {
-		line, err := readStdinLine()
-		if err != nil {
-			j.logFn("telemost-joiner: stdin closed: %v", err)
-			return
-		}
-		if strings.HasPrefix(line, "JOIN:") {
-			var params struct {
-				JoinLink    string `json:"joinLink"`
-				DisplayName string `json:"displayName"`
-				TunnelMode  string `json:"tunnelMode"`
-			}
-			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "JOIN:")), &params); err != nil {
-				j.logFn("telemost-joiner: failed to parse params: %v", err)
-				continue
-			}
-			j.joinLink = params.JoinLink
-			j.displayName = params.DisplayName
-			j.tunnelMode = params.TunnelMode
-			if j.displayName == "" {
-				j.displayName = "Joiner"
-			}
-			if j.tunnelMode == "" {
-				j.tunnelMode = "dc"
-			}
-			j.logFn("telemost-joiner: link=%s name=%s mode=%s", j.joinLink, j.displayName, j.tunnelMode)
-			common.EmitStatus(common.StatusConnecting)
-			break
-		}
+func (j *TelemostHeadlessJoiner) RunWithParams(jsonParams string) {
+	var params struct {
+		JoinLink    string `json:"joinLink"`
+		DisplayName string `json:"displayName"`
 	}
+	if err := json.Unmarshal([]byte(jsonParams), &params); err != nil {
+		j.logFn("telemost-joiner: failed to parse params: %v", err)
+		j.Status.EmitStatusError("bad params: " + err.Error())
+		return
+	}
+	j.joinLink = params.JoinLink
+	j.displayName = params.DisplayName
+	if j.displayName == "" {
+		j.displayName = "Joiner"
+	}
+	j.logFn("telemost-joiner: link=%s name=%s mode=video", j.joinLink, j.displayName)
+	j.Status.EmitStatus(common.StatusConnecting)
 
 	if err := j.getConnection(); err != nil {
 		j.logFn("telemost-joiner: ERROR: %v", err)
-		common.EmitStatusError(err.Error())
+		j.Status.EmitStatusError(err.Error())
 		return
 	}
 
 	j.connectAndRun()
 }
 
-var resolvingTransport = &http.Transport{
-	DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-		host, port, _ := net.SplitHostPort(addr)
-		resolvedIP, err := requestResolve(host)
-		if err != nil {
-			return nil, err
-		}
-		return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, resolvedIP+":"+port)
-	},
+func (j *TelemostHeadlessJoiner) Close() {
+	j.wsMu.Lock()
+	ws := j.ws
+	j.ws = nil
+	j.wsMu.Unlock()
+	if ws != nil {
+		ws.Close()
+	}
+	if j.vp8tunnel != nil {
+		j.vp8tunnel.Stop()
+	}
+	if j.subPC != nil {
+		j.subPC.Close()
+	}
+	if j.pubPC != nil {
+		j.pubPC.Close()
+	}
+}
+
+func (j *TelemostHeadlessJoiner) makeHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, _ := net.SplitHostPort(addr)
+				resolvedIP, err := j.ResolveFn(host)
+				if err != nil {
+					return nil, err
+				}
+				return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, resolvedIP+":"+port)
+			},
+		},
+	}
 }
 
 func (j *TelemostHeadlessJoiner) tmRequest(method, path string) ([]byte, int, error) {
 	if j.httpClient == nil {
-		j.httpClient = &http.Client{Timeout: 15 * time.Second, Transport: resolvingTransport}
+		j.httpClient = j.makeHTTPClient()
 	}
-	req, err := http.NewRequest(method, tmAPIBase+path, nil)
+	req, err := http.NewRequest(method, TmAPIBase+path, nil)
 	if err != nil {
 		return nil, 0, err
 	}
-	req.Header.Set("User-Agent", tmUserAgent)
-	req.Header.Set("Origin", tmOrigin)
-	req.Header.Set("Referer", tmOrigin+"/")
+	req.Header.Set("User-Agent", common.UserAgent)
+	req.Header.Set("Origin", TmOrigin)
+	req.Header.Set("Referer", TmOrigin+"/")
 	req.Header.Set("Client-Instance-Id", j.instanceID)
 	resp, err := j.httpClient.Do(req)
 	if err != nil {
@@ -164,12 +171,12 @@ func (j *TelemostHeadlessJoiner) getConnection() error {
 
 	j.logFn("telemost-joiner: getting connection for %s", j.joinLink)
 
-	r, status, err := j.tmRequest("GET", connPath)
+	responseBody, status, err := j.tmRequest("GET", connPath)
 	if err != nil {
 		return fmt.Errorf("get connection: %w", err)
 	}
 	if status != 200 {
-		return fmt.Errorf("get connection: status %d: %s", status, string(r))
+		return fmt.Errorf("get connection: status %d: %s", status, string(responseBody))
 	}
 
 	var initial struct {
@@ -178,7 +185,7 @@ func (j *TelemostHeadlessJoiner) getConnection() error {
 			CheckInterval int `json:"conference_check_access_interval_ms"`
 		} `json:"client_configuration"`
 	}
-	json.Unmarshal(r, &initial)
+	json.Unmarshal(responseBody, &initial)
 
 	if initial.ConnectionType == "WAITING_ROOM" {
 		interval := initial.ClientConfig.CheckInterval
@@ -188,14 +195,14 @@ func (j *TelemostHeadlessJoiner) getConnection() error {
 		j.logFn("telemost-joiner: in waiting room, polling every %dms...", interval)
 		for {
 			time.Sleep(time.Duration(interval) * time.Millisecond)
-			r, status, err = j.tmRequest("GET", connPath)
+			responseBody, status, err = j.tmRequest("GET", connPath)
 			if err != nil {
 				return fmt.Errorf("waiting room poll: %w", err)
 			}
 			if status != 200 {
 				return fmt.Errorf("waiting room poll: status %d", status)
 			}
-			json.Unmarshal(r, &initial)
+			json.Unmarshal(responseBody, &initial)
 			if initial.ConnectionType != "WAITING_ROOM" {
 				j.logFn("telemost-joiner: admitted!")
 				break
@@ -213,9 +220,9 @@ func (j *TelemostHeadlessJoiner) getConnection() error {
 			ICEServers     json.RawMessage `json:"ice_servers"`
 		} `json:"client_configuration"`
 	}
-	json.Unmarshal(r, &conn)
+	json.Unmarshal(responseBody, &conn)
 	if conn.ClientConfig.MediaServerURL == "" {
-		return fmt.Errorf("empty media_server_url: %s", string(r))
+		return fmt.Errorf("empty media_server_url: %s", string(responseBody))
 	}
 
 	j.peerID = conn.PeerID
@@ -295,7 +302,7 @@ func (j *TelemostHeadlessJoiner) sendHello() {
 				"subscriberOfferAsyncAck":      {"SUBSCRIBER_OFFER_ASYNC_ACK_DISABLED", "SUBSCRIBER_OFFER_ASYNC_ACK_ENABLED"},
 				"subscriberDtlsPassiveMode":    {"SUBSCRIBER_DTLS_PASSIVE_MODE_DISABLED", "SUBSCRIBER_DTLS_PASSIVE_MODE_ENABLED"},
 			},
-			"sdkInfo":             map[string]interface{}{"implementation": "browser", "version": "5.27.0", "userAgent": tmUserAgent, "hwConcurrency": 8},
+			"sdkInfo":             map[string]interface{}{"implementation": "browser", "version": "5.27.0", "userAgent": common.UserAgent, "hwConcurrency": 8},
 			"sdkInitializationId": uuid.New().String(),
 			"disablePublisher": false, "disableSubscriber": false, "disableSubscriberAudio": false,
 		},
@@ -304,12 +311,12 @@ func (j *TelemostHeadlessJoiner) sendHello() {
 }
 
 func (j *TelemostHeadlessJoiner) sendICE(cand *webrtc.ICECandidate, target string, pcSeq int) {
-	c := cand.ToJSON()
+	candidate := cand.ToJSON()
 	j.wsSend(map[string]interface{}{
 		"uid": uuid.New().String(),
 		"webrtcIceCandidate": map[string]interface{}{
-			"candidate": c.Candidate, "sdpMid": *c.SDPMid,
-			"sdpMlineIndex": *c.SDPMLineIndex, "target": target, "pcSeq": pcSeq,
+			"candidate": candidate.Candidate, "sdpMid": *candidate.SDPMid,
+			"sdpMlineIndex": *candidate.SDPMLineIndex, "target": target, "pcSeq": pcSeq,
 		},
 	})
 }
@@ -318,11 +325,12 @@ func (j *TelemostHeadlessJoiner) initPC() {
 	config := webrtc.Configuration{ICEServers: j.iceServers}
 
 	settingEngine := webrtc.SettingEngine{}
-	settingEngine.SetNet(&AndroidNet{})
 	settingEngine.DetachDataChannels()
+	if j.PCConfig != nil {
+		j.PCConfig.ConfigureSettingEngine(&settingEngine)
+	}
 	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
 
-	// Subscriber PC - receives data from SFU
 	subPC, err := api.NewPeerConnection(config)
 	if err != nil {
 		j.logFn("telemost-joiner: ERROR: create sub PC: %v", err)
@@ -340,27 +348,15 @@ func (j *TelemostHeadlessJoiner) initPC() {
 		j.logFn("telemost-joiner: sub PC state: %s", state.String())
 		if state == webrtc.PeerConnectionStateFailed {
 			j.logFn("telemost-joiner: ERROR: subscriber connection failed")
-			common.EmitStatusError("subscriber connection failed")
-		}
-	})
-
-	subPC.OnDataChannel(func(dc *webrtc.DataChannel) {
-		j.logFn("telemost-joiner: sub incoming DC: label=%s id=%d", dc.Label(), dc.ID())
-		if dc.Label() == "sharing" {
-			j.setupIncomingDC(dc)
+			j.Status.EmitStatusError("subscriber connection failed")
 		}
 	})
 
 	subPC.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		j.logFn("telemost-joiner: sub remote track: %s", track.Codec().MimeType)
-		if j.tunnelMode == "video" {
-			go ReadTrack(track, j.vp8tunnel, j.logFn, "telemost-joiner")
-		} else {
-			go drainTrack(track)
-		}
+		go j.ReadTrackFn(track, j.vp8tunnel, j.logFn, "telemost-joiner")
 	})
 
-	// Publisher PC - sends data to SFU
 	pubPC, err := api.NewPeerConnection(config)
 	if err != nil {
 		j.logFn("telemost-joiner: ERROR: create pub PC: %v", err)
@@ -369,8 +365,7 @@ func (j *TelemostHeadlessJoiner) initPC() {
 	j.pubPC = pubPC
 	j.pubSeq = 1
 
-	j.sampleTrack = AddTunnelTracks(pubPC, j.logFn, "telemost-joiner [pub]")
-	j.createSharingDC()
+	j.sampleTrack = j.AddTracks(pubPC, j.logFn, "telemost-joiner [pub]")
 
 	pubPC.OnICECandidate(func(cand *webrtc.ICECandidate) {
 		if cand != nil {
@@ -380,9 +375,9 @@ func (j *TelemostHeadlessJoiner) initPC() {
 
 	pubPC.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		j.logFn("telemost-joiner: pub PC state: %s", state.String())
-		if state == webrtc.PeerConnectionStateConnected && j.tunnelMode == "video" && j.vp8tunnel == nil {
+		if state == webrtc.PeerConnectionStateConnected && j.vp8tunnel == nil {
 			j.logFn("telemost-joiner: === VP8 TUNNEL CONNECTED ===")
-			common.EmitStatus(common.StatusTunnelConnected)
+			j.Status.EmitStatus(common.StatusTunnelConnected)
 			j.vp8tunnel = tunnel.NewVP8DataTunnel(j.sampleTrack, j.logFn)
 			j.vp8tunnel.Start(25)
 			if j.OnConnected != nil {
@@ -391,105 +386,7 @@ func (j *TelemostHeadlessJoiner) initPC() {
 		}
 	})
 
-	j.logFn("telemost-joiner: sub+pub PCs created with %d ICE servers, mode=%s", len(j.iceServers), j.tunnelMode)
-}
-
-func (j *TelemostHeadlessJoiner) createSharingDC() {
-	ordered := true
-	dc, err := j.pubPC.CreateDataChannel("sharing", &webrtc.DataChannelInit{Ordered: &ordered})
-	if err != nil {
-		j.logFn("telemost-joiner: failed to create sharing DC: %v", err)
-		return
-	}
-	j.pubDC = dc
-	dc.OnOpen(func() {
-		j.logFn("telemost-joiner: pub sharing DC open")
-		if j.tunnelMode == "dc" {
-			go func() {
-				for {
-					select {
-					case <-j.dcReady:
-						return
-					default:
-					}
-					if dc.ReadyState() != webrtc.DataChannelStateOpen {
-						return
-					}
-					j.logFn("telemost-joiner: sending tunnel:ping on pub DC")
-					if err := dc.SendText("tunnel:ping"); err != nil {
-						j.logFn("telemost-joiner: tunnel:ping send error: %v", err)
-					}
-					select {
-					case <-j.dcReady:
-						return
-					case <-time.After(5 * time.Second):
-					}
-				}
-			}()
-		}
-	})
-	dc.OnClose(func() {
-		j.logFn("telemost-joiner: pub sharing DC closed")
-	})
-	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		if msg.IsString {
-			s := string(msg.Data)
-			if s == "tunnel:ping" {
-				dc.SendText("tunnel:pong")
-				return
-			}
-		}
-	})
-}
-
-func (j *TelemostHeadlessJoiner) setupIncomingDC(dc *webrtc.DataChannel) {
-	j.logFn("telemost-joiner: incoming sharing DC found")
-
-	dc.OnOpen(func() {
-		j.logFn("telemost-joiner: incoming sharing DC open")
-		if j.tunnelMode == "dc" {
-			go j.waitForPong(dc)
-		}
-	})
-}
-
-func (j *TelemostHeadlessJoiner) waitForPong(dc *webrtc.DataChannel) {
-	raw, err := dc.Detach()
-	if err != nil {
-		j.logFn("telemost-joiner: incoming DC detach failed: %v", err)
-		return
-	}
-	buf := make([]byte, 1024)
-	for {
-		n, isString, err := raw.ReadDataChannel(buf)
-		if err != nil {
-			j.logFn("telemost-joiner: incoming DC read error: %v", err)
-			return
-		}
-		if isString {
-			s := string(buf[:n])
-			j.logFn("telemost-joiner: incoming DC text: %s", s)
-			if s == "tunnel:pong" {
-				close(j.dcReady)
-				j.logFn("telemost-joiner: === DC TUNNEL CONNECTED ===")
-				common.EmitStatus(common.StatusTunnelConnected)
-				dcTunnel := tunnel.NewChunkedDCTunnel(raw, j.pubDC, common.DCBufSize, j.logFn)
-				if j.OnConnected != nil {
-					j.OnConnected(dcTunnel)
-				}
-				return
-			}
-		}
-	}
-}
-
-func drainTrack(track *webrtc.TrackRemote) {
-	buf := make([]byte, 4096)
-	for {
-		if _, _, err := track.Read(buf); err != nil {
-			return
-		}
-	}
+	j.logFn("telemost-joiner: sub+pub PCs created with %d ICE servers", len(j.iceServers))
 }
 
 func (j *TelemostHeadlessJoiner) sendPubOffer() {
@@ -504,7 +401,7 @@ func (j *TelemostHeadlessJoiner) sendPubOffer() {
 	}
 	j.pubPC.SetLocalDescription(offer)
 
-	audioMid, videoMid := tmParseMids(offer.SDP)
+	audioMid, videoMid := TmParseMids(offer.SDP)
 	j.logFn("telemost-joiner: -> publisherSdpOffer pcSeq=%d audioMid=%s videoMid=%s", j.pubSeq, audioMid, videoMid)
 
 	var tracks []map[string]interface{}
@@ -533,8 +430,8 @@ func (j *TelemostHeadlessJoiner) handlePubAnswer(sdp string) {
 		return
 	}
 	j.pubRemoteSet = true
-	for _, c := range j.pubPending {
-		j.pubPC.AddICECandidate(c)
+	for _, candidate := range j.pubPending {
+		j.pubPC.AddICECandidate(candidate)
 	}
 	j.pubPending = nil
 }
@@ -569,8 +466,8 @@ func (j *TelemostHeadlessJoiner) handleSubOffer(sdp string, pcSeq int) {
 	}
 	j.subRemoteSet = true
 
-	for _, c := range j.subPending {
-		j.subPC.AddICECandidate(c)
+	for _, candidate := range j.subPending {
+		j.subPC.AddICECandidate(candidate)
 	}
 	j.subPending = nil
 
@@ -671,11 +568,11 @@ func (j *TelemostHeadlessJoiner) handleMessage(raw []byte) {
 				dm, _ := d.(map[string]interface{})
 				pid, _ := dm["id"].(string)
 				if pid != "" && pid != j.peerID {
-					name := ""
+					participantName := ""
 					if meta, ok := dm["meta"].(map[string]interface{}); ok {
-						name, _ = meta["name"].(string)
+						participantName, _ = meta["name"].(string)
 					}
-					j.logFn("telemost-joiner: participant: %s (%s)", name, pid)
+					j.logFn("telemost-joiner: participant: %s (%s)", participantName, pid)
 				}
 			}
 		}
@@ -710,7 +607,7 @@ func (j *TelemostHeadlessJoiner) parseICEServersFromHello(sh map[string]interfac
 		if u, ok := sm["urls"].([]interface{}); ok {
 			for _, v := range u {
 				if vs, ok := v.(string); ok {
-					urls = append(urls, fixICEURL(vs))
+					urls = append(urls, common.FixICEURL(vs))
 				}
 			}
 		}
@@ -724,14 +621,14 @@ func (j *TelemostHeadlessJoiner) parseICEServersFromHello(sh map[string]interfac
 	resolved := make(map[string]string)
 	for i, s := range iceServers {
 		for k, u := range s.URLs {
-			host := extractICEHost(u)
+			host := common.ExtractICEHost(u)
 			if host == "" || net.ParseIP(host) != nil {
 				continue
 			}
 			ip, ok := resolved[host]
 			if !ok {
 				var err error
-				ip, err = requestResolve(host)
+				ip, err = j.ResolveFn(host)
 				if err != nil {
 					j.logFn("telemost-joiner: resolve ICE host %s failed: %s", common.MaskAddr(host), common.MaskError(err))
 					continue
@@ -750,29 +647,52 @@ func (j *TelemostHeadlessJoiner) parseICEServersFromHello(sh map[string]interfac
 }
 
 func (j *TelemostHeadlessJoiner) connectAndRun() {
+	parsed, err := url.Parse(j.mediaURL)
+	if err != nil {
+		j.logFn("telemost-joiner: ERROR: bad media URL: %s", common.MaskError(err))
+		j.Status.EmitStatusError("bad media URL")
+		return
+	}
+
+	hostname := parsed.Hostname()
+	resolvedIP, err := j.ResolveFn(hostname)
+	if err != nil {
+		j.logFn("telemost-joiner: ERROR: DNS resolve failed: %s", common.MaskError(err))
+		j.Status.EmitStatusError("DNS resolve failed")
+		return
+	}
+	j.logFn("telemost-joiner: resolved %s -> %s", common.MaskAddr(hostname), common.MaskAddr(resolvedIP))
+
 	wsHeader := http.Header{}
-	wsHeader.Set("User-Agent", tmUserAgent)
-	wsHeader.Set("Origin", tmOrigin)
+	wsHeader.Set("User-Agent", common.UserAgent)
+	wsHeader.Set("Origin", TmOrigin)
 
 	j.logFn("telemost-joiner: connecting to %s", j.mediaURL)
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
-		NetDialContext:   resolvingTransport.DialContext,
+		WriteBufferSize:  65536,
+		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true, ServerName: hostname},
+		NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			_, port, _ := net.SplitHostPort(addr)
+			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, resolvedIP+":"+port)
+		},
 	}
 	ws, _, err := dialer.Dial(j.mediaURL, wsHeader)
 	if err != nil {
 		j.logFn("telemost-joiner: ERROR: ws connect: %s", common.MaskError(err))
-		common.EmitStatusError("ws connect failed")
+		j.Status.EmitStatusError("ws connect failed")
 		return
 	}
+	j.wsMu.Lock()
 	j.ws = ws
+	j.wsMu.Unlock()
 	j.logFn("telemost-joiner: ws connected")
 
 	j.sendHello()
 
 	stopPing := make(chan struct{})
 	go func() {
-		ticker := time.NewTicker(tmPingPeriod)
+		ticker := time.NewTicker(TmPingPeriod)
 		defer ticker.Stop()
 		for {
 			select {
@@ -804,41 +724,5 @@ func (j *TelemostHeadlessJoiner) connectAndRun() {
 		j.pubPC.Close()
 	}
 	j.logFn("telemost-joiner: disconnected")
-}
-
-func extractICEHost(iceURL string) string {
-	idx := strings.Index(iceURL, ":")
-	if idx < 0 {
-		return ""
-	}
-	rest := iceURL[idx+1:]
-	params := strings.Index(rest, "?")
-	if params >= 0 {
-		rest = rest[:params]
-	}
-	host, _, err := net.SplitHostPort(rest)
-	if err != nil {
-		return rest
-	}
-	return host
-}
-
-func tmParseMids(sdp string) (audioMid, videoMid string) {
-	var media string
-	for _, line := range strings.Split(sdp, "\r\n") {
-		if strings.HasPrefix(line, "m=audio") {
-			media = "audio"
-		} else if strings.HasPrefix(line, "m=video") {
-			media = "video"
-		}
-		if strings.HasPrefix(line, "a=mid:") {
-			mid := strings.TrimPrefix(line, "a=mid:")
-			if media == "audio" && audioMid == "" {
-				audioMid = mid
-			} else if media == "video" && videoMid == "" {
-				videoMid = mid
-			}
-		}
-	}
-	return
+	j.Status.EmitStatus(common.StatusTunnelLost)
 }

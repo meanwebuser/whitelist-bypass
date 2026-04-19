@@ -8,14 +8,13 @@ Step-by-step setup guide (in Russian): [docs/SETUP.md](docs/SETUP.md)
 
 ## How it works
 
-Two tunnel modes are available: **DC** (DataChannel) and **Pion Video** (VP8 data encoding).
+Two tunnel modes are available: **DC** (DataChannel) and **Video** (VP8 data encoding).
 
 ### DC mode
 
 Browser-based. JavaScript hooks intercept RTCPeerConnection on the call page, create a DataChannel alongside the call's built-in channels, and use it as a bidirectional data pipe.
 
 - **VK Call** - Negotiated DataChannel id:2 (alongside VK's animoji channel id:1). Data flows through VK's SFU
-- **Telemost** - Non-negotiated DataChannel labeled "sharing" (matching real screen sharing traffic), with SDP renegotiation via signaling WebSocket. SFU architecture
 
 ```
 Joiner (censored, Android)                Creator (free internet, desktop)
@@ -41,7 +40,7 @@ DataChannel  <----- SFU ----->   DataChannel
                                         Internet
 ```
 
-### Pion Video mode
+### Video mode
 
 Go-based. Pion (Go WebRTC library) connects directly to the platform's TURN/SFU servers, bypassing the browser's WebRTC stack entirely. Data is encoded inside VP8 video frames.
 
@@ -102,7 +101,7 @@ Prebuilt binaries are available on [GitHub Releases](../../releases).
 Download and run the Electron app from [GitHub Releases](../../releases). It bundles the Go relay automatically.
 
 1. Open the app
-2. Select tunnel mode (DC or Pion Video)
+2. Select tunnel mode (DC or Video)
 3. Click "VK" or "Telemost"
 4. Log in, **create a new call** from the app
 5. Copy the join link, send it to the joiner
@@ -112,7 +111,7 @@ Download and run the Electron app from [GitHub Releases](../../releases). It bun
 ### Joiner side (censored, Android)
 
 1. Download and install `whitelist-bypass.apk` from [GitHub Releases](../../releases)
-2. Select tunnel mode (DC or Pion Video)
+2. Select tunnel mode (DC or Video)
 3. Paste the call link and tap GO
 4. The app joins the call, establishes the tunnel, starts VPN
 5. All device traffic flows through the call
@@ -131,15 +130,29 @@ Download and run the Electron app from [GitHub Releases](../../releases). It bun
 ### Build scripts
 
 ```sh
-# Build Go .aar and Pion relay for Android (includes hooks copy)
-./build-go.sh
+# Full release build (Android APK + Creator app + Headless creators)
+./make-release.sh
 
-# Build Android APK -> prebuilts/whitelist-bypass.apk
-./build-app.sh
-
-# Build Electron apps for all platforms -> prebuilts/
-./build-creator.sh
+# Individual builds
+./build-go.sh          # Go .aar, relay binary, headless creators
+./copy-hooks.sh        # Copy JS hooks to android assets
+./build-app.sh         # Android APK
+./build-headless.sh    # Headless creator binaries only
+./build-creator.sh     # Creator Electron app (all platforms)
+./build-ios.sh         # Go .xcframework for iOS
 ```
+
+### iOS
+
+Requires Xcode and macOS.
+
+```sh
+./build-ios.sh
+```
+
+This builds `Mobile.xcframework` into `ios-proxy-app/`. Then open `ios-proxy-app/whitelist-bypass-proxy.xcodeproj` in Xcode, select your signing team in Signing & Capabilities, and build to device.
+
+Before committing, run `ios-proxy-app/strip-signing.sh` to remove your Apple developer team ID from the project.
 
 Output in `prebuilts/`:
 
@@ -150,6 +163,10 @@ Output in `prebuilts/`:
 | `WhitelistBypass Creator-*-ia32.exe` | Windows x86 |
 | `WhitelistBypass Creator-*.AppImage` | Linux x64 |
 | `whitelist-bypass.apk` | Android |
+| `headless-vk-creator-linux-x64` | Linux x64 |
+| `headless-vk-creator-linux-ia32` | Linux x86 |
+| `headless-telemost-creator-linux-x64` | Linux x64 |
+| `headless-telemost-creator-linux-ia32` | Linux x86 |
 
 ### Docker build
 

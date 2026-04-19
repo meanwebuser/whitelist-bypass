@@ -1,11 +1,18 @@
-package pion
+package common
 
 import (
 	"fmt"
 	"net"
+	"os"
 
 	"github.com/pion/transport/v4"
 )
+
+func init() {
+	if _, err := os.Stat("/system/etc/security/cacerts"); err == nil {
+		os.Setenv("SSL_CERT_DIR", "/system/etc/security/cacerts")
+	}
+}
 
 // AndroidNet implements transport.Net without netlink interface enumeration
 type AndroidNet struct {

@@ -116,7 +116,7 @@ export interface RelayLogData {
 export interface Bridge {
   onRelayLog(cb: (tabId: string, msg: string) => void): void;
   getHookCode(tabId: string, url: string): Promise<string>;
-  setTunnelMode(tabId: string, mode: string): Promise<void>;
+  setTunnelMode(tabId: string, mode: string, platform?: string): Promise<void>;
   startRelay(tabId: string): Promise<void>;
   closeTab(tabId: string): Promise<void>;
   startBot(settings: BotSettings): Promise<void>;
@@ -126,5 +126,6 @@ export interface Bridge {
   onBotError(cb: (msg: string) => void): void;
   getCookies(domain: string): Promise<Electron.Cookie[]>;
   startHeadless(tabId: string, platform: string): Promise<void>;
+  sendBotCallLink(tabId: string, link: string): Promise<void>;
   onCloseBotTab(cb: (data: { tabId: string }) => void): void;
 }

@@ -1,6 +1,6 @@
 //go:build !android
 
-package mobile
+package androidbind
 
 import "fmt"
 

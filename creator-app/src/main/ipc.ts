@@ -22,9 +22,9 @@ export function registerIpcHandlers(tabManager: TabManager): void {
     return fs.readFile(filePath, 'utf8');
   });
 
-  ipcMain.handle(IPC.SET_TUNNEL_MODE, (_e, tabId: string, mode: string) => {
+  ipcMain.handle(IPC.SET_TUNNEL_MODE, (_e, tabId: string, mode: string, platform?: string) => {
     if (!Object.values(TunnelMode).includes(mode as TunnelMode)) return;
-    tabManager.setTunnelMode(tabId, mode as TunnelMode);
+    tabManager.setTunnelMode(tabId, mode as TunnelMode, platform as Platform | undefined);
   });
 
   ipcMain.handle(IPC.START_RELAY, async (_e, tabId: string) => {
@@ -88,6 +88,10 @@ export function registerIpcHandlers(tabManager: TabManager): void {
       tabManager.botManager = null;
     }
     return { success: true };
+  });
+
+  ipcMain.handle(IPC.SEND_BOT_CALL_LINK, (_e, tabId: string, link: string) => {
+    tabManager.sendBotCallLink(tabId, link);
   });
 
   ipcMain.handle(IPC.GET_COOKIES, async (_e, domain: string) => {

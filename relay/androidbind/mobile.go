@@ -1,15 +1,13 @@
-package mobile
+package androidbind
 
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"whitelist-bypass/relay/common"
@@ -187,23 +185,6 @@ func StartJoiner(wsPort, socksPort int, socksUser, socksPass string, cb LogCallb
 	activeJoiner.Unlock()
 
 	return j.listenSOCKS(socksLn)
-}
-
-func StartCreator(wsPort int, cb LogCallback) error {
-	logCb = cb
-	c := &creatorRelay{
-		conns: sync.Map{},
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", c.handleWS)
-
-	wsAddr := fmt.Sprintf("127.0.0.1:%d", wsPort)
-	ln, err := net.Listen("tcp", wsAddr)
-	if err != nil {
-		return fmt.Errorf("dc-creator: ws listen %s: %w", wsAddr, err)
-	}
-	logMsg("dc-creator: WebSocket on %s", wsAddr)
-	return http.Serve(ln, mux)
 }
 
 type joinerRelay struct {
@@ -487,122 +468,3 @@ func (j *joinerRelay) handleSOCKS(conn net.Conn) {
 	}()
 }
 
-type creatorRelay struct {
-	writer *wsWriter
-	conns  sync.Map
-}
-
-func (c *creatorRelay) handleWS(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		logMsg("dc-creator: ws upgrade error: %v", err)
-		return
-	}
-	c.writer = newWSWriter(ws)
-	logMsg("dc-creator: browser connected via WebSocket")
-	for {
-		_, msg, err := ws.ReadMessage()
-		if err != nil {
-			logMsg("dc-creator: ws read error: %v", err)
-			return
-		}
-		connID, msgType, payload := decodeFrame(msg)
-		c.handleMessage(connID, msgType, payload)
-	}
-}
-
-func (c *creatorRelay) handleMessage(connID uint32, msgType byte, payload []byte) {
-	switch msgType {
-	case msgConnect:
-		go c.connect(connID, string(payload))
-	case msgUDP:
-		go c.handleUDP(connID, payload)
-	case msgData:
-		if val, ok := c.conns.Load(connID); ok {
-			if conn, ok := val.(net.Conn); ok {
-				conn.Write(payload)
-			}
-		}
-	case msgClose:
-		if val, ok := c.conns.LoadAndDelete(connID); ok {
-			if conn, ok := val.(net.Conn); ok {
-				conn.Close()
-			}
-		}
-	}
-}
-
-func (c *creatorRelay) send(connID uint32, msgType byte, payload []byte) {
-	w := c.writer
-	if w == nil {
-		return
-	}
-	bufp := framePool.Get().(*[]byte)
-	buf := *bufp
-	n := encodeFrameInto(buf, connID, msgType, payload)
-	w.send(buf[:n])
-	framePool.Put(bufp)
-}
-
-func (c *creatorRelay) handleUDP(connID uint32, payload []byte) {
-	if len(payload) < 2 {
-		return
-	}
-	addrLen := int(payload[0])
-	if len(payload) < 1+addrLen {
-		return
-	}
-	addr := string(payload[1 : 1+addrLen])
-	data := payload[1+addrLen:]
-
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		logMsg("dc-creator: UDP resolve %s failed: %s", common.MaskAddr(addr), common.MaskError(err))
-		return
-	}
-	conn, err := net.DialUDP("udp", nil, udpAddr)
-	if err != nil {
-		logMsg("dc-creator: UDP dial %s failed: %s", common.MaskAddr(addr), common.MaskError(err))
-		return
-	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
-	_, err = conn.Write(data)
-	if err != nil {
-		return
-	}
-	buf := make([]byte, common.UDPBufSize)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return
-	}
-	c.send(connID, msgUDPReply, buf[:n])
-}
-
-func (c *creatorRelay) connect(connID uint32, addr string) {
-	logMsg("dc-creator: CONNECT %d -> %s", connID, common.MaskAddr(addr))
-	conn, err := net.DialTimeout("tcp", addr, 10e9)
-	if err != nil {
-		logMsg("dc-creator: CONNECT %d failed: %s", connID, common.MaskError(err))
-		c.send(connID, msgConnectErr, []byte(common.MaskError(err)))
-		return
-	}
-	c.conns.Store(connID, conn)
-	c.send(connID, msgConnectOK, nil)
-	logMsg("dc-creator: CONNECTED %d -> %s", connID, common.MaskAddr(addr))
-	buf := make([]byte, readBufSize)
-	for {
-		n, err := conn.Read(buf)
-		if n > 0 {
-			c.send(connID, msgData, buf[:n])
-		}
-		if err != nil {
-			if err != io.EOF {
-				logMsg("dc-creator: conn %d read error: %s", connID, common.MaskError(err))
-			}
-			break
-		}
-	}
-	c.send(connID, msgClose, nil)
-	c.conns.Delete(connID)
-}

@@ -55,7 +55,7 @@ class JsHookJoinFragment : Fragment() {
 
     private val hooks = mapOf(
         HookKey(false, CallPlatform.VK) to lazy { loadAsset("dc-joiner-vk.js") },
-        HookKey(false, CallPlatform.TELEMOST) to lazy { loadAsset("dc-joiner-telemost.js") },
+        HookKey(false, CallPlatform.TELEMOST) to lazy { loadAsset("video-telemost.js") },
         HookKey(true, CallPlatform.VK) to lazy { loadAsset("video-vk.js") },
         HookKey(true, CallPlatform.TELEMOST) to lazy { loadAsset("video-telemost.js") },
     )
@@ -162,7 +162,7 @@ class JsHookJoinFragment : Fragment() {
                     }
                     val platform = CallPlatform.fromUrl(url)
                     host?.appendLog("Page loaded, injecting hook for ${maskUrl(url)}")
-                    view.evaluateJavascript("window.WS_PORT=${mobile.Mobile.activeWsPort()}", null)
+                    view.evaluateJavascript("window.WS_PORT=${androidbind.Androidbind.activeWsPort()}", null)
                     view.evaluateJavascript("window.PION_PORT=${Ports.PION_SIGNALING}", null)
                     view.evaluateJavascript(hookForPlatform(platform), null)
                     if (Prefs.autoclickEnabled) {
