@@ -1,6 +1,6 @@
 # Быстрый старт
 
-Скачайте нужные файлы из [GitHub Releases](../../releases).
+Скачайте нужные файлы из [GitHub Releases](https://github.com/kulikov0/whitelist-bypass/releases).
 
 ## Содержание
 
