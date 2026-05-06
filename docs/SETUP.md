@@ -34,6 +34,8 @@
 
 Если нужно запустить headless на сервере без GUI - экспортируйте куки кнопками **VK Cookies** / **Yandex Cookies** и используйте их с headless бинарниками (см. README).
 
+> Запуск десктопного Creator на VPS без графического окружения через XPRA - см. [docs/vps/SETUP.md](vps/SETUP.md).
+
 ## Creator (headless, сервер)
 
 Для запуска Creator на сервере без GUI.
