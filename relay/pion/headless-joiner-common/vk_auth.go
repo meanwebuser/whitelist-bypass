@@ -333,7 +333,7 @@ func fetchVKConfig(httpGet func(string) ([]byte, error), logFn func(string, ...a
 	chunksBase := bundleURL[:strings.LastIndex(bundleURL, "core_spa_vk.")] + "chunks/"
 
 	cfg := &vkConfig{}
-	if m := regexp.MustCompile(`[,;]u=(\d{7,8}),_=\d{7,8},p=\d{8,9}`).FindStringSubmatch(bundleStr); m != nil {
+	if m := regexp.MustCompile(`[,;]u=(\d{7,8}),[a-z]=\d{7,9}`).FindStringSubmatch(bundleStr); m != nil {
 		cfg.AppID = m[1]
 	} else {
 		return nil, fmt.Errorf("appID not found")
