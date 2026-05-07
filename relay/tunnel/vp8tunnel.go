@@ -19,7 +19,8 @@ var vp8Interframe = []byte{
 	177, 1, 0, 8, 17, 24, 0, 24, 0, 24, 88, 47, 244, 0, 8, 0, 0,
 }
 
-const DataFrameMarker = 0xFF
+const DataFrameMarker = 0xCD
+const dataHeaderLen = 17 + 1 + 4 // vp8Interframe + marker + uint32 length
 
 type VP8DataTunnel struct {
 	track      *webrtc.TrackLocalStaticSample
@@ -53,10 +54,11 @@ func (t *VP8DataTunnel) buildFrame(data []byte) []byte {
 		}
 		return vp8Interframe
 	}
-	frame := make([]byte, 1+4+len(data))
-	frame[0] = DataFrameMarker
-	binary.BigEndian.PutUint32(frame[1:5], uint32(len(data)))
-	copy(frame[5:], data)
+	frame := make([]byte, dataHeaderLen+len(data))
+	copy(frame, vp8Interframe)
+	frame[len(vp8Interframe)] = DataFrameMarker
+	binary.BigEndian.PutUint32(frame[len(vp8Interframe)+1:len(vp8Interframe)+5], uint32(len(data)))
+	copy(frame[dataHeaderLen:], data)
 	return frame
 }
 
@@ -126,15 +128,20 @@ func (t *VP8DataTunnel) Stop() {
 }
 
 func ExtractDataFromPayload(payload []byte) []byte {
-	if len(payload) < 5 {
+	if len(payload) < dataHeaderLen {
 		return nil
 	}
-	if payload[0] != DataFrameMarker {
+	for i := range vp8Interframe {
+		if payload[i] != vp8Interframe[i] {
+			return nil
+		}
+	}
+	if payload[len(vp8Interframe)] != DataFrameMarker {
 		return nil
 	}
-	dataLen := binary.BigEndian.Uint32(payload[1:5])
-	if dataLen == 0 || int(dataLen) > len(payload)-5 {
+	dataLen := binary.BigEndian.Uint32(payload[len(vp8Interframe)+1 : len(vp8Interframe)+5])
+	if dataLen == 0 || int(dataLen) > len(payload)-dataHeaderLen {
 		return nil
 	}
-	return payload[5 : 5+dataLen]
+	return payload[dataHeaderLen : dataHeaderLen+int(dataLen)]
 }

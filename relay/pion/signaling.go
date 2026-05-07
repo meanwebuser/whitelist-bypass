@@ -71,6 +71,8 @@ func ParseICEServers(data json.RawMessage) ([]webrtc.ICEServer, error) {
 func NewPionAPI(localIP string) *webrtc.API {
 	se := webrtc.SettingEngine{}
 	se.SetNet(&common.AndroidNet{LocalIP: localIP})
+	// Telemost SFU is DTLS-active for subscribers; Pion must answer passive.
+	se.SetAnsweringDTLSRole(webrtc.DTLSRoleServer)
 	return webrtc.NewAPI(webrtc.WithSettingEngine(se))
 }
 
