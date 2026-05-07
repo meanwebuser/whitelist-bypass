@@ -220,22 +220,23 @@ export class TabManager {
     const isTelemost = platform === Platform.Telemost;
     tab.tunnelMode = isTelemost ? TunnelMode.HeadlessTelemost : TunnelMode.HeadlessVK;
     tab.platform = platform;
-    const cookieStr = isTelemost
-      ? await this.getYandexCookieString()
-      : await this.getVKCookieString();
-    if (!cookieStr) {
+    const cookies = isTelemost
+      ? await this.getYandexCookies()
+      : await this.getVKCookies();
+    if (cookies.length === 0) {
       const name = isTelemost ? 'Yandex' : 'VK';
       this.sendLog(tabId, `No ${name} cookies found. Please log into ${name} first.`);
       return;
     }
     this.killRelay(tabId, tab);
+    const cookiesPath = path.join(app.getPath('userData'), `cookies-${platform}.json`);
+    await fs.writeFile(cookiesPath, JSON.stringify(cookies));
     const binaryPath = isTelemost ? this.headlessTelemostPath : this.headlessVKPath;
-    const proc = spawn(binaryPath, ['--resources', 'default'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
+    const proc = spawn(binaryPath, ['--resources', 'default', '--cookies', cookiesPath], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
     tab.relay = proc;
     this.attachProcessOutput(proc, tabId);
-    proc.stdin?.write(cookieStr + '\n');
     proc.on('close', (code) => {
       this.sendLog(tabId, `Headless exited with code ${code}`);
     });
@@ -276,22 +277,20 @@ export class TabManager {
     setTimeout(() => this.startRelay(tabId, tab), RELAY_RESTART_DELAY_MS);
   }
 
-  async getVKCookieString(): Promise<string> {
+  async getVKCookies(): Promise<{ name: string; value: string }[]> {
     const ses = session.fromPartition(SESSION_PARTITION);
     const all = await ses.cookies.get({});
-    const vkCookies = all.filter((cookie) => {
-      return cookie.domain != null && VK_COOKIE_DOMAINS.some((d) => cookie.domain!.includes(d));
-    });
-    return vkCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+    return all
+      .filter((c) => c.domain != null && VK_COOKIE_DOMAINS.some((d) => c.domain!.includes(d)))
+      .map((c) => ({ name: c.name, value: c.value }));
   }
 
-  async getYandexCookieString(): Promise<string> {
+  async getYandexCookies(): Promise<{ name: string; value: string }[]> {
     const ses = session.fromPartition(SESSION_PARTITION);
     const all = await ses.cookies.get({});
-    const yaCookies = all.filter((cookie) => {
-      return cookie.domain != null && YANDEX_COOKIE_DOMAINS.some((d) => cookie.domain!.includes(d));
-    });
-    return yaCookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; ');
+    return all
+      .filter((c) => c.domain != null && YANDEX_COOKIE_DOMAINS.some((d) => c.domain!.includes(d)))
+      .map((c) => ({ name: c.name, value: c.value }));
   }
 
 }
