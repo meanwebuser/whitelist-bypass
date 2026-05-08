@@ -1,6 +1,6 @@
 # Whitelist Bypass
 
-Tunnels internet traffic through video calling platforms (VK Call, Yandex Telemost) to bypass government whitelist censorship.
+Tunnels internet traffic through video calling platforms (VK Call, Yandex Telemost, WB Stream) to bypass government whitelist censorship.
 
 ## Setup
 
