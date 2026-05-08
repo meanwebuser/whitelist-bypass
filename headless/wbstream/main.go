@@ -18,26 +18,41 @@ import (
 func main() {
 	roomFlag := flag.String("room", "", "WB Stream room id or wbstream://<id> (empty = create new)")
 	displayName := flag.String("name", "Headless", "display name in the room")
-	resources := flag.String("resources", "default", "resource mode: moderate, default, unlimited")
+	resources := flag.String("resources", "default", "resource mode: default, moderate, unlimited, custom")
+	customReadBuf := flag.Int("read-buf", 0, "DC read buffer size in bytes, used with -resources custom")
+	customMemLimit := flag.Int64("mem-limit", 0, "memory limit in bytes, used with -resources custom")
 	writeFile := flag.String("write-file", "", "path to file where active room id is appended")
 	flag.Parse()
 
+	var readBuf int
 	var memLimit int64
 	switch *resources {
 	case "moderate":
+		readBuf = 16384
 		memLimit = 64 << 20
 	case "default":
+		readBuf = common.DCBufSize
 		memLimit = 128 << 20
 	case "unlimited":
+		readBuf = common.RTPBufSize
 		memLimit = 256 << 20
+	case "custom":
+		readBuf = *customReadBuf
+		if readBuf == 0 {
+			readBuf = common.RTPBufSize
+		}
+		memLimit = *customMemLimit
+		if memLimit == 0 {
+			memLimit = 256 << 20
+		}
 	default:
-		log.Fatalf("[config] unknown resources mode: %s", *resources)
+		log.Fatalf("[config] unknown resources mode: %s (use moderate, default, unlimited, custom)", *resources)
 	}
 	if memLimit > 0 {
 		debug.SetMemoryLimit(memLimit)
 	}
 	common.MaskingEnabled = true
-	log.Printf("[config] resources=%s mem-limit=%d", *resources, memLimit)
+	log.Printf("[config] resources=%s read-buf=%d mem-limit=%d", *resources, readBuf, memLimit)
 
 	requestedRoom := strings.TrimPrefix(strings.TrimSpace(*roomFlag), "wbstream://")
 	roomID, roomToken, accessToken, err := wbstream.AuthAndGetToken(nil, requestedRoom, *displayName)
@@ -69,19 +84,20 @@ func main() {
 		LogFn:       log.Printf,
 		RoomID:      roomID,
 		AccessToken: accessToken,
+		ReadBuf:     readBuf,
 	})
 	var activeBridge *tunnel.RelayBridge
 	sess.OnConnected = func(tun tunnel.DataTunnel) {
 		if activeBridge != nil {
 			activeBridge.Reset()
 		}
-		readBuf := common.VP8BufSize
+		bridgeReadBuf := common.VP8BufSize
 		mode := "video"
 		if _, ok := tun.(*tunnel.DCTunnel); ok {
-			readBuf = common.DCBufSize
+			bridgeReadBuf = readBuf
 			mode = "dc"
 		}
-		activeBridge = tunnel.NewRelayBridge(tun, "creator", readBuf, log.Printf)
+		activeBridge = tunnel.NewRelayBridge(tun, "creator", bridgeReadBuf, log.Printf)
 		fmt.Printf("\n  TUNNEL CONNECTED (mode=%s)\n", mode)
 	}
 	sess.OnPeerRestart = func() {

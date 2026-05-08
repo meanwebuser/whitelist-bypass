@@ -207,6 +207,47 @@ func authAndJoin(cookieStr, okJoinLink string, cfg VKConfig) (*JoinResponse, err
 	return &joinResp, nil
 }
 
+func joinExistingCall(cookieStr, vkLink string, cfg VKConfig) (*CallInfo, error) {
+	if cfg.AppID == "" || cfg.APIVersion == "" {
+		return nil, fmt.Errorf("config incomplete: app_id=%q api=%q", cfg.AppID, cfg.APIVersion)
+	}
+	token := extractJoinToken(vkLink)
+	if token == "" {
+		return nil, fmt.Errorf("could not extract join token from %q", vkLink)
+	}
+	log.Printf("[auth] Joining existing call token=%s", token)
+	joinResp, err := authAndJoin(cookieStr, token, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &CallInfo{
+		JoinLink:   vkLink,
+		OKJoinLink: token,
+		TurnServer: joinResp.TurnServer,
+		StunServer: joinResp.StunServer,
+		WSEndpoint: joinResp.Endpoint,
+	}, nil
+}
+
+func extractJoinToken(link string) string {
+	link = strings.TrimSpace(link)
+	if link == "" {
+		return ""
+	}
+	if u, err := url.Parse(link); err == nil && u.Scheme != "" {
+		path := strings.Trim(u.Path, "/")
+		if path != "" {
+			parts := strings.Split(path, "/")
+			return parts[len(parts)-1]
+		}
+	}
+	if !strings.ContainsAny(link, "/?&=") {
+		return link
+	}
+	parts := strings.Split(strings.TrimRight(link, "/"), "/")
+	return parts[len(parts)-1]
+}
+
 func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error) {
 	if cfg.AppID == "" || cfg.APIVersion == "" {
 		return nil, fmt.Errorf("config incomplete: app_id=%q api=%q", cfg.AppID, cfg.APIVersion)
@@ -532,8 +573,12 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 func main() {
 	cookiesPath := flag.String("cookies", "", "path to cookies.json")
 	cookieString := flag.String("cookie-string", "", "raw cookie string (name=val; name=val)")
-	peerId := flag.String("peer-id", "", "VK peer_id for the call")
-	resources := flag.String("resources", "default", "resource mode: default, moderate, unlimited")
+	peerId := flag.String("peer-id", "", "VK peer_id for a new call")
+	vkLink := flag.String("vk-link", "", "VK call link to join an existing call")
+	resources := flag.String("resources", "default", "resource mode: default, moderate, unlimited, custom")
+	customReadBuf := flag.Int("read-buf", 0, "read buffer size, used with -resources custom")
+	customMaxDCBuf := flag.Int("max-dc-buf", 0, "max DC buffer size in bytes, used with -resources custom")
+	customMemLimit := flag.Int64("mem-limit", 0, "memory limit in bytes, used with -resources custom")
 	writeFile := flag.String("write-file", "", "path to file where active call link is appended")
 	flag.Parse()
 
@@ -553,8 +598,21 @@ func main() {
 		readBuf = common.RTPBufSize
 		maxDCBuf = 8 * 1024 * 1024
 		memLimit = 256 * 1024 * 1024
+	case "custom":
+		readBuf = *customReadBuf
+		if readBuf == 0 {
+			readBuf = common.RTPBufSize
+		}
+		maxDCBuf = uint64(*customMaxDCBuf)
+		if maxDCBuf == 0 {
+			maxDCBuf = 8 * 1024 * 1024
+		}
+		memLimit = *customMemLimit
+		if memLimit == 0 {
+			memLimit = 256 * 1024 * 1024
+		}
 	default:
-		log.Fatalf("[config] unknown resources mode: %s (use moderate, default, unlimited)", *resources)
+		log.Fatalf("[config] unknown resources mode: %s (use moderate, default, unlimited, custom)", *resources)
 	}
 	if memLimit > 0 {
 		debug.SetMemoryLimit(memLimit)
@@ -581,9 +639,20 @@ func main() {
 		log.Fatalf("[config] %v", err)
 	}
 
-	callInfo, err := createAndJoinCall(cookieStr, *peerId, cfg)
-	if err != nil {
-		log.Fatalf("Failed to create call: %v", err)
+	if *vkLink != "" && *peerId != "" {
+		log.Fatalf("[config] -vk-link and -peer-id are mutually exclusive")
+	}
+	var callInfo *CallInfo
+	if *vkLink != "" {
+		callInfo, err = joinExistingCall(cookieStr, *vkLink, cfg)
+		if err != nil {
+			log.Fatalf("Failed to join existing call: %v", err)
+		}
+	} else {
+		callInfo, err = createAndJoinCall(cookieStr, *peerId, cfg)
+		if err != nil {
+			log.Fatalf("Failed to create call: %v", err)
+		}
 	}
 
 	if *writeFile != "" {

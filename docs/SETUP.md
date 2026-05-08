@@ -16,7 +16,9 @@
 - **Creator** (сторона со свободным интернетом) - десктоп или headless на сервере
 - **Joiner** (сторона с цензурой) - Android или iOS
 
-Два режима туннеля: **DC** (DataChannel, только VK) и **Video** (VP8, VK и Telemost). Режим должен совпадать на Creator и Joiner.
+Два режима туннеля: **DC** (DataChannel) и **Video** (VP8). Headless creator автоматически подстраивается под режим, выбранный joiner-ом, при каждом новом подключении. В legacy браузерном пути такого нет - нельзя создать DC в VK и подключиться по видео.
+
+> **Рекомендуется headless с обеих сторон** - там есть обфускация траффика, настраиваемый VP8 pacing и WB Stream. Старый браузерный путь (Android `WebView` против Electron-creator с JS-хуками) ещё работает, но медленнее, без обфускации и постепенно выводится из эксплуатации.
 
 ## Creator (десктоп)
 
@@ -57,25 +59,60 @@
 
 # Telemost
 ./headless-telemost-creator --cookies cookies-yandex.json
+
+# WB Stream (анонимный гостевой токен, куки не нужны)
+./headless-wbstream-creator
 ```
 
 После запуска Creator создаст звонок и выведет ссылку в лог. Ссылку нужно передать на Joiner.
 
+### Подключение к существующему звонку
+
+Чтобы не пересоздавать звонок при перезапуске, передайте существующую ссылку:
+
+```sh
+./headless-vk-creator       --cookies cookies.json        --vk-link https://vk.com/call/join/<token>
+./headless-telemost-creator --cookies cookies-yandex.json --tm-link https://telemost.yandex.ru/j/<id>
+./headless-wbstream-creator --room wbstream://<uuid>
+```
+
 ### Флаги
 
-| Флаг | Описание |
-|---|---|
-| `--cookies <path>` | Путь к файлу с куками (JSON) |
-| `--cookie-string <str>` | Куки строкой (`name=val; name=val`) |
-| `--peer-id <id>` | VK peer_id (только VK, опционально) |
-| `--resources <mode>` | Режим ресурсов: `moderate`, `default`, `unlimited` |
-| `--write-file <path>` | Файл, куда записывается активная ссылка на звонок |
+| Флаг | VK | TM | WB | Описание |
+|---|---|---|---|---|
+| `--cookies <path>` | да | да | - | Путь к файлу с куками (JSON) |
+| `--cookie-string <str>` | да | да | - | Куки строкой (`name=val; name=val`) |
+| `--peer-id <id>` | да | - | - | VK peer_id для нового звонка |
+| `--vk-link <link>` | да | - | - | Подключиться к существующему VK звонку |
+| `--tm-link <uri>` | - | да | - | Подключиться к существующей Telemost конференции |
+| `--room <id>` | - | - | да | Подключиться к существующей WB Stream комнате |
+| `--resources <mode>` | да | да | да | `default` / `moderate` / `unlimited` / `custom` |
+| `--read-buf <bytes>` | да | да | да | Размер read-буфера, только с `--resources custom` |
+| `--max-dc-buf <bytes>` | да | - | - | Порог `BufferedAmountLowThreshold` DC, только с `--resources custom` |
+| `--mem-limit <bytes>` | да | да | да | Soft memory limit Go рантайма, только с `--resources custom` |
+| `--write-file <path>` | да | да | да | Файл, куда записывается активная ссылка на звонок |
 
 ### Режимы ресурсов
 
-- **moderate** - для VPS с малым объемом RAM (64MB лимит)
-- **default** - для обычного использования (128MB лимит)
-- **unlimited** - максимальная пропускная способность (256MB лимит, может работать нестабильно из-за congestion control)
+| Режим | `read-buf` | `max-dc-buf` (VK) | `mem-limit` | Когда использовать |
+|---|---|---|---|---|
+| `moderate` | 16 KB | 1 MB | 64 MB | VPS с малой RAM |
+| `default`  | 32 KB | 4 MB | 128 MB | Обычное использование |
+| `unlimited`| 64 KB | 8 MB | 256 MB | Максимум пропускной способности (может троттлить из-за congestion control) |
+| `custom`   | из `--read-buf` | из `--max-dc-buf` | из `--mem-limit` | Тонкая настройка |
+
+В режиме `custom` любой не указанный флаг использует значения из `unlimited`. Пример с явной настройкой всех буферов:
+
+```sh
+./headless-vk-creator \
+  --cookies cookies.json \
+  --vk-link https://vk.com/call/join/<token> \
+  --write-file /var/run/whitelist-bypass/call.txt \
+  --resources custom \
+  --read-buf 65536 \
+  --max-dc-buf 8388608 \
+  --mem-limit 268435456
+```
 
 ## Бот VK
 

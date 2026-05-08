@@ -8,16 +8,18 @@ Step-by-step setup guide (in Russian): [docs/SETUP.md](docs/SETUP.md)
 
 ## How it works
 
-Two tunnel modes are available: **DC** (DataChannel) and **Video** (VP8 data encoding).
+Two tunnel modes are available: **DC** (DataChannel) and **Video** (VP8 data encoding). The recommended setup is **headless on both ends** - pure Go (Pion) talks to the platform's SFU directly, no browser. ChaCha20 obfuscation, configurable VP8 pacing, and the LiveKit/WB Stream backend are headless-only features.
+
+A legacy browser path (Android `WebView` joiner against an Electron desktop creator with JS hooks) still works for VK DC, but it's slower, can't obfuscate, and is being phased out. New deployments should use headless.
 
 ### DC mode
 
-Browser-based. JavaScript hooks intercept RTCPeerConnection on the call page, create a DataChannel alongside the call's built-in channels, and use it as a bidirectional data pipe.
+Pion opens a SCTP DataChannel on the publisher PC and tunnels TCP/UDP through it. Frames pass through the platform's SFU like any other DataChannel payload.
 
-- **VK Call** - Negotiated DataChannel id:2 (alongside VK's animoji channel id:1). Data flows through VK's SFU
+
 
 ```
-Joiner (censored, Android)                Creator (free internet, desktop)
+Joiner (censored, Android/iOS/Linux)                Creator (free internet)
 
 All apps
   |
@@ -27,70 +29,33 @@ tun2socks (IP -> TCP)
   |
 SOCKS5 proxy (Go, :1080)
   |
-WebSocket (:9000)
-  |
-WebView (call page)                       Electron (call page)
+Headless joiner (Pion)                    Headless creator (Pion)
   |                                         |
-DataChannel  <----- SFU ----->   DataChannel
-                                            |
-                                        WebSocket (:9000)
-                                            |
-                                        Go relay
-                                            |
-                                        Internet
-```
-
-### Video mode
-
-Go-based. Pion (Go WebRTC library) connects directly to the platform's TURN/SFU servers, bypassing the browser's WebRTC stack entirely. Data is encoded inside VP8 video frames.
-
-- **VK Call** - Single PeerConnection, data flows through VK's SFU
-- **Telemost** - Dual PeerConnection (pub/sub), SFU architecture
-
-The JS hook replaces `RTCPeerConnection` with a `MockPeerConnection` that forwards all SDP/ICE operations to the local Pion server via WebSocket. Pion creates the real PeerConnection with the platform's TURN servers.
-
-**VP8 data encoding:**
-- Data frames: `[0xFF marker][4B length][payload]` - sent as VP8 video samples
-- Keepalive frames: valid VP8 interframes (17 bytes) at 25fps, keyframe every 60th frame. Keeps the video track alive so the SFU/TURN does not disconnect
-- The `0xFF` marker byte distinguishes data from real VP8 (keyframe first byte has bit0=0, interframe has bit0=1, so `0xFF` never appears naturally)
-- On the receiving side, RTP packets are reassembled into full frames. First byte `0xFF` = extract data, otherwise = keepalive, ignore
-
-**Multiplexing protocol** over the VP8 tunnel: `[4B frame length][4B connID][1B msgType][payload]`
-- Message types: Connect, ConnectOK, ConnectErr, Data, Close, UDP, UDPReply
-- Multiple TCP/UDP connections are multiplexed into a single VP8 video stream
-
-```
-Joiner (censored, Android)                Creator (free internet, desktop)
-
-All apps
-  |
-VpnService (captures all traffic)
-  |
-tun2socks (IP -> TCP)
-  |
-SOCKS5 proxy (Go, :1080)
-  |
-VP8 data tunnel (Pion)                    VP8 data tunnel (Pion)
-  |                                         |
-MockPC (WebView)                          MockPC (Electron)
-  |                                         |
-Pion WebRTC  <------ SFU ------>  Pion WebRTC
+DataChannel  <------- SFU ------->   DataChannel
                                             |
                                         Relay bridge
                                             |
                                         Internet
 ```
 
-Traffic goes through the platform's SFU servers which are whitelisted. To the network firewall it looks like a normal video call.
+### Video mode
+
+Same pipeline as DC mode, but the tunnel rides on a published VP8 video track instead of a SCTP DataChannel. Useful when the SFU rate-limits DataChannels but lets RTP through (e.g. Telemost), and platform-mandatory in some cases (WB Stream's publisher track is always video). Tunnel framing and the multiplex layer above it are the same as DC mode.
+
+Traffic goes through the platform's SFU, which is on the government whitelist. To DPI it looks like a normal video call.
 
 ## Components
 
-- `hooks/` - JavaScript hooks for DC, Video, and Headless modes (VK and Telemost)
-- `relay/` - Go relay: SOCKS5 proxy, WebSocket server, VP8 video tunnel, headless joiner, connection multiplexing
-- `headless/vk/` - Headless VK creator: creates calls via API, Pion DataChannel tunnel, no browser
-- `headless/telemost/` - Headless Telemost creator: same approach for Yandex Telemost
-- `android-app/` - Android joiner app (WebView/headless + VpnService + Go relay)
-- `creator-app/` - Electron desktop creator app
+- `relay/` - Go relay shared by both ends: SOCKS5 proxy, tun2socks plumbing, DC/VP8 tunnel, ChaCha20 obfuscator, connection multiplexer, gomobile/iOS bindings
+- `headless/vk/` - Headless VK creator: creates or joins a call via the VK HTTP API, Pion DC/VP8 tunnel, no browser
+- `headless/telemost/` - Headless Telemost (Yandex) creator with the same model
+- `headless/wbstream/` - Headless WB Stream creator (LiveKit-backed, anonymous guest tokens)
+- `headless/wbstream-joiner/` - Desktop WB Stream joiner (counterpart to the creator, used for tests and Linux clients)
+- `headless/tests/` - End-to-end smoke tests for each platform
+- `android-app/` - Android joiner: VpnService + tun2socks + headless Pion (primary path); also retains a `WebView` fallback for the legacy browser flow
+- `ios-proxy-app/` - iOS joiner: SOCKS5 + headless Pion via the gomobile xcframework
+- `creator-app/` - Electron desktop creator app: GUI front-end that can run either the legacy browser path or spawn the headless Go binaries; suitable for both interactive use and deployments
+- `hooks/` - JavaScript hooks for the legacy browser path (DC and Video modes, VK and Telemost). Headless does not use JS hooks.
 
 ## Download
 
@@ -108,13 +73,15 @@ Download and run the Electron app from [GitHub Releases](../../releases). It bun
 
 **Important:** The call must be created from within the Creator app. Joining an existing call from the app will not work - the JS hooks must be present from the moment the call starts.
 
-### Joiner side (censored, Android)
+### Joiner side (censored, Android/iOS/Linux)
 
-1. Download and install `whitelist-bypass.apk` from [GitHub Releases](../../releases)
-2. Select tunnel mode (DC or Video)
-3. Paste the call link and tap GO
-4. The app joins the call, establishes the tunnel, starts VPN
-5. All device traffic flows through the call
+Three forms are available; pick whichever fits the device:
+
+- **Android** - install `whitelist-bypass.apk` from [Releases](../../releases). Allow the VPN prompt on first launch. Paste the join link and tap GO; system-wide traffic flows through the call.
+- **iOS** - install `whitelist-bypass-proxy.ipa` from [Releases](../../releases) (sideload via AltStore / Sideloadly / your dev account). Exposes a local SOCKS5 proxy only - no system VPN. To proxy the whole device, point any SOCKS5-capable VPN app (Shadowrocket, Streisand, ...) at the SOCKS5 endpoint the app shows; or set the proxy per app (Telegram has built-in support).
+- **Linux desktop** - run `headless-wbstream-joiner --room <link> --socks-port 1080`; exposes a SOCKS5 proxy on the given port for whatever you point at it. Useful for servers and Linux clients.
+
+The full step-by-step (Russian) covers each platform in detail: see [docs/SETUP.md](docs/SETUP.md).
 
 ## Building from source
 
@@ -137,7 +104,7 @@ Download and run the Electron app from [GitHub Releases](../../releases). It bun
 ./build-go.sh          # Go .aar, relay binary, headless creators
 ./copy-hooks.sh        # Copy JS hooks to android assets
 ./build-app.sh         # Android APK
-./build-headless.sh    # Headless creator binaries only
+./build-headless.sh    # Headless binaries only
 ./build-creator.sh     # Creator Electron app (all platforms)
 ./build-ios.sh         # Go .xcframework for iOS
 ```
@@ -163,6 +130,7 @@ Output in `prebuilts/`:
 | `WhitelistBypass Creator-*-ia32.exe` | Windows x86 |
 | `WhitelistBypass Creator-*.AppImage` | Linux x64 |
 | `whitelist-bypass.apk` | Android |
+| `whitelist-bypass-proxy.ipa` | iOS, unsigned |
 | `headless-vk-creator-linux-x64` | Linux x64 |
 | `headless-vk-creator-linux-ia32` | Linux x86 |
 | `headless-telemost-creator-linux-x64` | Linux x64 |
@@ -178,53 +146,68 @@ docker compose -f docker-build/docker-compose.yml up
 
 This will build all components (creator-app, headless, android app) into the `prebuild` folder (except the macOS creator)
 
-### Relay
-
-```
-relay --mode <mode> [--ws-port 9000] [--socks-port 1080]
-```
-
-- `--mode` - required: `joiner`, `creator`, `vk-video-joiner`, `vk-video-creator`, `telemost-video-joiner`, `telemost-video-creator`
-- `--ws-port` - WebSocket port for browser/hook connection (default 9000)
-- `--socks-port` - SOCKS5 proxy port, joiner modes only (default 1080)
-
-The Go relay is split into platform-specific files:
-- `relay/mobile/mobile.go` - Shared networking code (SOCKS5, WebSocket, framing)
-- `relay/mobile/tun_android.go` - Android-only: tun2socks + fdsan fix (CGo)
-- `relay/mobile/tun_stub.go` - Desktop stub (no tun2socks needed)
-
-This allows cross-compiling the relay for macOS/Windows/Linux without CGo or Android NDK.
-
 ### Headless creators
 
 Pure Go creators that create calls via API without a browser. No Electron, no JS hooks - Go Pion PeerConnection handles the DataChannel tunnel directly.
 
 ```sh
-# VK
-cd headless/vk && go build -o headless-vk-creator .
-./headless-vk-creator --cookies cookies.json [--peer-id <vk_peer_id>] [--resources <mode>] [--write-file call-vk]
-
-# Telemost
-cd headless/telemost && go build -o headless-telemost .
-./headless-telemost --cookies cookies-yandex.json [--resources <mode>] [--write-file call-telemost]
+./build-headless.sh
 ```
 
-- `--cookies` - path to cookies exported as JSON (`[{"name":"..","value":".."},...]`)
-- `--peer-id` - VK peer_id for the call (VK only, optional)
-- `--resources` - resource mode (see below)
-- `--write-file` - path to file where the active call link is appended (one link per line, created if missing)
+Three binaries are produced:
 
-**Resource modes:**
+```sh
+./headless/vk/headless-vk-creator             --cookies cookies-vk.json
+./headless/telemost/headless-telemost-creator --cookies cookies-telemost.json
+./headless/wbstream/headless-wbstream-creator
+```
 
-| Mode | read-buf | max-dc-buf | mem-limit | Use case |
+WB Stream uses anonymous guest tokens, so no cookies are required. VK and Telemost expect cookies exported from the desktop creator app (`VK Cookies` / `Yandex Cookies` buttons) as JSON `[{"name":"..","value":".."},...]`.
+
+#### Common flags
+
+| Flag | VK | TM | WB | Description |
 |---|---|---|---|---|
-| `moderate` | 16KB | 1MB | 64MB | Low memory environments, VPS |
-| `default` | 32KB | 4MB | 128MB | General use |
-| `unlimited` | 64KB | 8MB | 256MB | Maximum throughput |
+| `--cookies <path>` | yes | yes | - | path to cookies JSON |
+| `--cookie-string <str>` | yes | yes | - | raw cookie string `name=val; name=val` |
+| `--write-file <path>` | yes | yes | yes | append the active join link to this file (one link per line) |
+| `--resources <mode>` | yes | yes | yes | `default` / `moderate` / `unlimited` / `custom` (see below) |
+| `--read-buf <bytes>` | yes | yes | yes | DC/RTP read buffer; only consulted with `--resources custom` |
+| `--max-dc-buf <bytes>` | yes | - | - | DataChannel `BufferedAmountLowThreshold`; only with `--resources custom` |
+| `--mem-limit <bytes>` | yes | yes | yes | Go soft memory limit (`debug.SetMemoryLimit`); only with `--resources custom` |
 
-- `read-buf` - TCP read buffer size. Smaller = more frequent backpressure checks, less bursty memory
-- `max-dc-buf` - pauses TCP reads when DataChannel buffered amount exceeds this. Prevents SCTP pending queue from growing unbounded
-- `mem-limit` - Go runtime soft memory limit (`debug.SetMemoryLimit`), makes GC more aggressive near the cap
+#### Joining an existing call
+
+By default each binary creates a fresh call. To attach to an existing one (server restarts without invalidating the link, multiple shaped sessions, ...):
+
+| Creator | Flag | Value |
+|---|---|---|
+| VK | `--vk-link <link>` | `https://vk.com/call/join/<token>` |
+| Telemost | `--tm-link <uri>` | `https://telemost.yandex.ru/j/<id>` |
+| WB Stream | `--room <id>` | `wbstream://<uuid>` or just the UUID |
+
+Mutually exclusive with the call-creation flags (`--peer-id` for VK; the others have no creation flag).
+
+#### Resource modes
+
+| Mode | `read-buf` | `max-dc-buf` (VK) | `mem-limit` |
+|---|---|---|---|
+| `moderate` | 16 KB | 1 MB | 64 MB |
+| `default`  | 32 KB | 4 MB | 128 MB |
+| `unlimited`| 64 KB | 8 MB | 256 MB |
+| `custom`   | from `--read-buf` | from `--max-dc-buf` | from `--mem-limit` |
+
+`custom` falls back to `unlimited` defaults for any flag left unset, so partial overrides work:
+
+```sh
+./headless-vk-creator --cookies cookies-vk.json --vk-link https://vk.com/call/join/<token> \
+  --resources custom --read-buf 65536 --max-dc-buf 8388608 --mem-limit 268435456 \
+  --write-file /var/run/whitelist-bypass/call.txt
+```
+
+- `read-buf` - TCP/DC read buffer size. Smaller = more frequent backpressure checks, less bursty memory
+- `max-dc-buf` - pauses TCP reads when the DataChannel buffered amount exceeds this; only wired in VK (Pion `BufferedAmountLowThreshold`)
+- `mem-limit` - Go runtime soft memory limit; makes GC more aggressive near the cap
 
 ## License
 

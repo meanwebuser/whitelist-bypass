@@ -42,6 +42,7 @@ type SessionConfig struct {
 	VP8Batch       int
 	RoomID         string
 	AccessToken    string
+	ReadBuf        int
 }
 
 type Session struct {
@@ -222,7 +223,11 @@ func (s *Session) maybeStartDCTunnel() {
 	}
 	readWrapped := newDataPacketWrapper(subRaw, livekit.DataPacketKindReliable)
 	writeWrapped := newDataPacketWrapper(pubRaw, livekit.DataPacketKindReliable)
-	dctun := tunnel.NewChunkedDCTunnelFromRaw(readWrapped, writeWrapped, s.cfg.Obfuscator, common.DCBufSize, s.cfg.LogFn)
+	readBuf := s.cfg.ReadBuf
+	if readBuf == 0 {
+		readBuf = common.DCBufSize
+	}
+	dctun := tunnel.NewChunkedDCTunnelFromRaw(readWrapped, writeWrapped, s.cfg.Obfuscator, readBuf, s.cfg.LogFn)
 	if dctun == nil {
 		return
 	}

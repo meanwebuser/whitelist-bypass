@@ -160,6 +160,22 @@ func getConnection(cookieStr, confURL string, cfg TMConfig) (*ConnInfo, error) {
 	}, nil
 }
 
+func joinExistingConference(cookieStr, conferenceURI string, cfg TMConfig) (*ConnInfo, error) {
+	conferenceURI = strings.TrimSpace(conferenceURI)
+	if conferenceURI == "" {
+		return nil, fmt.Errorf("empty -tm-link")
+	}
+	log.Printf("[auth] Joining existing conference: %s", conferenceURI)
+	info, err := getConnection(cookieStr, url.QueryEscape(conferenceURI), cfg)
+	if err != nil {
+		return nil, err
+	}
+	info.ConferenceURI = conferenceURI
+	log.Printf("[auth] peer_id=%s room_id=%s", info.PeerID, info.RoomID)
+	log.Printf("[auth] media_server=%s", info.MediaServerURL)
+	return info, nil
+}
+
 func createAndJoinCall(cookieStr string, cfg TMConfig) (*ConnInfo, error) {
 	log.Println("[auth] Creating conference...")
 	r, status, err := tmRequest("POST", "/conferences?next_gen_media_platform_allowed=true",
@@ -635,7 +651,10 @@ func extractUfrag(candidate string) string {
 func main() {
 	cookiesPath := flag.String("cookies", "", "path to cookies-yandex.json")
 	cookieString := flag.String("cookie-string", "", "raw cookie string")
-	resources := flag.String("resources", "default", "resource mode: default, moderate, unlimited")
+	tmLink := flag.String("tm-link", "", "Telemost conference URI to join an existing conference")
+	resources := flag.String("resources", "default", "resource mode: default, moderate, unlimited, custom")
+	customReadBuf := flag.Int("read-buf", 0, "read buffer size, used with -resources custom")
+	customMemLimit := flag.Int64("mem-limit", 0, "memory limit in bytes, used with -resources custom")
 	writeFile := flag.String("write-file", "", "path to file where active call link is appended")
 	flag.Parse()
 
@@ -651,8 +670,17 @@ func main() {
 	case "unlimited":
 		readBuf = common.RTPBufSize
 		memLimit = 256 << 20
+	case "custom":
+		readBuf = *customReadBuf
+		if readBuf == 0 {
+			readBuf = common.RTPBufSize
+		}
+		memLimit = *customMemLimit
+		if memLimit == 0 {
+			memLimit = 256 << 20
+		}
 	default:
-		log.Fatalf("[config] unknown resources mode: %s", *resources)
+		log.Fatalf("[config] unknown resources mode: %s (use moderate, default, unlimited, custom)", *resources)
 	}
 	if memLimit > 0 {
 		debug.SetMemoryLimit(memLimit)
@@ -680,9 +708,17 @@ func main() {
 		log.Fatalf("[config] %v", err)
 	}
 
-	connInfo, err := createAndJoinCall(cookieStr, cfg)
-	if err != nil {
-		log.Fatalf("Failed to create call: %v", err)
+	var connInfo *ConnInfo
+	if *tmLink != "" {
+		connInfo, err = joinExistingConference(cookieStr, *tmLink, cfg)
+		if err != nil {
+			log.Fatalf("Failed to join existing conference: %v", err)
+		}
+	} else {
+		connInfo, err = createAndJoinCall(cookieStr, cfg)
+		if err != nil {
+			log.Fatalf("Failed to create call: %v", err)
+		}
 	}
 
 	if *writeFile != "" {
