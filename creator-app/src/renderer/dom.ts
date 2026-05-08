@@ -45,28 +45,33 @@ export function renderContent(tm: RendererTabManager): void {
   if (activeTab.headless) {
     toolbar.style.display = 'none';
     headlessInfo.style.display = 'block';
-    const title = activeTab.platform === Platform.Telemost ? 'Headless Telemost' : 'Headless VK';
+    let title = 'Headless VK';
+    if (activeTab.platform === Platform.Telemost) title = 'Headless Telemost';
+    else if (activeTab.platform === Platform.WBStream) title = 'Headless WB Stream';
     document.getElementById('headlessTitle')!.textContent = title;
     document.getElementById('headlessStatus')!.textContent = activeTab.headlessStatus || 'Starting...';
     const callInfo = activeTab.callInfo;
-    const isTelemost = activeTab.platform === Platform.Telemost;
     const callInfoVK = document.getElementById('headlessCallInfo')!;
     const callInfoTM = document.getElementById('headlessCallInfoTM')!;
-    if (callInfo && isTelemost) {
-      callInfoVK.style.display = 'none';
-      callInfoTM.style.display = 'block';
-      document.getElementById('headlessTMJoinLink')!.textContent = callInfo.joinLink || '';
-      document.getElementById('headlessTMProtocol')!.textContent = callInfo.protocol || '';
-    } else if (callInfo) {
-      callInfoTM.style.display = 'none';
-      callInfoVK.style.display = 'block';
-      document.getElementById('headlessJoinLink')!.textContent = callInfo.joinLink || '';
-      document.getElementById('headlessShortLink')!.textContent = callInfo.shortLink || '';
-      document.getElementById('headlessTurn')!.textContent = callInfo.turn || '';
-      document.getElementById('headlessProtocol')!.textContent = callInfo.protocol || '';
-    } else {
-      callInfoVK.style.display = 'none';
-      callInfoTM.style.display = 'none';
+    const callInfoWB = document.getElementById('headlessCallInfoWB')!;
+    callInfoVK.style.display = 'none';
+    callInfoTM.style.display = 'none';
+    callInfoWB.style.display = 'none';
+    if (callInfo) {
+      if (activeTab.platform === Platform.WBStream) {
+        callInfoWB.style.display = 'block';
+        document.getElementById('headlessWBJoinLink')!.textContent = callInfo.joinLink || '';
+      } else if (activeTab.platform === Platform.Telemost) {
+        callInfoTM.style.display = 'block';
+        document.getElementById('headlessTMJoinLink')!.textContent = callInfo.joinLink || '';
+        document.getElementById('headlessTMProtocol')!.textContent = callInfo.protocol || '';
+      } else {
+        callInfoVK.style.display = 'block';
+        document.getElementById('headlessJoinLink')!.textContent = callInfo.joinLink || '';
+        document.getElementById('headlessShortLink')!.textContent = callInfo.shortLink || '';
+        document.getElementById('headlessTurn')!.textContent = callInfo.turn || '';
+        document.getElementById('headlessProtocol')!.textContent = callInfo.protocol || '';
+      }
     }
   } else {
     toolbar.style.display = 'flex';

@@ -55,6 +55,7 @@ function bindToolbarEvents(): void {
   document.getElementById('btnTelemost')!.addEventListener('click', () => loadURL(tm, TELEMOST_URL));
   document.getElementById('btnHeadlessVK')!.addEventListener('click', () => tm.switchToHeadless(Platform.VK));
   document.getElementById('btnHeadlessTM')!.addEventListener('click', () => tm.switchToHeadless(Platform.Telemost));
+  document.getElementById('btnHeadlessWB')!.addEventListener('click', () => tm.switchToHeadless(Platform.WBStream));
   document.getElementById('modeSelect')!.addEventListener('change', (event) => {
     tm.setTunnelMode((event.target as HTMLSelectElement).value);
   });
@@ -159,6 +160,8 @@ function init(): void {
       tm.switchToHeadless(Platform.VK);
     } else if (data.mode === TunnelMode.HeadlessTelemost) {
       tm.switchToHeadless(Platform.Telemost);
+    } else if (data.mode === TunnelMode.HeadlessWBStream) {
+      tm.switchToHeadless(Platform.WBStream);
     } else {
       const url = data.platform === Platform.Telemost ? TELEMOST_URL : VK_IM_URL;
       loadURL(tm, url);

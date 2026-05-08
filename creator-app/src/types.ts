@@ -5,11 +5,13 @@ export enum TunnelMode {
   PionVideo = 'pion-video',
   HeadlessVK = 'headless-vk',
   HeadlessTelemost = 'headless-telemost',
+  HeadlessWBStream = 'headless-wbstream',
 }
 
 export enum Platform {
   VK = 'vk',
   Telemost = 'telemost',
+  WBStream = 'wbstream',
 }
 
 export enum RelayMode {
@@ -26,6 +28,7 @@ export enum CallStatus {
 export enum BotCommand {
   VK = 'vk',
   TM = 'tm',
+  WB = 'wb',
   List = 'list',
   Menu = 'menu',
   Close = 'close',

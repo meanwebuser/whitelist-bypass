@@ -5,56 +5,31 @@
     android:layout_height="wrap_content"
     android:padding="12dp">
 
-    <CheckBox
-        android:id="@+id/vp8PacingEnabledCheckbox"
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/vp8_pacing_enabled_label"
-        android:textSize="16sp" />
+        android:text="@string/vp8_fps_label"
+        android:textSize="14sp" />
+
+    <EditText
+        android:id="@+id/vp8FpsInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/vp8_fps_hint"
+        android:inputType="number" />
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:text="@string/vp8_pacing_hint"
-        android:textSize="12sp"
-        android:alpha="0.7" />
+        android:layout_marginTop="8dp"
+        android:text="@string/vp8_batch_label"
+        android:textSize="14sp" />
 
-    <LinearLayout
-        android:id="@+id/vp8PacingInputs"
+    <EditText
+        android:id="@+id/vp8BatchInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:visibility="gone"
-        android:paddingTop="12dp">
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/vp8_fps_label"
-            android:textSize="14sp" />
-
-        <EditText
-            android:id="@+id/vp8FpsInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/vp8_fps_hint"
-            android:inputType="number" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/vp8_batch_label"
-            android:textSize="14sp" />
-
-        <EditText
-            android:id="@+id/vp8BatchInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="@string/vp8_batch_hint"
-            android:inputType="number" />
-
-    </LinearLayout>
+        android:hint="@string/vp8_batch_hint"
+        android:inputType="number" />
 
 </LinearLayout>

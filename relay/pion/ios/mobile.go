@@ -99,6 +99,26 @@ func init() {
 	common.MaskingEnabled = true
 }
 
+func StartWBStreamHeadless(socksPort int, socksUser, socksPass string, callback HeadlessCallback) {
+	StopHeadless()
+
+	activeHeadless.Lock()
+	activeHeadless.callback = callback
+	activeHeadless.stopped = false
+	activeHeadless.platform = "wbstream"
+	activeHeadless.Unlock()
+
+	logFn, resolveFn, statusEmitter := makeHelpers(callback)
+	wbJoiner := joiner.NewWBStreamHeadlessJoiner(logFn, resolveFn, statusEmitter, nil)
+	wbJoiner.OnConnected = makeOnConnected(socksPort, socksUser, socksPass, logFn, callback)
+
+	activeHeadless.Lock()
+	activeHeadless.joiner = wbJoiner
+	activeHeadless.Unlock()
+
+	callback.OnStatus(common.StatusReady)
+}
+
 func StartTelemostHeadless(socksPort int, socksUser, socksPass string, callback HeadlessCallback) {
 	StopHeadless()
 
@@ -179,6 +199,10 @@ func SendJoinParams(jsonParams string) {
 	case "vk":
 		if vkJoiner, ok := currentJoiner.(*joiner.VKHeadlessJoiner); ok {
 			go vkJoiner.RunWithParams(jsonParams)
+		}
+	case "wbstream":
+		if wbJoiner, ok := currentJoiner.(*joiner.WBStreamHeadlessJoiner); ok {
+			go wbJoiner.RunWithParams(jsonParams)
 		}
 	}
 }

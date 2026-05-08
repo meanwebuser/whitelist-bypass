@@ -67,6 +67,10 @@ func (rb *RelayBridge) closeAll() {
 	})
 }
 
+func (rb *RelayBridge) Reset() {
+	rb.closeAll()
+}
+
 func (rb *RelayBridge) MarkReady() {
 	rb.once.Do(func() { close(rb.ready) })
 }

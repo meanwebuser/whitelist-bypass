@@ -1,0 +1,76 @@
+package bypass.whitelist.ui
+
+import android.os.Bundle
+import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.fragment.app.Fragment
+import bypass.whitelist.R
+import bypass.whitelist.tunnel.CallPlatform
+import bypass.whitelist.tunnel.HeadlessRelayController
+import bypass.whitelist.tunnel.VpnStatus
+import bypass.whitelist.util.Prefs
+import org.json.JSONObject
+
+class HeadlessWBStreamFragment : Fragment() {
+
+    private lateinit var relay: HeadlessRelayController
+
+    private val host: JoinFragmentHost?
+        get() = activity as? JoinFragmentHost
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?,
+    ): View = inflater.inflate(R.layout.fragment_headless_wbstream, container, false)
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        val rawUrl = requireArguments().getString(ARG_URL, "")
+        val roomId = CallPlatform.extractRoomId(rawUrl)
+        val displayName = Prefs.autoclickName
+
+        relay = HeadlessRelayController(
+            requireContext().applicationInfo.nativeLibraryDir,
+            relayMode = "wbstream-headless-joiner",
+            onLog = { host?.appendLog(it) },
+            onStatus = { status ->
+                Log.d("WB-HEADLESS", "status: $status")
+                host?.onJoinStatus(status)
+                when (status) {
+                    VpnStatus.STARTING -> {
+                        val params = JSONObject().apply {
+                            put("roomId", roomId)
+                            put("displayName", displayName)
+                            put("tunnelMode", Prefs.tunnelMode.relayArg)
+                            put("vp8Fps", Prefs.vp8Fps)
+                            put("vp8Batch", Prefs.vp8Batch)
+                        }
+                        relay.sendJoinParams(params.toString())
+                    }
+                    VpnStatus.TUNNEL_ACTIVE -> activity?.runOnUiThread { host?.requestVpn() }
+                    else -> {}
+                }
+            },
+        )
+        relay.start()
+    }
+
+    override fun onDestroyView() {
+        if (::relay.isInitialized) relay.stop()
+        super.onDestroyView()
+    }
+
+    companion object {
+        const val ARG_URL = "url"
+
+        fun newInstance(url: String): HeadlessWBStreamFragment {
+            return HeadlessWBStreamFragment().apply {
+                arguments = Bundle().apply {
+                    putString(ARG_URL, url)
+                }
+            }
+        }
+    }
+}

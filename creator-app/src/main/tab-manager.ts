@@ -37,6 +37,7 @@ export class TabManager {
   private relayPath: string;
   private headlessVKPath: string;
   private headlessTelemostPath: string;
+  private headlessWBStreamPath: string;
   private hooksDir: string;
 
   constructor() {
@@ -51,6 +52,10 @@ export class TabManager {
     this.headlessTelemostPath = resolveResourcePath(
       path.join('headless', 'telemost', binaryName('headless-telemost-creator')),
       binaryName('headless-telemost-creator'),
+    );
+    this.headlessWBStreamPath = resolveResourcePath(
+      path.join('headless', 'wbstream', binaryName('headless-wbstream-creator')),
+      binaryName('headless-wbstream-creator'),
     );
     this.hooksDir = app.isPackaged
       ? path.join(process.resourcesPath!, 'hooks')
@@ -217,9 +222,24 @@ export class TabManager {
 
   async startHeadless(tabId: string, platform: Platform): Promise<void> {
     const tab = await this.getOrCreateTab(tabId);
+    tab.platform = platform;
+
+    if (platform === Platform.WBStream) {
+      tab.tunnelMode = TunnelMode.HeadlessWBStream;
+      this.killRelay(tabId, tab);
+      const proc = spawn(this.headlessWBStreamPath, ['--resources', 'default'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      tab.relay = proc;
+      this.attachProcessOutput(proc, tabId);
+      proc.on('close', (code) => {
+        this.sendLog(tabId, `Headless exited with code ${code}`);
+      });
+      return;
+    }
+
     const isTelemost = platform === Platform.Telemost;
     tab.tunnelMode = isTelemost ? TunnelMode.HeadlessTelemost : TunnelMode.HeadlessVK;
-    tab.platform = platform;
     const cookies = isTelemost
       ? await this.getYandexCookies()
       : await this.getVKCookies();

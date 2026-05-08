@@ -21,6 +21,7 @@ import bypass.whitelist.tunnel.ProxyService
 import bypass.whitelist.tunnel.TunnelVpnService
 import bypass.whitelist.tunnel.VpnStatus
 import bypass.whitelist.ui.HeadlessTelemostFragment
+import bypass.whitelist.ui.HeadlessWBStreamFragment
 import bypass.whitelist.ui.HeadlessVkFragment
 import bypass.whitelist.ui.JoinFragmentHost
 import bypass.whitelist.ui.JsHookJoinFragment
@@ -168,7 +169,7 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
         if (url.isEmpty()) return
 
         val platform = CallPlatform.fromUrl(url)
-        if (Prefs.tunnelMode == TunnelMode.DC && platform != CallPlatform.VK) {
+        if (Prefs.tunnelMode == TunnelMode.DC && platform == CallPlatform.TELEMOST) {
             Prefs.tunnelMode = TunnelMode.VIDEO
             statusCtrl.tunnelMode = TunnelMode.VIDEO
             Toast.makeText(this, R.string.dc_mode_not_supported, Toast.LENGTH_SHORT).show()
@@ -186,10 +187,11 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
             Prefs.lastUrl = url
         }
 
-        val fragment = if (Prefs.headless) {
-            when (CallPlatform.fromUrl(url)) {
+        val fragment = if (Prefs.headless || platform == CallPlatform.WBSTREAM) {
+            when (platform) {
                 CallPlatform.VK -> HeadlessVkFragment.newInstance(url)
                 CallPlatform.TELEMOST -> HeadlessTelemostFragment.newInstance(url)
+                CallPlatform.WBSTREAM -> HeadlessWBStreamFragment.newInstance(url)
             }
         } else {
             JsHookJoinFragment.newInstance(url)

@@ -163,7 +163,10 @@ export class BotManager {
     if (payload?.cmd) {
       const handled = await this.handlePayloadCommand(payload, peerId);
       if (handled) return;
-      const cmdPrefix = payload.cmd === BotCommand.VK ? '/vk' : payload.cmd === BotCommand.TM ? '/tm' : null;
+      let cmdPrefix: string | null = null;
+      if (payload.cmd === BotCommand.VK) cmdPrefix = '/vk';
+      else if (payload.cmd === BotCommand.TM) cmdPrefix = '/tm';
+      else if (payload.cmd === BotCommand.WB) cmdPrefix = '/wb';
       if (cmdPrefix && payload.mode) {
         text = `${cmdPrefix} ${payload.mode}`;
       }
@@ -195,6 +198,7 @@ export class BotManager {
   }
 
   private parseTunnelMode(text: string, platform: Platform): TunnelMode {
+    if (platform === Platform.WBStream) return TunnelMode.HeadlessWBStream;
     if (text.includes('headless')) {
       return platform === Platform.VK ? TunnelMode.HeadlessVK : TunnelMode.HeadlessTelemost;
     }
@@ -206,6 +210,7 @@ export class BotManager {
     switch (mode) {
       case TunnelMode.HeadlessVK:
       case TunnelMode.HeadlessTelemost:
+      case TunnelMode.HeadlessWBStream:
         return 'Headless';
       case TunnelMode.PionVideo:
         return 'Video';
@@ -225,6 +230,11 @@ export class BotManager {
       console.log('[BOT] Creating Telemost tab with mode:', mode);
       this.onCreateTab({ mode, peerId, platform: Platform.Telemost });
       await this.sendMessage(peerId, `Creating Telemost call (${this.tunnelModeLabel(mode)})`, createMainKeyboard());
+    } else if (text.startsWith('/wb')) {
+      const mode = this.parseTunnelMode(text, Platform.WBStream);
+      console.log('[BOT] Creating WB Stream tab with mode:', mode);
+      this.onCreateTab({ mode, peerId, platform: Platform.WBStream });
+      await this.sendMessage(peerId, `Creating WB Stream room (${this.tunnelModeLabel(mode)})`, createMainKeyboard());
     } else if (text === '/list') {
       await this.showList(peerId);
     } else if (text.startsWith('/close ')) {

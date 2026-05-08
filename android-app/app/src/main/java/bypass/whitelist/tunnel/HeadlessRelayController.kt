@@ -118,10 +118,8 @@ class HeadlessRelayController(
             put("joinLink", joinLink)
             put("displayName", displayName)
             put("tunnelMode", tunnelMode)
-            if (bypass.whitelist.util.Prefs.vp8PacingEnabled) {
-                put("vp8Fps", bypass.whitelist.util.Prefs.vp8Fps)
-                put("vp8Batch", bypass.whitelist.util.Prefs.vp8Batch)
-            }
+            put("vp8Fps", bypass.whitelist.util.Prefs.vp8Fps)
+            put("vp8Batch", bypass.whitelist.util.Prefs.vp8Batch)
         }
         writeStdin("AUTH:$json")
     }

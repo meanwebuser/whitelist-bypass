@@ -38,11 +38,21 @@ export class RendererTabManager {
     if (!this.activeTabId) return;
     const tab = this.tabs[this.activeTabId];
     if (tab.wv) tab.wv.remove();
-    const isTelemost = platform === Platform.Telemost;
     tab.wv = null;
     tab.url = '';
-    tab.mode = isTelemost ? TunnelMode.HeadlessTelemost : TunnelMode.HeadlessVK;
-    tab.name = isTelemost ? 'Headless TM' : 'Headless VK';
+    switch (platform) {
+      case Platform.Telemost:
+        tab.mode = TunnelMode.HeadlessTelemost;
+        tab.name = 'Headless TM';
+        break;
+      case Platform.WBStream:
+        tab.mode = TunnelMode.HeadlessWBStream;
+        tab.name = 'Headless WB';
+        break;
+      default:
+        tab.mode = TunnelMode.HeadlessVK;
+        tab.name = 'Headless VK';
+    }
     tab.headless = true;
     tab.platform = platform;
     tab.callInfo = undefined;

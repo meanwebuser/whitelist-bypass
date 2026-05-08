@@ -99,6 +99,12 @@ func main() {
 		c := pion.NewTelemostClient(log.Printf)
 		c.OnConnected = creatorCallback
 		startVideo(*mode, c, creatorCallback)
+	case "wbstream-headless-joiner":
+		c := android.NewWBStreamHeadlessJoiner(log.Printf)
+		c.OnConnected = func(tun tunnel.DataTunnel) {
+			startJoinerBridge(tun, common.VP8BufSize)
+		}
+		c.Run()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown mode: %s\n", *mode)
 		os.Exit(1)

@@ -230,24 +230,21 @@ struct SettingsView: View {
                 }
 
                 Section(NSLocalizedString("settings_vp8_pacing", comment: "")) {
-                    Toggle(NSLocalizedString("settings_vp8_pacing_enabled", comment: ""), isOn: $proxyManager.vp8PacingEnabled)
-                    if proxyManager.vp8PacingEnabled {
-                        HStack {
-                            Text(NSLocalizedString("settings_vp8_fps", comment: ""))
-                            Spacer()
-                            TextField("", value: $proxyManager.vp8Fps, format: .number)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                        }
-                        HStack {
-                            Text(NSLocalizedString("settings_vp8_batch", comment: ""))
-                            Spacer()
-                            TextField("", value: $proxyManager.vp8Batch, format: .number)
-                                .keyboardType(.numberPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                        }
+                    HStack {
+                        Text(NSLocalizedString("settings_vp8_fps", comment: ""))
+                        Spacer()
+                        TextField("", value: $proxyManager.vp8Fps, format: .number)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                    }
+                    HStack {
+                        Text(NSLocalizedString("settings_vp8_batch", comment: ""))
+                        Spacer()
+                        TextField("", value: $proxyManager.vp8Batch, format: .number)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
                     }
                 }
 

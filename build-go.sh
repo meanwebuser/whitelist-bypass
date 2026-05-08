@@ -39,5 +39,8 @@ go -C "$ROOT/headless/vk" build -ldflags="-s -w" -o headless-vk-creator .
 echo "Building headless-telemost-creator-creator..."
 go -C "$ROOT/headless/telemost" build -ldflags="-s -w" -o headless-telemost-creator .
 
+echo "Building headless-wbstream-creator..."
+go -C "$ROOT/headless/wbstream" build -ldflags="-s -w" -o headless-wbstream-creator .
+
 echo "Done."
-ls -lh "$ROOT/relay/relay" "$ROOT/headless/vk/headless-vk-creator" "$ROOT/headless/telemost/headless-telemost-creator"
+ls -lh "$ROOT/relay/relay" "$ROOT/headless/vk/headless-vk-creator" "$ROOT/headless/telemost/headless-telemost-creator" "$ROOT/headless/wbstream/headless-wbstream-creator"

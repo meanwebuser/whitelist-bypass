@@ -88,6 +88,13 @@ func NewChunkedDCTunnel(readRaw datachannel.ReadWriteCloser, writeDC *webrtc.Dat
 	return t
 }
 
+func NewChunkedDCTunnelFromRaw(readRaw, writeRaw datachannel.ReadWriteCloser, obf *TunnelObfuscator, readBuf int, logFn func(string, ...any)) *DCTunnel {
+	t := &DCTunnel{raw: readRaw, writeRaw: writeRaw, obf: obf, readBuf: readBuf, logFn: logFn, chunked: true}
+	go t.readLoop()
+	go t.statsLoop()
+	return t
+}
+
 func (t *DCTunnel) readLoop() {
 	buf := make([]byte, t.readBuf)
 	for {
@@ -241,6 +248,7 @@ func (t *DCTunnel) SendData(data []byte) {
 }
 
 func (t *DCTunnel) SetOnData(fn func([]byte))   { t.onData = fn }
+func (t *DCTunnel) OnData() func([]byte)        { return t.onData }
 func (t *DCTunnel) SetOnClose(fn func())         { t.onClose = fn }
 func (t *DCTunnel) Reconfigure(fps, batch int)   {}
 

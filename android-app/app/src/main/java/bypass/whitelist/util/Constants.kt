@@ -54,7 +54,6 @@ object PrefsKeys {
     const val DNS_MODE = "dns_mode"
     const val DNS_PRIMARY = "dns_primary"
     const val DNS_SECONDARY = "dns_secondary"
-    const val VP8_PACING_ENABLED = "vp8_pacing_enabled"
     const val VP8_FPS = "vp8_fps"
     const val VP8_BATCH = "vp8_batch"
 }

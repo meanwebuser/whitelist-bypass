@@ -35,6 +35,9 @@ export function createMainKeyboard() {
         { action: { type: 'text', label: '👻 TM Headless', payload: JSON.stringify({ cmd: BotCommand.TM, mode: 'headless' }) } },
       ],
       [
+        { action: { type: 'text', label: '👻 WB Headless', payload: JSON.stringify({ cmd: BotCommand.WB, mode: 'headless' }) } },
+      ],
+      [
         { action: { type: 'text', label: '📋 Active Tabs', payload: JSON.stringify({ cmd: BotCommand.List }) } },
       ],
     ],

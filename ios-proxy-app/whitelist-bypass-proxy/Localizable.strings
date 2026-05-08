@@ -9,7 +9,7 @@
 "btn_go" = "Go";
 "btn_done" = "Done";
 "btn_open_in_telegram" = "Open in Telegram";
-"hint_call_link" = "VK or Telemost call link";
+"hint_call_link" = "VK / Telemost link or wbstream://<room-id>";
 "hint_username" = "Username";
 "hint_password" = "Password";
 "hint_display_name" = "Display Name";
@@ -25,7 +25,6 @@
 "settings_display" = "Display";
 "settings_show_logs" = "Show Logs";
 "settings_vp8_pacing" = "VP8 Pacing";
-"settings_vp8_pacing_enabled" = "Override VP8 Pacing";
 "settings_vp8_fps" = "FPS";
 "settings_vp8_batch" = "Batch";
 "proxy_url_copied" = "Proxy URL copied";

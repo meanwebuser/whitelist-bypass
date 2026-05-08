@@ -117,12 +117,25 @@ enum TunnelMode: String, CaseIterable {
 enum CallPlatform: String {
     case vk = "vk"
     case telemost = "telemost"
+    case wbstream = "wbstream"
+
+    static let wbstreamPrefix = "wbstream://"
 
     static func detect(url: String) -> CallPlatform {
+        if url.hasPrefix(wbstreamPrefix) {
+            return .wbstream
+        }
         if url.contains("telemost.yandex") {
             return .telemost
         }
         return .vk
+    }
+
+    static func extractRoomId(url: String) -> String {
+        if url.hasPrefix(wbstreamPrefix) {
+            return String(url.dropFirst(wbstreamPrefix.count)).trimmingCharacters(in: .whitespaces)
+        }
+        return url.trimmingCharacters(in: .whitespaces)
     }
 }
 
@@ -143,7 +156,6 @@ class ProxyManager: ObservableObject {
     @Published var socksAuthMode: SocksAuthMode = AppDefaults.socksAuthMode { didSet { AppDefaults.socksAuthMode = socksAuthMode } }
     @Published var manualSocksUser: String = AppDefaults.socksUser { didSet { AppDefaults.socksUser = manualSocksUser } }
     @Published var manualSocksPass: String = AppDefaults.socksPass { didSet { AppDefaults.socksPass = manualSocksPass } }
-    @Published var vp8PacingEnabled: Bool = AppDefaults.vp8PacingEnabled { didSet { AppDefaults.vp8PacingEnabled = vp8PacingEnabled } }
     @Published var vp8Fps: Int = AppDefaults.vp8Fps { didSet { AppDefaults.vp8Fps = vp8Fps } }
     @Published var vp8Batch: Int = AppDefaults.vp8Batch { didSet { AppDefaults.vp8Batch = vp8Batch } }
 
@@ -258,7 +270,7 @@ class ProxyManager: ObservableObject {
         detectedPlatform = CallPlatform.detect(url: callUrl)
         appendLog("Platform: \(detectedPlatform.rawValue)")
 
-        if tunnelMode == .dc && detectedPlatform != .vk {
+        if tunnelMode == .dc && detectedPlatform == .telemost {
             tunnelMode = .video
             showToast(NSLocalizedString("dc_mode_not_supported", comment: ""))
         }
@@ -267,14 +279,12 @@ class ProxyManager: ObservableObject {
         case .telemost:
             IosStartTelemostHeadless(socksPort, activeSocksUser, activeSocksPass, bridge)
             appendLog("Started Telemost headless joiner")
-            var joinParams: [String: Any] = [
+            let joinParams: [String: Any] = [
                 "joinLink": callUrl,
                 "displayName": displayName,
+                "vp8Fps": vp8Fps,
+                "vp8Batch": vp8Batch,
             ]
-            if vp8PacingEnabled {
-                joinParams["vp8Fps"] = vp8Fps
-                joinParams["vp8Batch"] = vp8Batch
-            }
             if let jsonData = try? JSONSerialization.data(withJSONObject: joinParams),
                let jsonString = String(data: jsonData, encoding: .utf8) {
                 IosSendJoinParams(jsonString)
@@ -282,10 +292,24 @@ class ProxyManager: ObservableObject {
             }
 
         case .vk:
-            let fps = vp8PacingEnabled ? vp8Fps : 0
-            let batch = vp8PacingEnabled ? vp8Batch : 0
-            IosStartVKHeadless(socksPort, activeSocksUser, activeSocksPass, callUrl, displayName, tunnelMode.rawValue, fps, batch, bridge)
+            IosStartVKHeadless(socksPort, activeSocksUser, activeSocksPass, callUrl, displayName, tunnelMode.rawValue, vp8Fps, vp8Batch, bridge)
             appendLog("Started VK headless joiner")
+
+        case .wbstream:
+            IosStartWBStreamHeadless(socksPort, activeSocksUser, activeSocksPass, bridge)
+            appendLog("Started WB Stream headless joiner")
+            let joinParams: [String: Any] = [
+                "roomId": CallPlatform.extractRoomId(url: callUrl),
+                "displayName": displayName,
+                "tunnelMode": tunnelMode.rawValue,
+                "vp8Fps": vp8Fps,
+                "vp8Batch": vp8Batch,
+            ]
+            if let jsonData = try? JSONSerialization.data(withJSONObject: joinParams),
+               let jsonString = String(data: jsonData, encoding: .utf8) {
+                IosSendJoinParams(jsonString)
+                appendLog("Sent join params")
+            }
         }
     }
 

@@ -176,6 +176,12 @@ body {
   opacity: 0.8;
 }
 
+.btn-headless-wb {
+  background: linear-gradient(90deg, #cb11ab 0%, #481173 100%);
+  color: white;
+  opacity: 0.85;
+}
+
 .toolbar-spacer {
   margin-left: auto;
 }
