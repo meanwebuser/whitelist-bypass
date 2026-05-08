@@ -22,12 +22,15 @@ type SFURelay struct {
 
 	sampleTrack  *webrtc.TrackLocalStaticSample
 	tun          *tunnel.VP8DataTunnel
+	obf          *tunnel.TunnelObfuscator
 	OnConnected  func(*tunnel.VP8DataTunnel)
 	OnPubICE     func(*webrtc.ICECandidate)
 	OnSubICE     func(*webrtc.ICECandidate)
 
 	readBufSize int
 }
+
+func (r *SFURelay) SetObfuscator(o *tunnel.TunnelObfuscator) { r.obf = o }
 
 func NewSFURelay() *SFURelay {
 	return &SFURelay{}
@@ -205,7 +208,10 @@ func (r *SFURelay) readTrack(track *webrtc.TrackRemote) {
 
 	var vp8Pkt codecs.VP8Packet
 	var frameBuf []byte
-	var dataCount, recvCount int
+	var lastSeq uint16
+	var haveLastSeq bool
+	frameValid := false
+	var recvCount int
 	bufSz := r.readBufSize
 	if bufSz <= 0 {
 		bufSz = common.RTPBufSize
@@ -220,39 +226,58 @@ func (r *SFURelay) readTrack(track *webrtc.TrackRemote) {
 		if pkt.Unmarshal(buf[:n]) != nil {
 			continue
 		}
+		if haveLastSeq && pkt.SequenceNumber != lastSeq+1 {
+			frameValid = false
+			frameBuf = frameBuf[:0]
+		}
+		lastSeq = pkt.SequenceNumber
+		haveLastSeq = true
+
 		vp8Payload, err := vp8Pkt.Unmarshal(pkt.Payload)
 		if err != nil {
+			frameValid = false
+			frameBuf = frameBuf[:0]
 			continue
 		}
 		if vp8Pkt.S == 1 {
 			frameBuf = frameBuf[:0]
+			frameValid = true
+		}
+		if !frameValid {
+			continue
 		}
 		frameBuf = append(frameBuf, vp8Payload...)
-		if pkt.Marker {
-			recvCount++
-			if recvCount <= 3 || recvCount%25 == 0 {
-				if len(frameBuf) > 0 {
-					log.Printf("[video] recv frame #%d %d bytes, first=0x%02x", recvCount, len(frameBuf), frameBuf[0])
-				}
+		if !pkt.Marker {
+			continue
+		}
+		recvCount++
+		if recvCount <= 3 || recvCount%200 == 0 {
+			log.Printf("[video] recv vp8 frame #%d %d bytes", recvCount, len(frameBuf))
+		}
+
+		res := r.obf.Decode(frameBuf)
+		frameBuf = frameBuf[:0]
+		frameValid = false
+
+		if !res.HasFrame || res.SelfEcho {
+			continue
+		}
+		if res.PeerRestart {
+			log.Printf("[video] peer restart detected, new epoch=0x%08x", res.PeerEpoch)
+		}
+		if res.Keepalive || len(res.Payload) == 0 {
+			continue
+		}
+		if r.tun == nil {
+			log.Println("[relay] === MODE: VIDEO ===")
+			r.tun = tunnel.NewVP8DataTunnel(r.sampleTrack, r.obf, log.Printf)
+			r.tun.Start(0, 0)
+			if r.OnConnected != nil {
+				r.OnConnected(r.tun)
 			}
-			data := tunnel.ExtractDataFromPayload(frameBuf)
-			if data != nil {
-				if r.tun == nil {
-					log.Println("[relay] === MODE: VIDEO ===")
-					r.tun = tunnel.NewVP8DataTunnel(r.sampleTrack, log.Printf)
-					r.tun.Start(25)
-					if r.OnConnected != nil {
-						r.OnConnected(r.tun)
-					}
-				}
-				dataCount++
-				if dataCount <= 5 || dataCount%100 == 0 {
-					log.Printf("[video] TUNNEL DATA #%d: %d bytes", dataCount, len(data))
-				}
-				if r.tun.OnData != nil {
-					r.tun.OnData(data)
-				}
-			}
+		}
+		if r.tun.OnData != nil {
+			r.tun.OnData(res.Payload)
 		}
 	}
 }

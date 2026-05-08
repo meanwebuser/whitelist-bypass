@@ -53,6 +53,9 @@ type TelemostHeadlessJoiner struct {
 
 	sampleTrack *webrtc.TrackLocalStaticSample
 	vp8tunnel   *tunnel.VP8DataTunnel
+	obf         *tunnel.TunnelObfuscator
+	vp8FPS      int
+	vp8Batch    int
 
 	httpClient *http.Client
 	instanceID string
@@ -81,6 +84,8 @@ func (j *TelemostHeadlessJoiner) RunWithParams(jsonParams string) {
 	var params struct {
 		JoinLink    string `json:"joinLink"`
 		DisplayName string `json:"displayName"`
+		VP8FPS      int    `json:"vp8Fps"`
+		VP8Batch    int    `json:"vp8Batch"`
 	}
 	if err := json.Unmarshal([]byte(jsonParams), &params); err != nil {
 		j.logFn("telemost-joiner: failed to parse params: %v", err)
@@ -92,7 +97,17 @@ func (j *TelemostHeadlessJoiner) RunWithParams(jsonParams string) {
 	if j.displayName == "" {
 		j.displayName = "Joiner"
 	}
-	j.logFn("telemost-joiner: link=%s name=%s mode=video", j.joinLink, j.displayName)
+	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(params.JoinLink))
+	if err != nil {
+		j.logFn("telemost-joiner: obfuscator init failed: %v", err)
+		j.Status.EmitStatusError("obfuscator init: " + err.Error())
+		return
+	}
+	j.obf = obf
+	j.vp8FPS = params.VP8FPS
+	j.vp8Batch = params.VP8Batch
+	j.logFn("telemost-joiner: link=%s name=%s vp8Fps=%d vp8Batch=%d localEpoch=0x%08x",
+		j.joinLink, j.displayName, params.VP8FPS, params.VP8Batch, obf.LocalEpoch())
 	j.Status.EmitStatus(common.StatusConnecting)
 
 	if err := j.getConnection(); err != nil {
@@ -354,7 +369,11 @@ func (j *TelemostHeadlessJoiner) initPC() {
 
 	subPC.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		j.logFn("telemost-joiner: sub remote track: %s", track.Codec().MimeType)
-		go j.ReadTrackFn(track, j.vp8tunnel, j.logFn, "telemost-joiner")
+		go j.ReadTrackFn(track, func(frame []byte) {
+			if j.vp8tunnel != nil {
+				j.vp8tunnel.HandleFrame(frame)
+			}
+		}, j.logFn, "telemost-joiner")
 	})
 
 	pubPC, err := api.NewPeerConnection(config)
@@ -378,8 +397,10 @@ func (j *TelemostHeadlessJoiner) initPC() {
 		if state == webrtc.PeerConnectionStateConnected && j.vp8tunnel == nil {
 			j.logFn("telemost-joiner: === VP8 TUNNEL CONNECTED ===")
 			j.Status.EmitStatus(common.StatusTunnelConnected)
-			j.vp8tunnel = tunnel.NewVP8DataTunnel(j.sampleTrack, j.logFn)
-			j.vp8tunnel.Start(25)
+			j.vp8tunnel = tunnel.NewVP8DataTunnel(j.sampleTrack, j.obf, j.logFn)
+			j.vp8tunnel.Start(j.vp8FPS, j.vp8Batch)
+			j.vp8tunnel.SendData(tunnel.EncodeVP8Config(j.vp8tunnel.FPS(), j.vp8tunnel.Batch()))
+			j.logFn("telemost-joiner: pushed vp8 config to creator fps=%d batch=%d", j.vp8tunnel.FPS(), j.vp8tunnel.Batch())
 			if j.OnConnected != nil {
 				j.OnConnected(j.vp8tunnel)
 			}

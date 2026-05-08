@@ -10,7 +10,6 @@ import (
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"whitelist-bypass/relay/common"
-	"whitelist-bypass/relay/tunnel"
 )
 
 type SignalingMessage struct {
@@ -167,7 +166,7 @@ func ParseSDPType(t string) webrtc.SDPType {
 	return webrtc.SDPTypeAnswer
 }
 
-func ReadTrack(track *webrtc.TrackRemote, tun *tunnel.VP8DataTunnel, logFn func(string, ...any), prefix string) {
+func ReadTrack(track *webrtc.TrackRemote, handler func([]byte), logFn func(string, ...any), prefix string) {
 	if track.Codec().MimeType != webrtc.MimeTypeVP8 {
 		buf := make([]byte, common.UDPBufSize)
 		for {
@@ -179,7 +178,9 @@ func ReadTrack(track *webrtc.TrackRemote, tun *tunnel.VP8DataTunnel, logFn func(
 
 	var vp8Pkt codecs.VP8Packet
 	var frameBuf []byte
-	dataCount := 0
+	var lastSeq uint16
+	var haveLastSeq bool
+	frameValid := false
 	recvCount := 0
 	buf := make([]byte, common.RTPBufSize)
 	for {
@@ -191,31 +192,40 @@ func ReadTrack(track *webrtc.TrackRemote, tun *tunnel.VP8DataTunnel, logFn func(
 		if pkt.Unmarshal(buf[:n]) != nil {
 			continue
 		}
+		if haveLastSeq && pkt.SequenceNumber != lastSeq+1 {
+			frameValid = false
+			frameBuf = frameBuf[:0]
+		}
+		lastSeq = pkt.SequenceNumber
+		haveLastSeq = true
+
 		vp8Payload, err := vp8Pkt.Unmarshal(pkt.Payload)
 		if err != nil {
+			frameValid = false
+			frameBuf = frameBuf[:0]
 			continue
 		}
 		if vp8Pkt.S == 1 {
 			frameBuf = frameBuf[:0]
+			frameValid = true
+		}
+		if !frameValid {
+			continue
 		}
 		frameBuf = append(frameBuf, vp8Payload...)
-		if pkt.Marker {
-			recvCount++
-			if recvCount <= 3 || recvCount%25 == 0 {
-				if len(frameBuf) > 0 {
-					logFn("%s: recv frame #%d %d bytes, first=0x%02x", prefix, recvCount, len(frameBuf), frameBuf[0])
-				}
-			}
-			data := tunnel.ExtractDataFromPayload(frameBuf)
-			if data != nil {
-				dataCount++
-				if dataCount <= 5 || dataCount%100 == 0 {
-					logFn("%s: TUNNEL DATA #%d: %d bytes", prefix, dataCount, len(data))
-				}
-				if tun != nil && tun.OnData != nil {
-					tun.OnData(data)
-				}
-			}
+		if !pkt.Marker {
+			continue
 		}
+		recvCount++
+		if recvCount <= 3 || recvCount%200 == 0 {
+			logFn("%s: recv vp8 frame #%d %d bytes", prefix, recvCount, len(frameBuf))
+		}
+		if handler != nil {
+			frame := make([]byte, len(frameBuf))
+			copy(frame, frameBuf)
+			handler(frame)
+		}
+		frameBuf = frameBuf[:0]
+		frameValid = false
 	}
 }

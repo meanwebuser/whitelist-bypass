@@ -27,6 +27,8 @@ type VKHeadlessAuthParams struct {
 	AppVersion      string `json:"appVersion"`
 	ProtocolVersion string `json:"protocolVersion"`
 	TunnelMode      string `json:"tunnelMode"`
+	VP8FPS          int    `json:"vp8Fps"`
+	VP8Batch        int    `json:"vp8Batch"`
 }
 
 type VKJoinResponse struct {
@@ -62,6 +64,9 @@ type VKHeadlessJoiner struct {
 	sampleTrack *webrtc.TrackLocalStaticSample
 	dc          *webrtc.DataChannel
 	vp8tunnel   *tunnel.VP8DataTunnel
+	obf         *tunnel.TunnelObfuscator
+	vp8FPS      int
+	vp8Batch    int
 	remoteSet   bool
 	pendingICE  []webrtc.ICECandidateInit
 }
@@ -85,8 +90,19 @@ func (h *VKHeadlessJoiner) RunWithParams(jsonParams string) {
 		return
 	}
 	h.authParams = &params
+	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(params.JoinLink))
+	if err != nil {
+		h.logFn("headless: obfuscator init failed: %v", err)
+		h.Status.EmitStatusError("obfuscator init: " + err.Error())
+		return
+	}
+	h.obf = obf
+	h.vp8FPS = params.VP8FPS
+	h.vp8Batch = params.VP8Batch
 	h.logFn("headless: auth params received")
-	h.logFn("headless:   appVersion=%s protocolVersion=%s", params.AppVersion, params.ProtocolVersion)
+	h.logFn("headless: obf key-source=%q localEpoch=0x%08x", params.JoinLink, obf.LocalEpoch())
+	h.logFn("headless:   appVersion=%s protocolVersion=%s vp8Fps=%d vp8Batch=%d",
+		params.AppVersion, params.ProtocolVersion, params.VP8FPS, params.VP8Batch)
 	h.Status.EmitStatus(common.StatusConnecting)
 
 	if err := h.joinCall(); err != nil {
@@ -429,7 +445,7 @@ func (h *VKHeadlessJoiner) initPC() {
 				h.logFn("headless: === DC TUNNEL CONNECTED ===")
 				h.Status.EmitStatus(common.StatusTunnelConnected)
 				if h.OnConnected != nil {
-					h.OnConnected(tunnel.NewDCTunnel(dc, common.RTPBufSize, h.logFn))
+					h.OnConnected(tunnel.NewDCTunnel(dc, h.obf, common.RTPBufSize, h.logFn))
 				}
 			}
 		})
@@ -456,8 +472,10 @@ func (h *VKHeadlessJoiner) initPC() {
 		if mode == "video" && state == webrtc.PeerConnectionStateConnected && h.vp8tunnel == nil {
 			h.logFn("headless: === TUNNEL CONNECTED ===")
 			h.Status.EmitStatus(common.StatusTunnelConnected)
-			h.vp8tunnel = tunnel.NewVP8DataTunnel(h.sampleTrack, h.logFn)
-			h.vp8tunnel.Start(25)
+			h.vp8tunnel = tunnel.NewVP8DataTunnel(h.sampleTrack, h.obf, h.logFn)
+			h.vp8tunnel.Start(h.vp8FPS, h.vp8Batch)
+			h.vp8tunnel.SendData(tunnel.EncodeVP8Config(h.vp8tunnel.FPS(), h.vp8tunnel.Batch()))
+			h.logFn("headless: pushed vp8 config to creator fps=%d batch=%d", h.vp8tunnel.FPS(), h.vp8tunnel.Batch())
 			if h.OnConnected != nil {
 				h.OnConnected(h.vp8tunnel)
 			}
@@ -466,7 +484,11 @@ func (h *VKHeadlessJoiner) initPC() {
 	if mode == "video" {
 		pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 			h.logFn("headless: remote track: %s", track.Codec().MimeType)
-			go h.ReadTrackFn(track, h.vp8tunnel, h.logFn, "headless")
+			go h.ReadTrackFn(track, func(frame []byte) {
+				if h.vp8tunnel != nil {
+					h.vp8tunnel.HandleFrame(frame)
+				}
+			}, h.logFn, "headless")
 		})
 	}
 

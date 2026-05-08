@@ -505,6 +505,12 @@ func (b *Bridge) initRelay() {
 
 	relay := NewSFURelay()
 	relay.readBufSize = b.readBuf
+	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(b.connInfo.ConferenceURI))
+	if err != nil {
+		log.Fatalf("[relay] obfuscator init failed: %v", err)
+	}
+	relay.SetObfuscator(obf)
+	log.Printf("[relay] obfuscator localEpoch=0x%08x", obf.LocalEpoch())
 	relay.OnConnected = func(tun *tunnel.VP8DataTunnel) {
 		tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
 		fmt.Print("\n  TUNNEL CONNECTED\n")

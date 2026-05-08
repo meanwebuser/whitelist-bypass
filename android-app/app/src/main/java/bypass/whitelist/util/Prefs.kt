@@ -109,4 +109,16 @@ object Prefs {
     var dnsSecondary: String
         get() = prefs.getString(PrefsKeys.DNS_SECONDARY, Vpn.DNS_SECONDARY)!!
         set(value) = prefs.edit { putString(PrefsKeys.DNS_SECONDARY, value) }
+
+    var vp8PacingEnabled: Boolean
+        get() = prefs.getBoolean(PrefsKeys.VP8_PACING_ENABLED, false)
+        set(value) = prefs.edit { putBoolean(PrefsKeys.VP8_PACING_ENABLED, value) }
+
+    var vp8Fps: Int
+        get() = prefs.getInt(PrefsKeys.VP8_FPS, VP8Defaults.FPS)
+        set(value) = prefs.edit { putInt(PrefsKeys.VP8_FPS, value) }
+
+    var vp8Batch: Int
+        get() = prefs.getInt(PrefsKeys.VP8_BATCH, VP8Defaults.BATCH)
+        set(value) = prefs.edit { putInt(PrefsKeys.VP8_BATCH, value) }
 }

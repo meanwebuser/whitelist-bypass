@@ -24,11 +24,22 @@ type TelemostClient struct {
 	pcMu        sync.Mutex
 	sampleTrack *webrtc.TrackLocalStaticSample
 	vp8tunnel   *tunnel.VP8DataTunnel
+	obf         *tunnel.TunnelObfuscator
 	logFn       func(string, ...any)
 	LocalIP     string
 	ipReady     chan struct{}
 	ipOnce      sync.Once
 	OnConnected func(tunnel.DataTunnel)
+}
+
+func (c *TelemostClient) Configure(joinLink string) error {
+	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(joinLink))
+	if err != nil {
+		return err
+	}
+	c.obf = obf
+	c.logFn("telemost: obfuscator localEpoch=0x%08x", obf.LocalEpoch())
+	return nil
 }
 
 func NewTelemostClient(logFn func(string, ...any)) *TelemostClient {
@@ -165,8 +176,8 @@ func (c *TelemostClient) handleICEServers(data json.RawMessage, role string) {
 			c.logFn("telemost: === CONNECTED - starting VP8 tunnel ===")
 			c.logFn("telemost: sampleTrack id=%s kind=%s", c.sampleTrack.ID(), c.sampleTrack.Kind().String())
 			c.logFn("telemost: pub senders=%d receivers=%d", len(pc.GetSenders()), len(pc.GetReceivers()))
-			c.vp8tunnel = tunnel.NewVP8DataTunnel(c.sampleTrack, c.logFn)
-			c.vp8tunnel.Start(25)
+			c.vp8tunnel = tunnel.NewVP8DataTunnel(c.sampleTrack, c.obf, c.logFn)
+			c.vp8tunnel.Start(0, 0)
 			if c.OnConnected != nil {
 				c.OnConnected(c.vp8tunnel)
 			}
@@ -263,7 +274,11 @@ func (c *TelemostClient) handleICECandidate(data json.RawMessage, role string) {
 }
 
 func (c *TelemostClient) readTrack(track *webrtc.TrackRemote) {
-	ReadTrack(track, c.vp8tunnel, c.logFn, "telemost")
+	ReadTrack(track, func(frame []byte) {
+		if c.vp8tunnel != nil {
+			c.vp8tunnel.HandleFrame(frame)
+		}
+	}, c.logFn, "telemost")
 }
 
 func (c *TelemostClient) cleanup() {

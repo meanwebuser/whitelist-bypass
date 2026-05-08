@@ -33,6 +33,7 @@ type TunnelRelay struct {
 
 	sampleTrack *webrtc.TrackLocalStaticSample
 	tun         *tunnel.VP8DataTunnel
+	obf         *tunnel.TunnelObfuscator
 	OnConnected func(*tunnel.VP8DataTunnel)
 
 	readBufSize int
@@ -41,6 +42,8 @@ type TunnelRelay struct {
 	mode     string
 	modeOnce sync.Once
 }
+
+func (u *TunnelRelay) SetObfuscator(o *tunnel.TunnelObfuscator) { u.obf = o }
 
 func NewTunnelRelay() *TunnelRelay {
 	return &TunnelRelay{mode: "unknown"}
@@ -133,8 +136,8 @@ func (u *TunnelRelay) Init(iceServers []webrtc.ICEServer) error {
 		u.modeOnce.Do(func() {
 			u.mode = "video"
 			log.Println("[relay] === MODE: VIDEO ===")
-			u.tun = tunnel.NewVP8DataTunnel(sampleTrack, log.Printf)
-			u.tun.Start(25)
+			u.tun = tunnel.NewVP8DataTunnel(sampleTrack, u.obf, log.Printf)
+			u.tun.Start(0, 0)
 			if u.OnConnected != nil {
 				u.OnConnected(u.tun)
 			}
@@ -216,6 +219,14 @@ func (u *TunnelRelay) Close() {
 }
 
 func (u *TunnelRelay) handleDCMessage(data []byte) {
+	if u.obf != nil {
+		pt, ok := u.obf.DecryptPayload(data)
+		if !ok {
+			log.Printf("[dc] decrypt failed, dropping %d bytes", len(data))
+			return
+		}
+		data = pt
+	}
 	if len(data) < 5 {
 		return
 	}
@@ -259,7 +270,14 @@ func (u *TunnelRelay) sendDCFrame(connID uint32, mt byte, payload []byte) {
 	binary.BigEndian.PutUint32(buf[0:4], connID)
 	buf[4] = mt
 	copy(buf[5:], payload)
-	u.dc.Send(buf)
+	wire := buf
+	if u.obf != nil {
+		wire = u.obf.EncryptPayload(buf)
+		if wire == nil {
+			return
+		}
+	}
+	u.dc.Send(wire)
 }
 
 func (u *TunnelRelay) connectTCP(connID uint32, addr string) {
@@ -366,7 +384,10 @@ func (u *TunnelRelay) readTrack(track *webrtc.TrackRemote) {
 
 	var vp8Pkt codecs.VP8Packet
 	var frameBuf []byte
-	var dataCount, recvCount int
+	var lastSeq uint16
+	var haveLastSeq bool
+	frameValid := false
+	var recvCount int
 	buf := make([]byte, common.RTPBufSize)
 	for {
 		n, _, err := track.Read(buf)
@@ -377,31 +398,39 @@ func (u *TunnelRelay) readTrack(track *webrtc.TrackRemote) {
 		if pkt.Unmarshal(buf[:n]) != nil {
 			continue
 		}
+		if haveLastSeq && pkt.SequenceNumber != lastSeq+1 {
+			frameValid = false
+			frameBuf = frameBuf[:0]
+		}
+		lastSeq = pkt.SequenceNumber
+		haveLastSeq = true
+
 		vp8Payload, err := vp8Pkt.Unmarshal(pkt.Payload)
 		if err != nil {
+			frameValid = false
+			frameBuf = frameBuf[:0]
 			continue
 		}
 		if vp8Pkt.S == 1 {
 			frameBuf = frameBuf[:0]
+			frameValid = true
+		}
+		if !frameValid {
+			continue
 		}
 		frameBuf = append(frameBuf, vp8Payload...)
-		if pkt.Marker {
-			recvCount++
-			if recvCount <= 3 || recvCount%25 == 0 {
-				if len(frameBuf) > 0 {
-					log.Printf("[video] recv frame #%d %d bytes, first=0x%02x", recvCount, len(frameBuf), frameBuf[0])
-				}
-			}
-			data := tunnel.ExtractDataFromPayload(frameBuf)
-			if data != nil {
-				dataCount++
-				if dataCount <= 5 || dataCount%100 == 0 {
-					log.Printf("[video] TUNNEL DATA #%d: %d bytes", dataCount, len(data))
-				}
-				if u.tun != nil && u.tun.OnData != nil {
-					u.tun.OnData(data)
-				}
-			}
+		if !pkt.Marker {
+			continue
 		}
+		recvCount++
+		if recvCount <= 3 || recvCount%200 == 0 {
+			log.Printf("[video] recv vp8 frame #%d %d bytes", recvCount, len(frameBuf))
+		}
+
+		if u.tun != nil {
+			u.tun.HandleFrame(frameBuf)
+		}
+		frameBuf = frameBuf[:0]
+		frameValid = false
 	}
 }

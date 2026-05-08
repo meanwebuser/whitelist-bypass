@@ -41,6 +41,10 @@ class HeadlessTelemostFragment : Fragment() {
                         val params = JSONObject().apply {
                             put("joinLink", joinLink)
                             put("displayName", displayName)
+                            if (Prefs.vp8PacingEnabled) {
+                                put("vp8Fps", Prefs.vp8Fps)
+                                put("vp8Batch", Prefs.vp8Batch)
+                            }
                         }
                         relay.sendJoinParams(params.toString())
                     }

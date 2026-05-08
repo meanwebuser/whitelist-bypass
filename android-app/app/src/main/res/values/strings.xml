@@ -57,6 +57,14 @@
     <string name="dns_mode_custom">Custom</string>
     <string name="dns_primary_hint">Primary DNS</string>
     <string name="dns_secondary_hint">Secondary DNS</string>
+    <string name="menu_vp8_pacing">VP8 pacing</string>
+    <string name="vp8_pacing_title">VP8 pacing</string>
+    <string name="vp8_pacing_enabled_label">Override VP8 pacing</string>
+    <string name="vp8_pacing_hint">When off, defaults are used (fps=25, batch=1). Higher batch = higher throughput.</string>
+    <string name="vp8_fps_label">FPS</string>
+    <string name="vp8_fps_hint">e.g. 25</string>
+    <string name="vp8_batch_label">Batch</string>
+    <string name="vp8_batch_hint">e.g. 1, 8, 16</string>
     <string name="notification_vpn_title">VPN active</string>
     <string name="notification_proxy_title">Proxy active</string>
     <string name="notification_disconnect">Disconnect</string>

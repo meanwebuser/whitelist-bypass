@@ -1,7 +1,6 @@
 package tunnel
 
 import (
-	"encoding/binary"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -10,138 +9,213 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media"
 )
 
-var vp8Keyframe = []byte{
-	16, 2, 0, 157, 1, 42, 2, 0, 2, 0, 2, 7, 8, 133, 133, 136,
-	153, 132, 136, 11, 2, 0, 12, 13, 96, 0, 254, 252, 173, 16,
-}
-
-var vp8Interframe = []byte{
-	177, 1, 0, 8, 17, 24, 0, 24, 0, 24, 88, 47, 244, 0, 8, 0, 0,
-}
-
-const DataFrameMarker = 0xCD
-const dataHeaderLen = 17 + 1 + 4 // vp8Interframe + marker + uint32 length
+const (
+	defaultVP8FPS       = 24
+	defaultVP8Batch     = 30
+	keepaliveIdlePeriod = 100 * time.Millisecond
+	sendQueueDepth      = 1024
+)
 
 type VP8DataTunnel struct {
-	track      *webrtc.TrackLocalStaticSample
-	mu         sync.Mutex
-	logFn      func(string, ...any)
-	frameCount uint64
-	running    bool
-	stopCh     chan struct{}
-	sendQueue  chan []byte
-	OnData     func([]byte)
-	OnClose    func()
+	track     *webrtc.TrackLocalStaticSample
+	logFn     func(string, ...any)
+	obf       *TunnelObfuscator
+	stopCh    chan struct{}
+	sendQueue chan []byte
+	cfgChan   chan struct{}
+
+	stopOnce sync.Once
+	running  atomic.Bool
+
+	cfgMu sync.Mutex
+	fps   int
+	batch int
+
+	sentFrames atomic.Uint64
+	recvFrames atomic.Uint64
+
+	OnData  func([]byte)
+	OnClose func()
 }
 
-func (t *VP8DataTunnel) SetOnData(fn func([]byte))  { t.OnData = fn }
-func (t *VP8DataTunnel) SetOnClose(fn func())        { t.OnClose = fn }
+func (t *VP8DataTunnel) SetOnData(fn func([]byte)) { t.OnData = fn }
+func (t *VP8DataTunnel) SetOnClose(fn func())       { t.OnClose = fn }
 
-func NewVP8DataTunnel(track *webrtc.TrackLocalStaticSample, logFn func(string, ...any)) *VP8DataTunnel {
+func NewVP8DataTunnel(track *webrtc.TrackLocalStaticSample, obf *TunnelObfuscator, logFn func(string, ...any)) *VP8DataTunnel {
 	return &VP8DataTunnel{
 		track:     track,
+		obf:       obf,
 		logFn:     logFn,
 		stopCh:    make(chan struct{}),
-		sendQueue: make(chan []byte, 256),
+		sendQueue: make(chan []byte, sendQueueDepth),
+		cfgChan:   make(chan struct{}, 1),
+		fps:       defaultVP8FPS,
+		batch:     defaultVP8Batch,
 	}
 }
 
-func (t *VP8DataTunnel) buildFrame(data []byte) []byte {
-	t.frameCount++
-	if len(data) == 0 {
-		if t.frameCount%60 == 0 {
-			return vp8Keyframe
-		}
-		return vp8Interframe
+func (t *VP8DataTunnel) Reconfigure(fps, batch int) {
+	if fps <= 0 && batch <= 0 {
+		return
 	}
-	frame := make([]byte, dataHeaderLen+len(data))
-	copy(frame, vp8Interframe)
-	frame[len(vp8Interframe)] = DataFrameMarker
-	binary.BigEndian.PutUint32(frame[len(vp8Interframe)+1:len(vp8Interframe)+5], uint32(len(data)))
-	copy(frame[dataHeaderLen:], data)
-	return frame
+	t.cfgMu.Lock()
+	changed := false
+	if fps > 0 && t.fps != fps {
+		t.fps = fps
+		changed = true
+	}
+	if batch > 0 && t.batch != batch {
+		t.batch = batch
+		changed = true
+	}
+	newFPS, newBatch := t.fps, t.batch
+	t.cfgMu.Unlock()
+	if !changed {
+		return
+	}
+	t.logFn("vp8tunnel: reconfigure fps=%d batch=%d", newFPS, newBatch)
+	select {
+	case t.cfgChan <- struct{}{}:
+	default:
+	}
 }
 
-var sendCount atomic.Uint64
+func (t *VP8DataTunnel) FPS() int {
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
+	return t.fps
+}
+
+func (t *VP8DataTunnel) Batch() int {
+	t.cfgMu.Lock()
+	defer t.cfgMu.Unlock()
+	return t.batch
+}
 
 func (t *VP8DataTunnel) SendData(data []byte) {
-	n := sendCount.Add(1)
-	if n <= 5 || n%100 == 0 {
-		t.logFn("vp8tunnel: SendData #%d len=%d queueLen=%d", n, len(data), len(t.sendQueue))
+	if len(data) == 0 {
+		return
 	}
-	t.sendQueue <- data
+	select {
+	case t.sendQueue <- data:
+	case <-t.stopCh:
+	}
 }
 
-func (t *VP8DataTunnel) Start(fps int) {
-	t.running = true
-	keepaliveInterval := time.Second / time.Duration(fps)
-	lastSend := time.Now()
-
-	go func() {
-		ticker := time.NewTicker(keepaliveInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-t.stopCh:
-				return
-			case data := <-t.sendQueue:
-				now := time.Now()
-				elapsed := now.Sub(lastSend)
-				// Most stable interval for burst mode, prevents congestion control
-				minInterval := 1250 * time.Microsecond
-				if elapsed < minInterval {
-					time.Sleep(minInterval - elapsed)
-				}
-				frame := t.buildFrame(data)
-				err := t.track.WriteSample(media.Sample{Data: frame, Duration: keepaliveInterval})
-				lastSend = time.Now()
-				if err != nil {
-					t.logFn("vp8tunnel: WriteSample DATA error: %v (frame %d, %d bytes)", err, t.frameCount-1, len(frame))
-				} else if t.frameCount <= 10 || t.frameCount%100 == 0 {
-					t.logFn("vp8tunnel: WriteSample DATA ok frame=%d size=%d dataLen=%d first=0x%02x", t.frameCount-1, len(frame), len(data), frame[0])
-				}
-				if t.frameCount%60 == 0 {
-					kf := t.buildFrame(nil)
-					t.track.WriteSample(media.Sample{Data: kf, Duration: keepaliveInterval})
-				}
-				ticker.Reset(keepaliveInterval)
-			case <-ticker.C:
-				lastSend = time.Now()
-				frame := t.buildFrame(nil)
-				err := t.track.WriteSample(media.Sample{Data: frame, Duration: keepaliveInterval})
-				if t.frameCount <= 3 || t.frameCount%500 == 0 {
-					t.logFn("vp8tunnel: KEEPALIVE frame=%d first=0x%02x err=%v", t.frameCount-1, frame[0], err)
-				}
-			}
-		}
-	}()
+func (t *VP8DataTunnel) Start(fps, batch int) {
+	t.cfgMu.Lock()
+	if fps > 0 {
+		t.fps = fps
+	}
+	if batch > 0 {
+		t.batch = batch
+	}
+	t.cfgMu.Unlock()
+	if !t.running.CompareAndSwap(false, true) {
+		return
+	}
+	go t.writerLoop()
 }
 
 func (t *VP8DataTunnel) Stop() {
-	if t.running {
-		close(t.stopCh)
-		t.running = false
-		if t.OnClose != nil {
-			t.OnClose()
-		}
+	if !t.running.CompareAndSwap(true, false) {
+		return
+	}
+	t.stopOnce.Do(func() { close(t.stopCh) })
+	if t.OnClose != nil {
+		t.OnClose()
 	}
 }
 
-func ExtractDataFromPayload(payload []byte) []byte {
-	if len(payload) < dataHeaderLen {
-		return nil
+func (t *VP8DataTunnel) currentIntervals() (sampleInterval time.Duration, keepaliveEvery, fps, batch int) {
+	t.cfgMu.Lock()
+	fps = t.fps
+	batch = t.batch
+	t.cfgMu.Unlock()
+
+	frameInterval := time.Second / time.Duration(fps)
+	sampleInterval = frameInterval
+	if batch > 1 {
+		sampleInterval = frameInterval / time.Duration(batch)
 	}
-	for i := range vp8Interframe {
-		if payload[i] != vp8Interframe[i] {
-			return nil
+	if sampleInterval <= 0 {
+		sampleInterval = time.Millisecond
+	}
+
+	keepaliveEvery = int(keepaliveIdlePeriod / sampleInterval)
+	if keepaliveEvery < 1 {
+		keepaliveEvery = 1
+	}
+	return
+}
+
+func (t *VP8DataTunnel) writerLoop() {
+	for {
+		sampleInterval, keepaliveEvery, fps, batch := t.currentIntervals()
+		t.logFn("vp8tunnel: writer (re)started fps=%d batch=%d sampleInterval=%s keepaliveEvery=%d",
+			fps, batch, sampleInterval, keepaliveEvery)
+
+		ticker := time.NewTicker(sampleInterval)
+		idleTicks := 0
+		reconfigure := false
+
+		for !reconfigure {
+			select {
+			case <-t.stopCh:
+				ticker.Stop()
+				return
+			case <-t.cfgChan:
+				reconfigure = true
+			case <-ticker.C:
+				var sample []byte
+				select {
+				case data := <-t.sendQueue:
+					sample = t.obf.EncodeData(data)
+					idleTicks = 0
+				default:
+					idleTicks++
+					if idleTicks < keepaliveEvery {
+						continue
+					}
+					idleTicks = 0
+					sample = t.obf.EncodeKeepalive()
+				}
+				if sample == nil {
+					continue
+				}
+				if err := t.track.WriteSample(media.Sample{Data: sample, Duration: sampleInterval}); err != nil {
+					t.logFn("vp8tunnel: WriteSample error: %v", err)
+					continue
+				}
+				n := t.sentFrames.Add(1)
+				if n <= 5 || n%500 == 0 {
+					t.logFn("vp8tunnel: sent frame #%d size=%d", n, len(sample))
+				}
+			}
 		}
+		ticker.Stop()
 	}
-	if payload[len(vp8Interframe)] != DataFrameMarker {
-		return nil
+}
+
+func (t *VP8DataTunnel) HandleFrame(frame []byte) {
+	res := t.obf.Decode(frame)
+	if !res.HasFrame {
+		return
 	}
-	dataLen := binary.BigEndian.Uint32(payload[len(vp8Interframe)+1 : len(vp8Interframe)+5])
-	if dataLen == 0 || int(dataLen) > len(payload)-dataHeaderLen {
-		return nil
+	if res.SelfEcho {
+		return
 	}
-	return payload[dataHeaderLen : dataHeaderLen+int(dataLen)]
+	if res.PeerRestart {
+		t.logFn("vp8tunnel: peer restart detected, new epoch=0x%08x", res.PeerEpoch)
+	}
+	if res.Keepalive || len(res.Payload) == 0 {
+		return
+	}
+	n := t.recvFrames.Add(1)
+	if n <= 5 || n%500 == 0 {
+		t.logFn("vp8tunnel: recv frame #%d size=%d", n, len(res.Payload))
+	}
+	if t.OnData != nil {
+		t.OnData(res.Payload)
+	}
 }

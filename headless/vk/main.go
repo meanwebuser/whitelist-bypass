@@ -459,9 +459,6 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 	fmt.Println("")
 	fmt.Println("  CALL CREATED")
 	fmt.Println("  join_link:", callInfo.JoinLink)
-	if callInfo.ShortLink != "" {
-		fmt.Println("  short:    ", callInfo.ShortLink)
-	}
 	fmt.Println("  TURN:     ", strings.Join(callInfo.TurnServer.URLs, ", "))
 	fmt.Printf("  protocol:  v%s sdk %s\n\n", cfg.ProtocolVersion, cfg.SDKVersion)
 
@@ -599,11 +596,17 @@ func main() {
 		log.Printf("[config] Wrote call link to %s", *writeFile)
 	}
 
+	obf, obfErr := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(callInfo.JoinLink))
+	if obfErr != nil {
+		log.Fatalf("[config] obfuscator init failed: %v", obfErr)
+	}
+	log.Printf("[obf] key-source=%q localEpoch=0x%08x", callInfo.JoinLink, obf.LocalEpoch())
 	bridge := &Bridge{}
 	bridge.newRelay = func() Relay {
 		ur := NewTunnelRelay()
 		ur.readBufSize = readBuf
 		ur.maxDCBuf = maxDCBuf
+		ur.SetObfuscator(obf)
 		ur.OnConnected = func(tun *tunnel.VP8DataTunnel) {
 			tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
 		}

@@ -9,6 +9,14 @@ enum DefaultsKeys {
     static let socksAuthMode = "socksAuthMode"
     static let socksUser = "socksUser"
     static let socksPass = "socksPass"
+    static let vp8PacingEnabled = "vp8PacingEnabled"
+    static let vp8Fps = "vp8Fps"
+    static let vp8Batch = "vp8Batch"
+}
+
+enum VP8Defaults {
+    static let fps: Int = 24
+    static let batch: Int = 30
 }
 
 struct AppDefaults {
@@ -52,5 +60,20 @@ struct AppDefaults {
     static var socksPass: String {
         get { defaults.string(forKey: DefaultsKeys.socksPass) ?? "" }
         set { defaults.set(newValue, forKey: DefaultsKeys.socksPass) }
+    }
+
+    static var vp8PacingEnabled: Bool {
+        get { defaults.object(forKey: DefaultsKeys.vp8PacingEnabled) as? Bool ?? false }
+        set { defaults.set(newValue, forKey: DefaultsKeys.vp8PacingEnabled) }
+    }
+
+    static var vp8Fps: Int {
+        get { defaults.object(forKey: DefaultsKeys.vp8Fps) as? Int ?? VP8Defaults.fps }
+        set { defaults.set(newValue, forKey: DefaultsKeys.vp8Fps) }
+    }
+
+    static var vp8Batch: Int {
+        get { defaults.object(forKey: DefaultsKeys.vp8Batch) as? Int ?? VP8Defaults.batch }
+        set { defaults.set(newValue, forKey: DefaultsKeys.vp8Batch) }
     }
 }

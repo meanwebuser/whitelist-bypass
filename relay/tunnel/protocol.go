@@ -10,12 +10,44 @@ const (
 	MsgClose      byte = 0x05
 	MsgUDP        byte = 0x06
 	MsgUDPReply   byte = 0x07
+	MsgConfig     byte = 0x08
 )
+
+const ControlConnID uint32 = 0
 
 type DataTunnel interface {
 	SendData(data []byte)
 	SetOnData(fn func([]byte))
 	SetOnClose(fn func())
+	Reconfigure(fps, batch int)
+}
+
+func EncodeVP8Config(fps, batch int) []byte {
+	if fps < 1 {
+		fps = 1
+	}
+	if batch < 1 {
+		batch = 1
+	}
+	if fps > 0xFFFF {
+		fps = 0xFFFF
+	}
+	if batch > 0xFFFF {
+		batch = 0xFFFF
+	}
+	var payload [4]byte
+	binary.BigEndian.PutUint16(payload[0:2], uint16(fps))
+	binary.BigEndian.PutUint16(payload[2:4], uint16(batch))
+	return EncodeFrame(ControlConnID, MsgConfig, payload[:])
+}
+
+func DecodeVP8Config(payload []byte) (fps, batch int, ok bool) {
+	if len(payload) < 4 {
+		return 0, 0, false
+	}
+	fps = int(binary.BigEndian.Uint16(payload[0:2]))
+	batch = int(binary.BigEndian.Uint16(payload[2:4]))
+	return fps, batch, true
 }
 
 func EncodeFrame(connID uint32, msgType byte, payload []byte) []byte {

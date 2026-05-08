@@ -30,8 +30,9 @@ type DCTunnel struct {
 	logFn    func(string, ...any)
 	onData   func([]byte)
 	onClose  func()
-	chunked bool
-	readBuf int
+	obf      *TunnelObfuscator
+	chunked  bool
+	readBuf  int
 
 	recvBufs  sync.Map
 	sendMsgID uint32
@@ -42,21 +43,16 @@ type DCTunnel struct {
 	sendMsgs  atomic.Uint64
 }
 
-func NewDCTunnel(dc *webrtc.DataChannel, readBuf int, logFn func(string, ...any)) *DCTunnel {
-	t := &DCTunnel{dc: dc, readBuf: readBuf, logFn: logFn}
+func NewDCTunnel(dc *webrtc.DataChannel, obf *TunnelObfuscator, readBuf int, logFn func(string, ...any)) *DCTunnel {
+	t := &DCTunnel{dc: dc, obf: obf, readBuf: readBuf, logFn: logFn}
 
 	raw, err := dc.Detach()
 	if err != nil {
 		logFn("dctunnel: detach failed, using callback mode: %v", err)
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-			if t.onData != nil {
-				t.recvBytes.Add(uint64(len(msg.Data)))
-				t.recvMsgs.Add(1)
-				frame := make([]byte, 4+len(msg.Data))
-				binary.BigEndian.PutUint32(frame[0:4], uint32(len(msg.Data)))
-				copy(frame[4:], msg.Data)
-				t.onData(frame)
-			}
+			t.recvBytes.Add(uint64(len(msg.Data)))
+			t.recvMsgs.Add(1)
+			t.deliverMessage(msg.Data)
 		})
 		dc.OnClose(func() {
 			if t.onClose != nil {
@@ -73,20 +69,20 @@ func NewDCTunnel(dc *webrtc.DataChannel, readBuf int, logFn func(string, ...any)
 	return t
 }
 
-func NewDCTunnelFromRaw(dc *webrtc.DataChannel, raw datachannel.ReadWriteCloser, readBuf int, logFn func(string, ...any)) *DCTunnel {
-	t := &DCTunnel{dc: dc, raw: raw, readBuf: readBuf, logFn: logFn}
+func NewDCTunnelFromRaw(dc *webrtc.DataChannel, raw datachannel.ReadWriteCloser, obf *TunnelObfuscator, readBuf int, logFn func(string, ...any)) *DCTunnel {
+	t := &DCTunnel{dc: dc, raw: raw, obf: obf, readBuf: readBuf, logFn: logFn}
 	go t.readLoop()
 	go t.statsLoop()
 	return t
 }
 
-func NewChunkedDCTunnel(readRaw datachannel.ReadWriteCloser, writeDC *webrtc.DataChannel, readBuf int, logFn func(string, ...any)) *DCTunnel {
+func NewChunkedDCTunnel(readRaw datachannel.ReadWriteCloser, writeDC *webrtc.DataChannel, obf *TunnelObfuscator, readBuf int, logFn func(string, ...any)) *DCTunnel {
 	writeRaw, err := writeDC.Detach()
 	if err != nil {
 		logFn("dctunnel: write DC detach failed: %v", err)
 		return nil
 	}
-	t := &DCTunnel{raw: readRaw, writeRaw: writeRaw, readBuf: readBuf, logFn: logFn, chunked: true}
+	t := &DCTunnel{raw: readRaw, writeRaw: writeRaw, obf: obf, readBuf: readBuf, logFn: logFn, chunked: true}
 	go t.readLoop()
 	go t.statsLoop()
 	return t
@@ -151,6 +147,17 @@ func (t *DCTunnel) handleChunk(data []byte) {
 }
 
 func (t *DCTunnel) deliverMessage(data []byte) {
+	if len(data) == 0 {
+		return
+	}
+	if t.obf != nil {
+		pt, ok := t.obf.DecryptPayload(data)
+		if !ok {
+			t.logFn("dctunnel: decrypt failed, dropping %d bytes", len(data))
+			return
+		}
+		data = pt
+	}
 	if t.onData != nil && len(data) > 0 {
 		frame := make([]byte, 4+len(data))
 		binary.BigEndian.PutUint32(frame[0:4], uint32(len(data)))
@@ -218,16 +225,24 @@ func (t *DCTunnel) SendData(data []byte) {
 		binary.BigEndian.PutUint32(buf[0:4], connID)
 		buf[4] = msgType
 		copy(buf[5:], payload)
+		wire := buf
+		if t.obf != nil {
+			wire = t.obf.EncryptPayload(buf)
+			if wire == nil {
+				return
+			}
+		}
 		if t.chunked {
-			t.sendChunked(buf)
+			t.sendChunked(wire)
 		} else {
-			t.sendRaw(buf)
+			t.sendRaw(wire)
 		}
 	})
 }
 
-func (t *DCTunnel) SetOnData(fn func([]byte))  { t.onData = fn }
-func (t *DCTunnel) SetOnClose(fn func())        { t.onClose = fn }
+func (t *DCTunnel) SetOnData(fn func([]byte))   { t.onData = fn }
+func (t *DCTunnel) SetOnClose(fn func())         { t.onClose = fn }
+func (t *DCTunnel) Reconfigure(fps, batch int)   {}
 
 func (t *DCTunnel) statsLoop() {
 	if !dcStatsEnabled {

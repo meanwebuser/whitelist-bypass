@@ -143,6 +143,9 @@ class ProxyManager: ObservableObject {
     @Published var socksAuthMode: SocksAuthMode = AppDefaults.socksAuthMode { didSet { AppDefaults.socksAuthMode = socksAuthMode } }
     @Published var manualSocksUser: String = AppDefaults.socksUser { didSet { AppDefaults.socksUser = manualSocksUser } }
     @Published var manualSocksPass: String = AppDefaults.socksPass { didSet { AppDefaults.socksPass = manualSocksPass } }
+    @Published var vp8PacingEnabled: Bool = AppDefaults.vp8PacingEnabled { didSet { AppDefaults.vp8PacingEnabled = vp8PacingEnabled } }
+    @Published var vp8Fps: Int = AppDefaults.vp8Fps { didSet { AppDefaults.vp8Fps = vp8Fps } }
+    @Published var vp8Batch: Int = AppDefaults.vp8Batch { didSet { AppDefaults.vp8Batch = vp8Batch } }
 
     private let autoSocksUser: String
     private let autoSocksPass: String
@@ -264,10 +267,14 @@ class ProxyManager: ObservableObject {
         case .telemost:
             IosStartTelemostHeadless(socksPort, activeSocksUser, activeSocksPass, bridge)
             appendLog("Started Telemost headless joiner")
-            let joinParams: [String: String] = [
+            var joinParams: [String: Any] = [
                 "joinLink": callUrl,
                 "displayName": displayName,
             ]
+            if vp8PacingEnabled {
+                joinParams["vp8Fps"] = vp8Fps
+                joinParams["vp8Batch"] = vp8Batch
+            }
             if let jsonData = try? JSONSerialization.data(withJSONObject: joinParams),
                let jsonString = String(data: jsonData, encoding: .utf8) {
                 IosSendJoinParams(jsonString)
@@ -275,7 +282,9 @@ class ProxyManager: ObservableObject {
             }
 
         case .vk:
-            IosStartVKHeadless(socksPort, activeSocksUser, activeSocksPass, callUrl, displayName, tunnelMode.rawValue, bridge)
+            let fps = vp8PacingEnabled ? vp8Fps : 0
+            let batch = vp8PacingEnabled ? vp8Batch : 0
+            IosStartVKHeadless(socksPort, activeSocksUser, activeSocksPass, callUrl, displayName, tunnelMode.rawValue, fps, batch, bridge)
             appendLog("Started VK headless joiner")
         }
     }

@@ -60,6 +60,7 @@ class SettingsDialogFragment : DialogFragment() {
         val splitTunnelingAppsItem = view.findViewById<TextView>(R.id.splitTunnelingAppsItem)
         val proxyItem = view.findViewById<TextView>(R.id.proxyItem)
         val dnsItem = view.findViewById<TextView>(R.id.dnsItem)
+        val vp8PacingItem = view.findViewById<TextView>(R.id.vp8PacingItem)
         val autoclickItem = view.findViewById<TextView>(R.id.autoclickItem)
         val headlessCheckbox = view.findViewById<CheckBox>(R.id.headlessCheckbox)
         val reconnectCheckbox = view.findViewById<CheckBox>(R.id.reconnectOnStartCheckbox)
@@ -99,6 +100,10 @@ class SettingsDialogFragment : DialogFragment() {
 
         dnsItem.setOnClickListener {
             DnsSettingsDialogFragment().show(childFragmentManager, DnsSettingsDialogFragment.TAG)
+        }
+
+        vp8PacingItem.setOnClickListener {
+            Vp8PacingSettingsDialogFragment().show(childFragmentManager, Vp8PacingSettingsDialogFragment.TAG)
         }
 
         autoclickItem.setOnClickListener {

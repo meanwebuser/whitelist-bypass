@@ -21,8 +21,9 @@ const (
 	HandshakeBuf = 258
 	UDPBufSize   = 4096
 	RTPBufSize   = 65536
-	// VP8BufSize fits one RTP packet: 1200 MTU - 1 VP8 descriptor - 22 tunnel header - 9 protocol frame
-	VP8BufSize   = 1168
+	// VP8BufSize fits one RTP packet: 1200 MTU - 1 VP8 descriptor - 64 tunnel wrapper - 9 protocol frame
+	// (tunnel wrapper = 20 vp8 keepalive header + 4 epoch + 24 XChaCha20 nonce + 16 Poly1305 tag)
+	VP8BufSize   = 1126
 	DCBufSize    = 32768
 )
 

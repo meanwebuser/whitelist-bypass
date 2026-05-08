@@ -119,7 +119,7 @@ func StartTelemostHeadless(socksPort int, socksUser, socksPass string, callback 
 	callback.OnStatus(common.StatusReady)
 }
 
-func StartVKHeadless(socksPort int, socksUser, socksPass string, joinLink, displayName, tunnelMode string, callback HeadlessCallback) {
+func StartVKHeadless(socksPort int, socksUser, socksPass string, joinLink, displayName, tunnelMode string, vp8Fps, vp8Batch int, callback HeadlessCallback) {
 	StopHeadless()
 
 	activeHeadless.Lock()
@@ -146,11 +146,17 @@ func StartVKHeadless(socksPort int, socksUser, socksPass string, joinLink, displ
 		var params map[string]interface{}
 		if json.Unmarshal([]byte(authJSON), &params) == nil {
 			params["tunnelMode"] = tunnelMode
+			if vp8Fps > 0 {
+				params["vp8Fps"] = vp8Fps
+			}
+			if vp8Batch > 0 {
+				params["vp8Batch"] = vp8Batch
+			}
 			if patched, err := json.Marshal(params); err == nil {
 				authJSON = string(patched)
 			}
 		}
-		logFn("vk-auth: sending join params to relay (mode=%s)", tunnelMode)
+		logFn("vk-auth: sending join params to relay mode=%s vp8Fps=%d vp8Batch=%d", tunnelMode, vp8Fps, vp8Batch)
 		vkJoiner.RunWithParams(authJSON)
 	}()
 }

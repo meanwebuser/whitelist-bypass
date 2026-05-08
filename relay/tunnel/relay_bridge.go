@@ -78,6 +78,17 @@ func (rb *RelayBridge) send(connID uint32, msgType byte, payload []byte) {
 
 func (rb *RelayBridge) handleTunnelData(data []byte) {
 	DecodeFrames(data, func(connID uint32, msgType byte, payload []byte) {
+		if connID == ControlConnID && msgType == MsgConfig {
+			fps, batch, ok := DecodeVP8Config(payload)
+			if !ok {
+				return
+			}
+			if rb.mode == "creator" {
+				rb.logFn("relay: peer requested vp8 pacing fps=%d batch=%d", fps, batch)
+				rb.tunnel.Reconfigure(fps, batch)
+			}
+			return
+		}
 		switch rb.mode {
 		case "joiner":
 			rb.handleJoinerMessage(connID, msgType, payload)
