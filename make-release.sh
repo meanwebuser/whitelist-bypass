@@ -18,6 +18,10 @@ echo ""
 echo "=== Building Linux headless joiners ==="
 "$ROOT/build-joiners.sh"
 
+echo ""
+echo "=== Building Linux headless-vk-bot ==="
+"$ROOT/build-bot.sh"
+
 if [ "$(uname)" = "Darwin" ]; then
     echo ""
     echo "=== Building iOS app ==="

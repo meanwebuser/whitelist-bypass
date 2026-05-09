@@ -17,5 +17,8 @@ go -C "$ROOT/headless/wbstream-joiner" build -ldflags="-s -w" -o headless-wbstre
 echo "Building headless-telemost-joiner..."
 go -C "$ROOT/headless/telemost-joiner" build -ldflags="-s -w" -o headless-telemost-joiner .
 
+echo "Building headless-vk-bot..."
+go -C "$ROOT/headless/vk-bot" build -ldflags="-s -w" -o headless-vk-bot .
+
 echo "Done."
-ls -lh "$ROOT/headless/vk/headless-vk-creator" "$ROOT/headless/telemost/headless-telemost-creator" "$ROOT/headless/wbstream/headless-wbstream-creator" "$ROOT/headless/wbstream-joiner/headless-wbstream-joiner" "$ROOT/headless/telemost-joiner/headless-telemost-joiner"
+ls -lh "$ROOT/headless/vk/headless-vk-creator" "$ROOT/headless/telemost/headless-telemost-creator" "$ROOT/headless/wbstream/headless-wbstream-creator" "$ROOT/headless/wbstream-joiner/headless-wbstream-joiner" "$ROOT/headless/telemost-joiner/headless-telemost-joiner" "$ROOT/headless/vk-bot/headless-vk-bot"

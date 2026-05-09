@@ -8,6 +8,7 @@
 - [Creator (десктоп)](#creator-десктоп)
 - [Creator (headless, сервер)](#creator-headless-сервер)
 - [Бот VK](#бот-vk)
+- [Бот VK (headless, сервер)](#бот-vk-headless-сервер)
 - [Joiner (Android)](#joiner-android)
 - [Joiner (iOS)](#joiner-ios)
 - [Joiner (Linux, headless)](#joiner-linux-headless)
@@ -164,10 +165,104 @@
 - `/vk headless` - звонок VK, headless режим
 - `/tm video` - звонок Telemost, режим Video
 - `/tm headless` - звонок Telemost, headless режим
+- `/wb headless` - комната WB Stream
 - `/list` - список активных вкладок
 - `/close <id>` - закрыть вкладку по ID
 
 ![Команды бота](res/bot_commands.jpeg)
+
+## Бот VK (headless, сервер)
+
+Standalone Go-бинарник `headless-vk-bot` - то же самое, что бот в десктопном Creator, но без Electron. Слушает Long Poll сообщества, по команде запускает соответствующий headless-creator и присылает в чат join-link. Подходит для VPS: один процесс держит Long Poll и спавнит creators по запросу.
+
+### Подготовка
+
+1. Создайте сообщество ВКонтакте и получите community access token, group ID и свой VK ID - порядок описан в разделе [Бот VK](#бот-vk) (шаги 1-8).
+2. Скачайте бинарники из [GitHub Releases](https://github.com/kulikov0/whitelist-bypass/releases) и сложите их в одну папку - например `/usr/local/bin/`:
+   - `headless-vk-bot-linux-x64`
+   - `headless-vk-creator-linux-x64`
+   - `headless-telemost-creator-linux-x64`
+   - `headless-wbstream-creator-linux-x64`
+
+   Не забудьте дать права на выполнение: `chmod +x /usr/local/bin/headless-*`.
+3. Подготовьте куки:
+   - VK: экспортируйте через десктопный Creator кнопкой **VK Cookies**.
+   - Telemost: кнопкой **Yandex Cookies**.
+   - WB Stream куки не нужны (анонимный гостевой токен).
+4. Скопируйте куки на сервер.
+
+### Запуск
+
+```sh
+./headless-vk-bot \
+  --token <community_access_token> \
+  --group-id <community_id> \
+  --user-id <your_vk_id> \
+  --bins-dir /usr/local/bin \
+  --vk-cookies /etc/whitelist-bypass/cookies-vk.json \
+  --tm-cookies /etc/whitelist-bypass/cookies-yandex.json
+```
+
+### Флаги
+
+| Флаг | Описание |
+|---|---|
+| `--token <str>` | Community access token (обязательно) |
+| `--group-id <id>` | ID сообщества, только цифры (обязательно) |
+| `--user-id <id>` | VK ID пользователя, которому разрешено отправлять команды. Пусто = разрешено всем (НЕ рекомендуется) |
+| `--bins-dir <dir>` | Папка, где лежат `headless-vk-creator` / `headless-telemost-creator` / `headless-wbstream-creator` (обязательно) |
+| `--vk-cookies <path>` | Путь к VK куки (нужен для `/vk`) |
+| `--tm-cookies <path>` | Путь к Yandex куки (нужен для `/tm`) |
+| `--sessions-dir <dir>` | Папка для логов спавненных creators. Опционально - без флага логи не пишутся, stdout/stderr creators отбрасываются |
+
+При получении команды бот спавнит соответствующий creator с `--write-file <tmp>`, ждёт появления линка в файле (до 60 секунд) и присылает его в чат. Если вы укажете `--user-id`, команды от других пользователей будут проигнорированы.
+
+### Запуск как systemd-сервис
+
+`/etc/systemd/system/wlb-vk-bot.service`:
+
+```ini
+[Unit]
+Description=Headless VK bot (whitelist-bypass)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/headless-vk-bot \
+  --token <community_access_token> \
+  --group-id <community_id> \
+  --user-id <your_vk_id> \
+  --bins-dir /usr/local/bin \
+  --vk-cookies /etc/whitelist-bypass/cookies-vk.json \
+  --tm-cookies /etc/whitelist-bypass/cookies-yandex.json
+Restart=always
+RestartSec=5
+User=wlb
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Активировать:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now wlb-vk-bot
+sudo journalctl -u wlb-vk-bot -f
+```
+
+При остановке сервиса бот посылает `SIGTERM` всем спавненным creator-процессам, чтобы не оставлять висячих сессий.
+
+### Команды
+
+- `/vk` - запустить `headless-vk-creator`
+- `/tm` - запустить `headless-telemost-creator`
+- `/wb` - запустить `headless-wbstream-creator`
+- `/list` - список активных сессий
+- `/close <id>` - закрыть сессию по короткому ID
+- `/start` - показать главное меню
+
+Все команды также доступны через inline-клавиатуру в чате.
 
 ## Joiner (Android)
 

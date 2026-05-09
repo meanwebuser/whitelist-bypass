@@ -52,6 +52,7 @@ Traffic goes through the platform's SFU, which is on the government whitelist. T
 - `headless/wbstream/` - Headless WB Stream creator (LiveKit-backed, anonymous guest tokens)
 - `headless/wbstream-joiner/` - Desktop WB Stream joiner (counterpart to the creator, used for tests and Linux clients)
 - `headless/telemost-joiner/` - Desktop Telemost joiner (counterpart to the creator, used for tests and Linux clients)
+- `headless/vk-bot/` - Standalone VK Long Poll bot that spawns headless creators on demand and replies with the join link (server-side alternative to the Electron bot)
 - `headless/tests/` - End-to-end smoke tests for each platform
 - `android-app/` - Android joiner: VpnService + tun2socks + headless Pion (primary path); also retains a `WebView` fallback for the legacy browser flow
 - `ios-proxy-app/` - iOS joiner: SOCKS5 + headless Pion via the gomobile xcframework
@@ -100,7 +101,7 @@ The full step-by-step (Russian) covers each platform in detail: see [docs/SETUP.
 ### Build scripts
 
 ```sh
-# Full release build (Android APK + Creator app + Headless creators)
+# Full release build (Android APK + Creator app + Headless creators + Linux joiners + VK bot + iOS IPA on macOS)
 ./make-release.sh
 
 # Individual builds
@@ -109,6 +110,7 @@ The full step-by-step (Russian) covers each platform in detail: see [docs/SETUP.
 ./build-app.sh         # Android APK
 ./build-headless.sh    # Headless binaries only (current platform)
 ./build-joiners.sh     # Linux headless joiners (cross-compiled)
+./build-bot.sh         # Linux headless-vk-bot (cross-compiled)
 ./build-creator.sh     # Creator Electron app (all platforms)
 ./build-ios.sh         # Go .xcframework for iOS
 ```
@@ -143,6 +145,8 @@ Output in `prebuilts/`:
 | `headless-wbstream-joiner-linux-ia32` | Linux x86 |
 | `headless-telemost-joiner-linux-x64` | Linux x64 |
 | `headless-telemost-joiner-linux-ia32` | Linux x86 |
+| `headless-vk-bot-linux-x64` | Linux x64 |
+| `headless-vk-bot-linux-ia32` | Linux x86 |
 
 ### Docker build
 
@@ -162,12 +166,15 @@ Pure Go creators that create calls via API without a browser. No Electron, no JS
 ./build-headless.sh
 ```
 
-Three binaries are produced:
+Six binaries are produced - three creators, two Linux joiners, and the VK bot:
 
 ```sh
-./headless/vk/headless-vk-creator             --cookies cookies-vk.json
-./headless/telemost/headless-telemost-creator --cookies cookies-telemost.json
+./headless/vk/headless-vk-creator               --cookies cookies-vk.json
+./headless/telemost/headless-telemost-creator   --cookies cookies-telemost.json
 ./headless/wbstream/headless-wbstream-creator
+./headless/wbstream-joiner/headless-wbstream-joiner --room <link> --socks-port 1080
+./headless/telemost-joiner/headless-telemost-joiner --tm-link <link> --socks-port 1080
+./headless/vk-bot/headless-vk-bot               --token <t> --group-id <g> --bins-dir <dir>
 ```
 
 WB Stream uses anonymous guest tokens, so no cookies are required. VK and Telemost expect cookies exported from the desktop creator app (`VK Cookies` / `Yandex Cookies` buttons) as JSON `[{"name":"..","value":".."},...]`.
