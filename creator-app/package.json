@@ -59,6 +59,10 @@
         {
           "from": "../headless/headless-telemost-darwin",
           "to": "headless-telemost-creator"
+        },
+        {
+          "from": "../headless/headless-wbstream-darwin",
+          "to": "headless-wbstream-creator"
         }
       ]
     },
@@ -78,6 +82,10 @@
         {
           "from": "../headless/headless-telemost-bundle.exe",
           "to": "headless-telemost-creator.exe"
+        },
+        {
+          "from": "../headless/headless-wbstream-bundle.exe",
+          "to": "headless-wbstream-creator.exe"
         }
       ]
     },
@@ -96,6 +104,10 @@
         {
           "from": "../headless/headless-telemost-bundle",
           "to": "headless-telemost-creator"
+        },
+        {
+          "from": "../headless/headless-wbstream-bundle",
+          "to": "headless-wbstream-creator"
         }
       ]
     }

@@ -109,6 +109,7 @@ echo "--- Windows x64 ---"
 cp "$RELAY_DIR/relay-windows-x64.exe" "$RELAY_DIR/relay-bundle.exe"
 cp "$HEADLESS_DIR/headless-vk-windows-x64.exe" "$HEADLESS_DIR/headless-vk-bundle.exe"
 cp "$HEADLESS_DIR/headless-telemost-windows-x64.exe" "$HEADLESS_DIR/headless-telemost-bundle.exe"
+cp "$HEADLESS_DIR/headless-wbstream-windows-x64.exe" "$HEADLESS_DIR/headless-wbstream-bundle.exe"
 npx electron-builder --win --x64
 
 # Windows x86
@@ -117,6 +118,7 @@ echo "--- Windows x86 ---"
 cp "$RELAY_DIR/relay-windows-ia32.exe" "$RELAY_DIR/relay-bundle.exe"
 cp "$HEADLESS_DIR/headless-vk-windows-ia32.exe" "$HEADLESS_DIR/headless-vk-bundle.exe"
 cp "$HEADLESS_DIR/headless-telemost-windows-ia32.exe" "$HEADLESS_DIR/headless-telemost-bundle.exe"
+cp "$HEADLESS_DIR/headless-wbstream-windows-ia32.exe" "$HEADLESS_DIR/headless-wbstream-bundle.exe"
 npx electron-builder --win --ia32
 
 # Linux x64
@@ -125,6 +127,7 @@ echo "--- Linux x64 ---"
 cp "$RELAY_DIR/relay-linux-x64" "$RELAY_DIR/relay-bundle"
 cp "$HEADLESS_DIR/headless-vk-linux-x64" "$HEADLESS_DIR/headless-vk-bundle"
 cp "$HEADLESS_DIR/headless-telemost-linux-x64" "$HEADLESS_DIR/headless-telemost-bundle"
+cp "$HEADLESS_DIR/headless-wbstream-linux-x64" "$HEADLESS_DIR/headless-wbstream-bundle"
 npx electron-builder --linux --x64
 
 # Copy standalone headless binaries to prebuilts
@@ -135,6 +138,8 @@ cp "$HEADLESS_DIR/headless-vk-linux-x64" "$ROOT/prebuilts/headless-vk-creator-li
 cp "$HEADLESS_DIR/headless-vk-linux-ia32" "$ROOT/prebuilts/headless-vk-creator-linux-ia32"
 cp "$HEADLESS_DIR/headless-telemost-linux-x64" "$ROOT/prebuilts/headless-telemost-creator-linux-x64"
 cp "$HEADLESS_DIR/headless-telemost-linux-ia32" "$ROOT/prebuilts/headless-telemost-creator-linux-ia32"
+cp "$HEADLESS_DIR/headless-wbstream-linux-x64" "$ROOT/prebuilts/headless-wbstream-creator-linux-x64"
+cp "$HEADLESS_DIR/headless-wbstream-linux-ia32" "$ROOT/prebuilts/headless-wbstream-creator-linux-ia32"
 
 # Cleanup build artifacts
 rm -f "$RELAY_DIR"/relay-darwin "$RELAY_DIR"/relay-windows-*.exe "$RELAY_DIR"/relay-linux-*
@@ -143,6 +148,8 @@ rm -f "$HEADLESS_DIR"/headless-vk-darwin "$HEADLESS_DIR"/headless-vk-windows-*.e
 rm -f "$HEADLESS_DIR"/headless-vk-bundle "$HEADLESS_DIR"/headless-vk-bundle.exe
 rm -f "$HEADLESS_DIR"/headless-telemost-darwin "$HEADLESS_DIR"/headless-telemost-windows-*.exe "$HEADLESS_DIR"/headless-telemost-linux-*
 rm -f "$HEADLESS_DIR"/headless-telemost-bundle "$HEADLESS_DIR"/headless-telemost-bundle.exe
+rm -f "$HEADLESS_DIR"/headless-wbstream-darwin "$HEADLESS_DIR"/headless-wbstream-windows-*.exe "$HEADLESS_DIR"/headless-wbstream-linux-*
+rm -f "$HEADLESS_DIR"/headless-wbstream-bundle "$HEADLESS_DIR"/headless-wbstream-bundle.exe
 
 echo ""
 echo "=== Done ==="
