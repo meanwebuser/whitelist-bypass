@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"whitelist-bypass/relay/common"
@@ -134,9 +135,9 @@ func JoinRoom(client *http.Client, accessToken, roomID string) error {
 }
 
 func GetRoomToken(client *http.Client, accessToken, roomID, displayName string) (string, error) {
-	url := fmt.Sprintf("%s/api-room-manager/api/v1/room/%s/token?deviceType=PARTICIPANT_DEVICE_TYPE_WEB_DESKTOP&displayName=%s",
-		APIBase, roomID, displayName)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	tokenURL := fmt.Sprintf("%s/api-room-manager/api/v1/room/%s/token?deviceType=PARTICIPANT_DEVICE_TYPE_WEB_DESKTOP&displayName=%s",
+		APIBase, roomID, url.QueryEscape(displayName))
+	req, err := http.NewRequest(http.MethodGet, tokenURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -184,8 +185,8 @@ func KickParticipant(client *http.Client, accessToken, roomID, participantID str
 	if client == nil {
 		client = http.DefaultClient
 	}
-	url := fmt.Sprintf("%s/api-room-manager/api/v1/room/%s/participant/%s/kick", APIBase, roomID, participantID)
-	req, err := http.NewRequest("DELETE", url, strings.NewReader("{}"))
+	kickURL := fmt.Sprintf("%s/api-room-manager/api/v1/room/%s/participant/%s/kick", APIBase, roomID, participantID)
+	req, err := http.NewRequest("DELETE", kickURL, strings.NewReader("{}"))
 	if err != nil {
 		return err
 	}

@@ -26,7 +26,6 @@ if [ "$(uname)" = "Darwin" ]; then
     echo ""
     echo "=== Building iOS app ==="
     "$ROOT/build-ios.sh"
-    "$ROOT/build-ipa.sh"
 else
     echo ""
     echo "=== Skipping iOS build (requires macOS) ==="
