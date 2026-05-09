@@ -10,6 +10,7 @@
 - [Бот VK](#бот-vk)
 - [Joiner (Android)](#joiner-android)
 - [Joiner (iOS)](#joiner-ios)
+- [Joiner (Linux, headless)](#joiner-linux-headless)
 
 ## Что нужно
 
@@ -239,6 +240,58 @@ Throughput ≈ `fps × batch × 1126 байт/кадр`. Примеры:
 - **Show logs** - показать логи для отладки
 
 > Режим SOCKS5 прокси выбран из-за ограничений Apple: использование NetworkExtension (VPN) требует платного Apple Developer аккаунта и не работает через sideload. Если кто-то из комьюнити реализует полноценный VPN на основе этих исходников - будет круто.
+
+## Joiner (Linux, headless)
+
+Headless joiner для Linux-серверов и десктопов. Поднимает локальный SOCKS5-прокси, через который можно пускать любой трафик (например `curl --socks5`, Telegram, system-wide через `redsocks`/`tun2socks`).
+
+Скачайте бинарник из [GitHub Releases](https://github.com/kulikov0/whitelist-bypass/releases):
+
+- `headless-wbstream-joiner-linux-x64` / `-ia32` - для WB Stream
+- `headless-telemost-joiner-linux-x64` / `-ia32` - для Telemost
+
+> VK joiner не подходит под headless-подход: для входа в звонок нужно решать капчу, поэтому Linux-бинарника для VK нет. Используйте Android/iOS клиент.
+
+### Запуск
+
+```sh
+# WB Stream
+./headless-wbstream-joiner --room wbstream://<uuid> --socks-port 1080
+
+# Telemost
+./headless-telemost-joiner --tm-link https://telemost.yandex.ru/j/<id> --socks-port 1080
+```
+
+После строки `TUNNEL CONNECTED` SOCKS5 поднят на `127.0.0.1:<socks-port>`. Проверка:
+
+```sh
+curl --socks5 127.0.0.1:1080 https://api.ipify.org
+```
+
+### Флаги
+
+| Флаг | WB | TM | Описание |
+|---|---|---|---|
+| `--room <link>` | да | - | `wbstream://<uuid>` или просто UUID комнаты |
+| `--tm-link <uri>` | - | да | `https://telemost.yandex.ru/j/<id>` |
+| `--name <name>` | да | да | имя в звонке (по умолчанию `Joiner`) |
+| `--socks-port <port>` | да | да | порт SOCKS5 (по умолчанию `1080`) |
+| `--socks-user <user>` | да | да | логин SOCKS5 (опционально) |
+| `--socks-pass <pass>` | да | да | пароль SOCKS5 (опционально) |
+| `--resources <mode>` | да | да | `default` / `moderate` / `unlimited` |
+| `--tunnel-mode <mode>` | да | - | `video` или `dc` (только WB) |
+| `--vp8-fps <fps>` | да | да | частота VP8 кадров (по умолчанию `24`) |
+| `--vp8-batch <n>` | да | да | множитель batch (по умолчанию `30`) |
+
+При указании `--socks-user`/`--socks-pass` SOCKS5 требует аутентификацию. Без них прокси открыт для всех на `127.0.0.1`.
+
+### Системный туннель (как Android VPN)
+
+Для проксирования всего трафика хоста используйте `tun2socks` или `redsocks` поверх локального SOCKS5. Пример с `tun2socks`:
+
+```sh
+sudo tun2socks -device tun://wb0 -proxy socks5://127.0.0.1:1080
+```
 
 ---
 

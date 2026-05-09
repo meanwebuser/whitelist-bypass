@@ -14,6 +14,10 @@ echo ""
 echo "=== Building creator-app + headless creators ==="
 "$ROOT/build-creator.sh"
 
+echo ""
+echo "=== Building Linux headless joiners ==="
+"$ROOT/build-joiners.sh"
+
 if [ "$(uname)" = "Darwin" ]; then
     echo ""
     echo "=== Building iOS app ==="
