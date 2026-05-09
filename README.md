@@ -51,6 +51,7 @@ Traffic goes through the platform's SFU, which is on the government whitelist. T
 - `headless/telemost/` - Headless Telemost (Yandex) creator with the same model
 - `headless/wbstream/` - Headless WB Stream creator (LiveKit-backed, anonymous guest tokens)
 - `headless/wbstream-joiner/` - Desktop WB Stream joiner (counterpart to the creator, used for tests and Linux clients)
+- `headless/telemost-joiner/` - Desktop Telemost joiner (counterpart to the creator, used for tests and Linux clients)
 - `headless/tests/` - End-to-end smoke tests for each platform
 - `android-app/` - Android joiner: VpnService + tun2socks + headless Pion (primary path); also retains a `WebView` fallback for the legacy browser flow
 - `ios-proxy-app/` - iOS joiner: SOCKS5 + headless Pion via the gomobile xcframework
@@ -79,7 +80,9 @@ Three forms are available; pick whichever fits the device:
 
 - **Android** - install `whitelist-bypass.apk` from [Releases](../../releases). Allow the VPN prompt on first launch. Paste the join link and tap GO; system-wide traffic flows through the call.
 - **iOS** - install `whitelist-bypass-proxy.ipa` from [Releases](../../releases) (sideload via AltStore / Sideloadly / your dev account). Exposes a local SOCKS5 proxy only - no system VPN. To proxy the whole device, point any SOCKS5-capable VPN app (Shadowrocket, Streisand, ...) at the SOCKS5 endpoint the app shows; or set the proxy per app (Telegram has built-in support).
-- **Linux desktop** - run `headless-wbstream-joiner --room <link> --socks-port 1080`; exposes a SOCKS5 proxy on the given port for whatever you point at it. Useful for servers and Linux clients.
+- **Linux desktop** - run a headless joiner; it exposes a SOCKS5 proxy on the given port for whatever you point at it. Useful for servers and Linux clients. Optional `--socks-user` / `--socks-pass` enable SOCKS5 username/password auth.
+  - WB Stream: `headless-wbstream-joiner --room <link> --socks-port 1080 [--socks-user u --socks-pass p]`
+  - Telemost: `headless-telemost-joiner --tm-link <link> --socks-port 1080 [--socks-user u --socks-pass p]`
 
 The full step-by-step (Russian) covers each platform in detail: see [docs/SETUP.md](docs/SETUP.md).
 
@@ -104,7 +107,8 @@ The full step-by-step (Russian) covers each platform in detail: see [docs/SETUP.
 ./build-go.sh          # Go .aar, relay binary, headless creators
 ./copy-hooks.sh        # Copy JS hooks to android assets
 ./build-app.sh         # Android APK
-./build-headless.sh    # Headless binaries only
+./build-headless.sh    # Headless binaries only (current platform)
+./build-joiners.sh     # Linux headless joiners (cross-compiled)
 ./build-creator.sh     # Creator Electron app (all platforms)
 ./build-ios.sh         # Go .xcframework for iOS
 ```
@@ -135,6 +139,10 @@ Output in `prebuilts/`:
 | `headless-vk-creator-linux-ia32` | Linux x86 |
 | `headless-telemost-creator-linux-x64` | Linux x64 |
 | `headless-telemost-creator-linux-ia32` | Linux x86 |
+| `headless-wbstream-joiner-linux-x64` | Linux x64 |
+| `headless-wbstream-joiner-linux-ia32` | Linux x86 |
+| `headless-telemost-joiner-linux-x64` | Linux x64 |
+| `headless-telemost-joiner-linux-ia32` | Linux x86 |
 
 ### Docker build
 
