@@ -64,6 +64,7 @@ type bot struct {
 	vkCookies   string
 	tmCookies   string
 	sessionsDir string
+	resources   string
 
 	server, key, ts string
 
@@ -288,7 +289,7 @@ func (b *bot) spawn(platform string) (*session, error) {
 		logF = f
 	}
 
-	args := []string{"--write-file", linkFile.Name()}
+	args := []string{"--write-file", linkFile.Name(), "--resources", b.resources}
 	if needsCookies {
 		args = append(args, "--cookies", cookies)
 	}
@@ -410,7 +411,14 @@ func main() {
 	vkCookies := flag.String("vk-cookies", "", "path to VK cookies JSON")
 	tmCookies := flag.String("tm-cookies", "", "path to Yandex cookies JSON for Telemost")
 	sessionsDir := flag.String("sessions-dir", "", "directory for per-session creator logs (optional)")
+	resources := flag.String("resources", "default", "resource mode forwarded to spawned creators: default, moderate, unlimited")
 	flag.Parse()
+
+	switch *resources {
+	case "default", "moderate", "unlimited":
+	default:
+		log.Fatalf("--resources must be one of default|moderate|unlimited (got %q); 'custom' is not supported because it needs per-binary tuning flags", *resources)
+	}
 
 	if *token == "" || *groupID == "" || *binsDir == "" {
 		log.Fatal("--token, --group-id, --bins-dir are required")
@@ -428,6 +436,7 @@ func main() {
 		token: *token, groupID: *groupID, userIDs: allowedUsers,
 		binsDir: *binsDir, vkCookies: *vkCookies, tmCookies: *tmCookies,
 		sessionsDir: *sessionsDir,
+		resources:   *resources,
 		sessions:    map[string]*session{},
 	}
 
