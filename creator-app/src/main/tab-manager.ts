@@ -12,6 +12,10 @@ import {
   SESSION_PARTITION,
   VK_COOKIE_DOMAINS,
   YANDEX_COOKIE_DOMAINS,
+  VK_LOGIN_URL,
+  YANDEX_LOGIN_URL,
+  VK_AUTH_COOKIE,
+  YANDEX_AUTH_COOKIE,
   LOG_CAPTURE_SNIPPET,
 } from '../constants';
 import { BotManager } from '../bot/bot-manager';
@@ -177,7 +181,11 @@ export class TabManager {
     }
   }
 
-  private attachProcessOutput(proc: ChildProcess, tabId: string): void {
+  private attachProcessOutput(
+    proc: ChildProcess,
+    tabId: string,
+    inspect?: (msg: string) => void,
+  ): void {
     const onData = (data: Buffer) => {
       data
         .toString()
@@ -187,6 +195,7 @@ export class TabManager {
           if (!msg) return;
           console.log(`[relay:${tabId}]`, msg);
           this.sendLog(tabId, msg);
+          if (inspect) inspect(msg);
         });
     };
     proc.stdout?.on('data', onData);
@@ -240,14 +249,24 @@ export class TabManager {
 
     const isTelemost = platform === Platform.Telemost;
     tab.tunnelMode = isTelemost ? TunnelMode.HeadlessTelemost : TunnelMode.HeadlessVK;
-    const cookies = isTelemost
-      ? await this.getYandexCookies()
-      : await this.getVKCookies();
-    if (cookies.length === 0) {
-      const name = isTelemost ? 'Yandex' : 'VK';
-      this.sendLog(tabId, `No ${name} cookies found. Please log into ${name} first.`);
-      return;
+    const authCookie = isTelemost ? YANDEX_AUTH_COOKIE : VK_AUTH_COOKIE;
+    const loginUrl = isTelemost ? YANDEX_LOGIN_URL : VK_LOGIN_URL;
+    const cookieDomains = isTelemost ? YANDEX_COOKIE_DOMAINS : VK_COOKIE_DOMAINS;
+    const platformName = isTelemost ? 'Yandex' : 'VK';
+    let cookies = isTelemost ? await this.getYandexCookies() : await this.getVKCookies();
+    if (!cookies.some((c) => c.name === authCookie)) {
+      this.sendLog(tabId, `No ${platformName} session found, opening login.`);
+      if (this._mainWindow && !this._mainWindow.isDestroyed()) {
+        this._mainWindow.webContents.send(IPC.LOGIN_REQUIRED, { tabId, url: loginUrl });
+      }
+      await this.waitForLogin(cookieDomains, authCookie);
+      if (this._mainWindow && !this._mainWindow.isDestroyed()) {
+        this._mainWindow.webContents.send(IPC.LOGIN_DONE, { tabId });
+      }
+      this.sendLog(tabId, `${platformName} login captured.`);
+      cookies = isTelemost ? await this.getYandexCookies() : await this.getVKCookies();
     }
+    this.sendLog(tabId, `${platformName} cookies (${cookies.length}): ${cookies.map((c) => c.name).join(', ')}`);
     this.killRelay(tabId, tab);
     const cookiesPath = path.join(app.getPath('userData'), `cookies-${platform}.json`);
     await fs.writeFile(cookiesPath, JSON.stringify(cookies));
@@ -256,9 +275,63 @@ export class TabManager {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     tab.relay = proc;
-    this.attachProcessOutput(proc, tabId);
-    proc.on('close', (code) => {
+    let sawAuthFailure = false;
+    this.attachProcessOutput(proc, tabId, (msg) => {
+      if (msg.includes('status 401') || msg.includes('"UnauthorizedError"')) {
+        sawAuthFailure = true;
+      }
+    });
+    proc.on('close', async (code) => {
       this.sendLog(tabId, `Headless exited with code ${code}`);
+      if (sawAuthFailure) {
+        this.sendLog(tabId, `${platformName} session rejected (401), clearing and re-prompting login.`);
+        await this.clearAuthCookies(cookieDomains, authCookie);
+        if (this.tabs.get(tabId) === tab) {
+          this.startHeadless(tabId, platform);
+        }
+      }
+    });
+  }
+
+  private async clearAuthCookies(cookieDomains: string[], authCookieName: string): Promise<void> {
+    const ses = session.fromPartition(SESSION_PARTITION);
+    const matches = await ses.cookies.get({ name: authCookieName });
+    for (const cookie of matches) {
+      if (!cookie.domain || !cookieDomains.some((d) => cookie.domain!.includes(d))) continue;
+      const host = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+      const url = `https://${host}${cookie.path || '/'}`;
+      try {
+        await ses.cookies.remove(url, cookie.name);
+      } catch (err) {
+        console.log(`[COOKIES] failed to remove ${cookie.name} on ${url}:`, err);
+      }
+    }
+  }
+
+  private waitForLogin(cookieDomains: string[], authCookieName: string): Promise<void> {
+    return new Promise((resolve) => {
+      const ses = session.fromPartition(SESSION_PARTITION);
+      const finish = () => {
+        ses.cookies.removeListener('changed', onChanged);
+        resolve();
+      };
+      const onChanged = (
+        _e: Electron.Event,
+        cookie: Electron.Cookie,
+        _cause: string,
+        removed: boolean,
+      ) => {
+        if (removed) return;
+        if (cookie.name !== authCookieName) return;
+        if (!cookie.domain || !cookieDomains.some((d) => cookie.domain!.includes(d))) return;
+        finish();
+      };
+      ses.cookies.on('changed', onChanged);
+      ses.cookies.get({ name: authCookieName }).then((found) => {
+        if (found.some((c) => c.domain && cookieDomains.some((d) => c.domain!.includes(d)))) {
+          finish();
+        }
+      });
     });
   }
 

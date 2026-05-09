@@ -27,6 +27,7 @@ export function renderContent(tm: RendererTabManager): void {
   const toolbar = document.getElementById('toolbar')!;
   const logsPanel = document.getElementById('logsPanel')!;
   const headlessInfo = document.getElementById('headlessInfo')!;
+  const hookPanel = document.getElementById('hookPanel')!;
 
   const webviews = content.querySelectorAll('webview');
   webviews.forEach((wv) => wv.classList.add('hidden'));
@@ -42,7 +43,13 @@ export function renderContent(tm: RendererTabManager): void {
   logsPanel.style.display = 'flex';
 
   const activeTab = tm.tabs[tm.activeTabId];
-  if (activeTab.headless) {
+  hookPanel.style.display = activeTab.headless ? 'none' : 'flex';
+  logsPanel.classList.toggle('relay-only', activeTab.headless === true);
+  if (activeTab.loginWebview) {
+    toolbar.style.display = 'none';
+    headlessInfo.style.display = 'none';
+    activeTab.loginWebview.classList.remove('hidden');
+  } else if (activeTab.headless) {
     toolbar.style.display = 'none';
     headlessInfo.style.display = 'block';
     let title = 'Headless VK';
@@ -68,7 +75,6 @@ export function renderContent(tm: RendererTabManager): void {
       } else {
         callInfoVK.style.display = 'block';
         document.getElementById('headlessJoinLink')!.textContent = callInfo.joinLink || '';
-        document.getElementById('headlessShortLink')!.textContent = callInfo.shortLink || '';
         document.getElementById('headlessTurn')!.textContent = callInfo.turn || '';
         document.getElementById('headlessProtocol')!.textContent = callInfo.protocol || '';
       }
@@ -103,6 +109,29 @@ export function scrollLogs(): void {
   const hookEl = document.getElementById('hookLog');
   if (relayEl) relayEl.scrollTop = relayEl.scrollHeight;
   if (hookEl) hookEl.scrollTop = hookEl.scrollHeight;
+}
+
+export function attachLoginWebview(tm: RendererTabManager, tabId: string, url: string): void {
+  const tab = tm.tabs[tabId];
+  if (!tab) return;
+  if (tab.loginWebview) tab.loginWebview.remove();
+  const webview = document.createElement('webview') as unknown as Webview;
+  webview.setAttribute('src', url);
+  webview.setAttribute('partition', SESSION_PARTITION);
+  webview.setAttribute('useragent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+  webview.classList.add('webview-full');
+  webview.dataset.tabId = tabId;
+  document.getElementById('content')!.appendChild(webview);
+  tab.loginWebview = webview;
+}
+
+export function detachLoginWebview(tm: RendererTabManager, tabId: string): void {
+  const tab = tm.tabs[tabId];
+  if (!tab) return;
+  if (tab.loginWebview) {
+    tab.loginWebview.remove();
+    tab.loginWebview = undefined;
+  }
 }
 
 export function loadURL(tm: RendererTabManager, url: string): void {

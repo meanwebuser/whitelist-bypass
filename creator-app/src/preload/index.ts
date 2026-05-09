@@ -44,4 +44,10 @@ import { IPC } from '../constants';
   onCloseBotTab(cb: (data: any) => void) {
     ipcRenderer.on(IPC.CLOSE_BOT_TAB, (_e, data) => cb(data));
   },
+  onLoginRequired(cb: (tabId: string, url: string) => void) {
+    ipcRenderer.on(IPC.LOGIN_REQUIRED, (_e, data) => cb(data.tabId, data.url));
+  },
+  onLoginDone(cb: (tabId: string) => void) {
+    ipcRenderer.on(IPC.LOGIN_DONE, (_e, data) => cb(data.tabId));
+  },
 };

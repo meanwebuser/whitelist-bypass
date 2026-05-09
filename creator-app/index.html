@@ -39,7 +39,6 @@
     <div class="headless-status" id="headlessStatus">Starting...</div>
     <div class="headless-call-info" id="headlessCallInfo">
       <div class="headless-row"><span class="headless-label">Join link:</span> <a id="headlessJoinLink" href="#" class="headless-link"></a><img class="headless-copy" src="resources/icons8-copy-50.png" data-copy="headlessJoinLink" title="Copy"></div>
-      <div class="headless-row"><span class="headless-label">Short:</span> <a id="headlessShortLink" href="#" class="headless-link"></a><img class="headless-copy" src="resources/icons8-copy-50.png" data-copy="headlessShortLink" title="Copy"></div>
       <div class="headless-row"><span class="headless-label">TURN:</span> <span id="headlessTurn"></span></div>
       <div class="headless-row"><span class="headless-label">Protocol:</span> <span id="headlessProtocol"></span></div>
     </div>
@@ -54,10 +53,10 @@
 </div>
 <div class="logs" id="logsPanel" style="display:none">
   <div class="log-panel">
-    <div class="log-title">Relay <span class="log-clear-btn" id="btnClearRelay" title="Clear">&#x2715;</span></div>
+    <div class="log-title">Relay <span class="log-clear-btn" id="btnClearRelay" title="Clear">&#x2715;</span><img class="log-download-btn" id="btnSaveLogsHeadless" src="resources/icons8-download-64.png" title="Save logs"></div>
     <div class="log-content relay" id="relayLog"></div>
   </div>
-  <div class="log-panel">
+  <div class="log-panel" id="hookPanel">
     <div class="log-title">Hook <span class="log-clear-btn" id="btnClearHook" title="Clear">&#x2715;</span></div>
     <div class="log-content hook" id="hookLog"></div>
   </div>

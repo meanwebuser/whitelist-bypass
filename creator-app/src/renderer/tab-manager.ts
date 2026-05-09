@@ -87,6 +87,7 @@ export class RendererTabManager {
   closeTab(tabId: string): void {
     const tab = this.tabs[tabId];
     if (tab?.wv) tab.wv.remove();
+    if (tab?.loginWebview) tab.loginWebview.remove();
     window.bridge.closeTab(tabId);
     delete this.tabs[tabId];
     if (this.activeTabId === tabId) {
@@ -157,10 +158,6 @@ export class RendererTabManager {
       if (tab.isBot) {
         window.bridge.sendBotCallLink(tabId, tab.callInfo.joinLink);
       }
-      changed = true;
-    }
-    if (trimmed.includes(HeadlessLogMarker.SHORT_LINK) && tab.callInfo) {
-      tab.callInfo.shortLink = trimmed.split(HeadlessLogMarker.SHORT_LINK)[1].trim();
       changed = true;
     }
     if (trimmed.includes(HeadlessLogMarker.TURN) && tab.callInfo) {

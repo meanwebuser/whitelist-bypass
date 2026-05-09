@@ -76,7 +76,6 @@ export interface TabListEntry {
 
 export interface CallInfo {
   joinLink?: string;
-  shortLink?: string;
   turn?: string;
   protocol?: string;
 }
@@ -102,6 +101,7 @@ export interface RendererTab {
   headlessStatus?: string;
   callInfo?: CallInfo;
   tunnelConnected?: boolean;
+  loginWebview?: Webview;
 }
 
 export interface BotTabData {
@@ -131,4 +131,6 @@ export interface Bridge {
   startHeadless(tabId: string, platform: string): Promise<void>;
   sendBotCallLink(tabId: string, link: string): Promise<void>;
   onCloseBotTab(cb: (data: { tabId: string }) => void): void;
+  onLoginRequired(cb: (tabId: string, url: string) => void): void;
+  onLoginDone(cb: (tabId: string) => void): void;
 }

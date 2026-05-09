@@ -12,6 +12,8 @@ import {
   exportCookies,
   copyToClipboard,
   renameTab,
+  attachLoginWebview,
+  detachLoginWebview,
 } from './dom';
 import { VK_IM_URL, TELEMOST_URL } from '../constants';
 import { Platform, Bridge, BotTabData, LogPanel, TunnelMode } from '../types';
@@ -103,13 +105,11 @@ function bindErrorPopup(): void {
 function bindLogEvents(): void {
   document.getElementById('btnClearRelay')!.addEventListener('click', () => clearLog(LogPanel.Relay));
   document.getElementById('btnClearHook')!.addEventListener('click', () => clearLog(LogPanel.Hook));
+  document.getElementById('btnSaveLogsHeadless')!.addEventListener('click', saveLogs);
 }
 
 function bindHeadlessEvents(): void {
   document.getElementById('headlessJoinLink')!.addEventListener('click', (event) => {
-    copyToClipboard((event.target as HTMLElement).textContent || '');
-  });
-  document.getElementById('headlessShortLink')!.addEventListener('click', (event) => {
     copyToClipboard((event.target as HTMLElement).textContent || '');
   });
   document.getElementById('headlessInfo')!.addEventListener('click', (event) => {
@@ -170,6 +170,25 @@ function init(): void {
 
   window.bridge.onCloseBotTab((data: { tabId: string }) => {
     tm.closeTab(data.tabId);
+  });
+
+  window.bridge.onLoginRequired((tabId: string, url: string) => {
+    const tab = tm.tabs[tabId];
+    if (!tab) return;
+    tab.headlessStatus = 'Waiting for login...';
+    attachLoginWebview(tm, tabId, url);
+    if (tabId === tm.activeTabId) {
+      renderTabs(tm);
+      renderContent(tm);
+    }
+  });
+
+  window.bridge.onLoginDone((tabId: string) => {
+    const tab = tm.tabs[tabId];
+    if (!tab) return;
+    detachLoginWebview(tm, tabId);
+    tab.headlessStatus = 'Starting...';
+    if (tabId === tm.activeTabId) renderContent(tm);
   });
 
   startHookLogPoller(tm);

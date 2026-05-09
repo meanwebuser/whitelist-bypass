@@ -13,6 +13,11 @@ export const VK_API_BASE_URL = 'https://api.vk.com/method';
 export const VK_IM_URL = 'https://vk.com/im';
 export const TELEMOST_URL = 'https://telemost.yandex.ru/';
 
+export const VK_LOGIN_URL = 'https://vk.com/';
+export const YANDEX_LOGIN_URL = 'https://passport.yandex.ru/auth?retpath=https%3A%2F%2Ftelemost.yandex.ru%2F';
+export const VK_AUTH_COOKIE = 'remixsid';
+export const YANDEX_AUTH_COOKIE = 'Session_id';
+
 export const SESSION_PARTITION = 'persist:creator';
 export const WINDOW_WIDTH = 1200;
 export const WINDOW_HEIGHT = 800;
@@ -52,6 +57,8 @@ export enum IPC {
   CLOSE_BOT_TAB = 'close-bot-tab',
   BOT_ERROR = 'bot-error',
   SEND_BOT_CALL_LINK = 'send-bot-call-link',
+  LOGIN_REQUIRED = 'login-required',
+  LOGIN_DONE = 'login-done',
 }
 
 export const LOG_CAPTURE_SNIPPET = [
@@ -69,7 +76,6 @@ export const LOG_CAPTURE_SNIPPET = [
 export enum HeadlessLogMarker {
   CALL_CREATED = 'CALL CREATED',
   JOIN_LINK = 'join_link:',
-  SHORT_LINK = 'short:',
   TURN = 'TURN:',
   PROTOCOL = 'protocol:',
   TUNNEL_CONNECTED = 'TUNNEL CONNECTED',

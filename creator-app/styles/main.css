@@ -334,6 +334,10 @@ body {
   border-right: 1px solid #333;
 }
 
+.logs.relay-only .log-panel:first-child {
+  border-right: none;
+}
+
 .log-title {
   font-size: 10px;
   font-weight: 600;
@@ -348,6 +352,26 @@ body {
   float: right;
   font-size: 13px;
   line-height: 13px;
+}
+
+.log-download-btn {
+  display: none;
+  float: right;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  margin-top: -2px;
+  cursor: pointer;
+  filter: invert(0.55);
+  vertical-align: middle;
+}
+
+.log-download-btn:hover {
+  filter: invert(0.88);
+}
+
+.logs.relay-only .log-download-btn {
+  display: inline-block;
 }
 
 .log-content {
