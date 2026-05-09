@@ -35,7 +35,8 @@
 
         var captureLink = function(link) {
           if (window.__CALL_LINK_CAPTURED__) return;
-          console.log("[BOT] VKCalls: call link:", link);
+          var tabId = window.__CALL_CHECKER_TAB_ID || '';
+          console.log("[BOT] VKCalls[" + tabId + "]: call link:", link);
           window.__CALL_LINK__ = link;
           window.__CALL_LINK_CAPTURED__ = true;
         };

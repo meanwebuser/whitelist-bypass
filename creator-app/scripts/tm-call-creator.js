@@ -27,7 +27,8 @@
       var check = setInterval(function() {
         var url = location.href;
         if (url.indexOf(CALL_PATH_MARKER) !== -1) {
-          console.log("[BOT] Telemost: call link:", url);
+          var tabId = window.__CALL_CHECKER_TAB_ID || '';
+          console.log("[BOT] Telemost[" + tabId + "]: call link:", url);
           window.__CALL_LINK__ = url;
           clearInterval(check);
         }

@@ -31,10 +31,12 @@ function parseCallStatus(msg: string): { tabId: string; status: CallStatus } | n
   };
 }
 
-function extractCallLink(msg: string, prefix: string): string | null {
-  const idx = msg.indexOf(prefix);
-  if (idx === -1) return null;
-  return msg.split(prefix)[1].trim();
+function extractTaggedCallLink(msg: string, platform: Platform): { tabId: string; link: string } | null {
+  const tag = platform === Platform.Telemost ? 'Telemost' : 'VKCalls';
+  const re = new RegExp('\\[BOT\\] ' + tag + '\\[([^\\]]*)\\]: call link:\\s*(.+)$');
+  const match = msg.match(re);
+  if (!match) return null;
+  return { tabId: match[1].trim(), link: match[2].trim() };
 }
 
 export function createWindow(tabManager: TabManager): BrowserWindow {
@@ -97,8 +99,8 @@ export function createWindow(tabManager: TabManager): BrowserWindow {
         if (ac) ac.vk.kickDisconnected();
       }
 
-      handleBotCallLink(tabManager, msg, Platform.VK, '[BOT] VKCalls: call link:');
-      handleBotCallLink(tabManager, msg, Platform.Telemost, '[BOT] Telemost: call link:');
+      handleBotCallLink(tabManager, msg, Platform.VK);
+      handleBotCallLink(tabManager, msg, Platform.Telemost);
 
       const callStatus = parseCallStatus(msg);
       if (callStatus) {
@@ -120,18 +122,16 @@ export function createWindow(tabManager: TabManager): BrowserWindow {
   return win;
 }
 
-function handleBotCallLink(
-  tabManager: TabManager,
-  msg: string,
-  platform: Platform,
-  prefix: string,
-): void {
-  const link = extractCallLink(msg, prefix);
-  if (!link) return;
-  console.log(`[MAIN] ${platform} call link captured:`, link);
-  const peerId = tabManager.findBotPeerId(platform);
-  if (peerId != null && tabManager.botManager) {
-    console.log(`[MAIN] Sending ${platform} link to peer:`, peerId);
-    tabManager.botManager.sendMessage(peerId, `Call created!\n ${link}`);
+function handleBotCallLink(tabManager: TabManager, msg: string, platform: Platform): void {
+  const tagged = extractTaggedCallLink(msg, platform);
+  if (!tagged) return;
+  const tab = tabManager.getTab(tagged.tabId);
+  if (!tab || tab.peerId == null) {
+    console.log(`[MAIN] ${platform} call link captured but no peer for tab ${tagged.tabId}`);
+    return;
+  }
+  console.log(`[MAIN] Sending ${platform} link to peer ${tab.peerId} (tab ${tagged.tabId}):`, tagged.link);
+  if (tabManager.botManager) {
+    tabManager.botManager.sendMessage(tab.peerId, `Call created!\n${tagged.link}`);
   }
 }

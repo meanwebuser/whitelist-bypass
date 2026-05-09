@@ -152,9 +152,9 @@
 
 ![ID сообщества](res/community_id.png)
 
-8. Узнайте свой VK ID (профиль -> "Управление аккаунтом VK ID" -> "Мои данные")
+8. Узнайте свой VK ID (профиль -> "Управление аккаунтом VK ID" -> "Мои данные"). Чтобы разрешить нескольким пользователям, перечислите ID через запятую (например `12345,67890`).
 
-9. Заполните настройки бота в Creator: Token, Group ID, User ID. Сохраните и включите бота.
+9. Заполните настройки бота в Creator: Token, Group ID, User IDs (через запятую). Сохраните и включите бота. Бот игнорирует команды от пользователей не из списка.
 
 ![Настройки бота в Creator](res/bot_config.png)
 
@@ -197,7 +197,7 @@ Standalone Go-бинарник `headless-vk-bot` - то же самое, что 
 ./headless-vk-bot \
   --token <community_access_token> \
   --group-id <community_id> \
-  --user-id <your_vk_id> \
+  --user-id <vk_id_1>,<vk_id_2> \
   --bins-dir /usr/local/bin \
   --vk-cookies /etc/whitelist-bypass/cookies-vk.json \
   --tm-cookies /etc/whitelist-bypass/cookies-yandex.json
@@ -209,13 +209,13 @@ Standalone Go-бинарник `headless-vk-bot` - то же самое, что 
 |---|---|
 | `--token <str>` | Community access token (обязательно) |
 | `--group-id <id>` | ID сообщества, только цифры (обязательно) |
-| `--user-id <id>` | VK ID пользователя, которому разрешено отправлять команды. Пусто = разрешено всем (НЕ рекомендуется) |
+| `--user-id <ids>` | Список VK ID через запятую (`12345,67890`), которым разрешено отправлять команды. Пусто = разрешено всем (НЕ рекомендуется) |
 | `--bins-dir <dir>` | Папка, где лежат `headless-vk-creator` / `headless-telemost-creator` / `headless-wbstream-creator` (обязательно) |
 | `--vk-cookies <path>` | Путь к VK куки (нужен для `/vk`) |
 | `--tm-cookies <path>` | Путь к Yandex куки (нужен для `/tm`) |
 | `--sessions-dir <dir>` | Папка для логов спавненных creators. Опционально - без флага логи не пишутся, stdout/stderr creators отбрасываются |
 
-При получении команды бот спавнит соответствующий creator с `--write-file <tmp>`, ждёт появления линка в файле (до 60 секунд) и присылает его в чат. Если вы укажете `--user-id`, команды от других пользователей будут проигнорированы.
+При получении команды бот спавнит соответствующий creator с `--write-file <tmp>`, ждёт появления линка в файле (до 60 секунд) и присылает его в чат. `--user-id` принимает список через запятую; если указан, команды от пользователей не из списка игнорируются.
 
 ### Запуск как systemd-сервис
 
@@ -231,7 +231,7 @@ Type=simple
 ExecStart=/usr/local/bin/headless-vk-bot \
   --token <community_access_token> \
   --group-id <community_id> \
-  --user-id <your_vk_id> \
+  --user-id <vk_id_1>,<vk_id_2> \
   --bins-dir /usr/local/bin \
   --vk-cookies /etc/whitelist-bypass/cookies-vk.json \
   --tm-cookies /etc/whitelist-bypass/cookies-yandex.json

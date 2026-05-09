@@ -151,7 +151,11 @@ export class BotManager {
 
     console.log('[BOT] Message from', fromId, ':', text, 'payload:', payload);
 
-    if (this.settings.userId && fromId.toString() !== this.settings.userId.toString()) {
+    const allowedIds = this.settings.userId
+      .split(',')
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0);
+    if (allowedIds.length > 0 && !allowedIds.includes(fromId.toString())) {
       return;
     }
 

@@ -59,7 +59,7 @@ type session struct {
 type bot struct {
 	token       string
 	groupID     string
-	userID      string
+	userIDs     []string
 	binsDir     string
 	vkCookies   string
 	tmCookies   string
@@ -165,8 +165,18 @@ func (b *bot) poll() error {
 }
 
 func (b *bot) handleMessage(peerID, fromID int64, text, payload string) {
-	if b.userID != "" && fmt.Sprint(fromID) != b.userID {
-		return
+	if len(b.userIDs) > 0 {
+		from := fmt.Sprint(fromID)
+		allowed := false
+		for _, id := range b.userIDs {
+			if id == from {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return
+		}
 	}
 	log.Printf("[bot] msg from=%d peer=%d text=%q payload=%q", fromID, peerID, text, payload)
 
@@ -395,7 +405,7 @@ func (b *bot) run() error {
 func main() {
 	token := flag.String("token", "", "VK community access token (required)")
 	groupID := flag.String("group-id", "", "VK community ID, digits only (required)")
-	userID := flag.String("user-id", "", "VK user ID allowed to issue commands (optional, empty = anyone)")
+	userID := flag.String("user-id", "", "comma-separated VK user IDs allowed to issue commands (empty = anyone)")
 	binsDir := flag.String("bins-dir", "", "directory containing headless-*-creator binaries (required)")
 	vkCookies := flag.String("vk-cookies", "", "path to VK cookies JSON")
 	tmCookies := flag.String("tm-cookies", "", "path to Yandex cookies JSON for Telemost")
@@ -406,8 +416,16 @@ func main() {
 		log.Fatal("--token, --group-id, --bins-dir are required")
 	}
 
+	var allowedUsers []string
+	for _, id := range strings.Split(*userID, ",") {
+		trimmed := strings.TrimSpace(id)
+		if trimmed != "" {
+			allowedUsers = append(allowedUsers, trimmed)
+		}
+	}
+
 	b := &bot{
-		token: *token, groupID: *groupID, userID: *userID,
+		token: *token, groupID: *groupID, userIDs: allowedUsers,
 		binsDir: *binsDir, vkCookies: *vkCookies, tmCookies: *tmCookies,
 		sessionsDir: *sessionsDir,
 		sessions:    map[string]*session{},

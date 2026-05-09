@@ -152,15 +152,6 @@ export class TabManager {
     return this.callStatusCache.get(tabId) || CallStatus.Inactive;
   }
 
-  findBotPeerId(platform: Platform): number | null {
-    for (const [tabId, tab] of this.tabs) {
-      if (this.botTabIds.has(tabId) && tab.platform === platform && tab.peerId != null) {
-        return tab.peerId;
-      }
-    }
-    return null;
-  }
-
   getTabList(): TabListEntry[] {
     const result: TabListEntry[] = [];
     this.tabs.forEach((tab, tabId) => {
