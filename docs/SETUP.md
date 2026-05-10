@@ -254,6 +254,40 @@ sudo journalctl -u wlb-vk-bot -f
 
 При остановке сервиса бот посылает `SIGTERM` всем запущенным creator-процессам, чтобы не оставлять незакрытых сессий.
 
+### Запуск через Docker
+
+Альтернатива systemd. Готовый образ публикуется в GHCR (`ghcr.io/kulikov0/whitelist-bypass-bot`) - под капотом тот же `headless-vk-bot` плюс три creator-бинарника. Поддерживаемые архитектуры: `linux/amd64`, `linux/arm64`, `linux/386`.
+
+```sh
+mkdir wlb-bot && cd wlb-bot
+curl -O https://raw.githubusercontent.com/kulikov0/whitelist-bypass/main/headless/docker/docker-compose.yml
+curl -L https://raw.githubusercontent.com/kulikov0/whitelist-bypass/main/headless/docker/.env.example -o .env
+# отредактируйте .env: VK_TOKEN, VK_GROUP_ID, VK_USER_IDS
+# положите рядом cookies-vk.json и cookies-telemost.json
+# (для платформ, которые не используете - создайте файл с содержимым `[]`)
+docker compose up -d
+docker compose logs -f
+```
+
+Обновление до новой версии:
+
+```sh
+docker compose pull && docker compose up -d
+```
+
+| Переменная | Обязательна | По умолчанию | Соответствует флагу |
+|---|---|---|---|
+| `VK_TOKEN` | да | - | `--token` |
+| `VK_GROUP_ID` | да | - | `--group-id` |
+| `VK_USER_IDS` | нет | пусто (всем) | `--user-id` |
+| `RESOURCES` | нет | `default` | `--resources` |
+| `BINS_DIR` | нет | `/opt/wlb/bin` | `--bins-dir` |
+| `SESSIONS_DIR` | нет | `/data/sessions` | `--sessions-dir` |
+| `VK_COOKIES` | нет | `/data/cookies-vk.json` если есть | `--vk-cookies` |
+| `TM_COOKIES` | нет | `/data/cookies-telemost.json` если есть | `--tm-cookies` |
+
+> Если WebRTC-туннель не доходит через сетевой бридж Docker (UDP может отбрасываться), добавьте в `docker-compose.yml` строку `network_mode: host` под сервисом `bot`.
+
 ### Команды
 
 - `/vk` - запустить `headless-vk-creator`
