@@ -314,14 +314,32 @@ Throughput ≈ `fps × batch × 1126 байт/кадр`. Примеры:
 
 ## Joiner (iOS)
 
-На iOS доступен только режим SOCKS5 прокси (без VPN). Для проксирования всего трафика устройства используйте VPN-приложение с поддержкой SOCKS5 (например Shadowrocket или Streisand).
+На iOS доступен только режим SOCKS5 прокси (без VPN). Для проксирования всего трафика устройства используйте VPN-приложение с поддержкой SOCKS5 (например Happ, Shadowrocket или Streisand).
 
-1. Скачайте `whitelist-bypass-proxy.ipa` (unsigned) из [GitHub Releases](https://github.com/kulikov0/whitelist-bypass/releases) и установите его (через AltStore, Sideloadly или подпишите своим аккаунтом). Либо соберите из исходников (см. README).
-2. Установите любое VPN-приложение с поддержкой SOCKS5 (Shadowrocket, Streisand и т.п.).
+1. Скачайте `whitelist-bypass-proxy.ipa` (unsigned) из [GitHub Releases](https://github.com/kulikov0/whitelist-bypass/releases) и установите его. Подробная инструкция по установке unsigned IPA на iPhone: [habr.com/ru/articles/1013990/](https://habr.com/ru/articles/1013990/). Либо соберите из исходников (см. README).
+2. Установите любое VPN-приложение с поддержкой SOCKS5 (Happ, Shadowrocket, Streisand и т.п.).
 3. Откройте whitelist-bypass, выберите режим туннеля (**DC** или **Video**), вставьте ссылку на звонок и нажмите **Go**.
-4. Дождитесь статуса "Tunnel Active". Приложение покажет адрес SOCKS5 прокси (например `socks5://user:pass@127.0.0.1:1080`).
+4. Дождитесь статуса "Tunnel Active". Приложение покажет адрес SOCKS5 прокси (например `socks5://user:pass@127.0.0.1:1081`).
 5. Скопируйте параметры SOCKS5 из whitelist-bypass.
 6. Вставьте их в VPN-приложение и подключитесь - весь трафик устройства пойдет через туннель.
+
+### Подключение через Happ
+
+Happ - бесплатное приложение из App Store, поддерживающее SOCKS5 в формате v2ray.
+
+1. В whitelist-bypass дождитесь "Tunnel Active" и нажмите кнопку **Copy v2ray URL** - в буфер обмена скопируется ссылка вида `socks://...@127.0.0.1:1081#WLB-1081`.
+
+   ![whitelist-bypass: Copy v2ray URL](res/ios_interface.jpeg)
+
+2. Откройте Happ, нажмите **+** в правом верхнем углу и выберите **Import from clipboard**.
+
+   ![Happ: Import from clipboard](res/ios_happ_s1.jpeg)
+
+3. Сервер `WLB-1081` появится в списке - включите туннель.
+
+   ![Happ: запуск туннеля](res/ios_happ_s2.jpeg)
+
+> Приложение работает без NetworkExtension - это позволяет устанавливать его через бесплатный Apple Developer аккаунт (без подписки $99/год). Обратная сторона: порт SOCKS5 может меняться между запусками whitelist-bypass - если предыдущий порт занят, приложение выбирает свободный. Если в Happ туннель перестал работать после перезапуска - удалите сервер `WLB-...` и заново нажмите **Copy v2ray URL** + **Import from clipboard**.
 
 Альтернативно прокси можно прописать в отдельных приложениях напрямую:
 - **Telegram**: Настройки -> Данные и память -> Прокси -> Добавить прокси -> SOCKS5
