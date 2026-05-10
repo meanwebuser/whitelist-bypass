@@ -14,8 +14,7 @@ type VKClient struct {
 	WSHelper
 	pc              *webrtc.PeerConnection
 	sampleTrack     *webrtc.TrackLocalStaticSample
-	vp8tunnel       *tunnel.VP8DataTunnel
-	obf             *tunnel.TunnelObfuscator
+	vp8tunnel       *tunnel.VP8LegacyTunnel
 	logFn           func(string, ...any)
 	remoteSet       bool
 	pending         []webrtc.ICECandidateInit
@@ -29,16 +28,6 @@ func NewVKClient(logFn func(string, ...any)) *VKClient {
 		logFn = log.Printf
 	}
 	return &VKClient{logFn: logFn}
-}
-
-func (c *VKClient) Configure(joinLink string) error {
-	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(joinLink))
-	if err != nil {
-		return err
-	}
-	c.obf = obf
-	c.logFn("vk: obfuscator localEpoch=0x%08x", obf.LocalEpoch())
-	return nil
 }
 
 func (c *VKClient) HandleSignaling(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +140,7 @@ func (c *VKClient) createPC(config webrtc.Configuration) error {
 			c.logFn("vk: === CONNECTED - starting VP8 tunnel ===")
 			c.logFn("vk: sampleTrack id=%s kind=%s", sampleTrack.ID(), sampleTrack.Kind().String())
 			c.logFn("vk: PC senders=%d receivers=%d signalingState=%s", len(pc.GetSenders()), len(pc.GetReceivers()), pc.SignalingState().String())
-			c.vp8tunnel = tunnel.NewVP8DataTunnel(sampleTrack, c.obf, c.logFn)
+			c.vp8tunnel = tunnel.NewVP8LegacyTunnel(sampleTrack, c.logFn)
 			c.vp8tunnel.Start(0, 0)
 			if c.OnConnected != nil {
 				c.OnConnected(c.vp8tunnel)
