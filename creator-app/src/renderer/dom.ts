@@ -52,9 +52,9 @@ export function renderContent(tm: RendererTabManager): void {
   } else if (activeTab.headless) {
     toolbar.style.display = 'none';
     headlessInfo.style.display = 'block';
-    let title = 'Headless VK';
-    if (activeTab.platform === Platform.Telemost) title = 'Headless Telemost';
-    else if (activeTab.platform === Platform.WBStream) title = 'Headless WB Stream';
+    let title = 'VK';
+    if (activeTab.platform === Platform.Telemost) title = 'Telemost';
+    else if (activeTab.platform === Platform.WBStream) title = 'WBStream';
     document.getElementById('headlessTitle')!.textContent = title;
     document.getElementById('headlessStatus')!.textContent = activeTab.headlessStatus || 'Starting...';
     const callInfo = activeTab.callInfo;

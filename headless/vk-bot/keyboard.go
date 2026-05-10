@@ -17,14 +17,26 @@ type keyboard struct {
 	Buttons [][]kbButton `json:"buttons"`
 }
 
+func platformSquare(platform string) string {
+	switch platform {
+	case "vk":
+		return "🟦"
+	case "tm", "telemost":
+		return "🟥"
+	case "wb", "wbstream":
+		return "🟪"
+	}
+	return ""
+}
+
 func mainMenuKeyboard() string {
 	kb := keyboard{
 		OneTime: false,
 		Buttons: [][]kbButton{
 			{
-				{Action: kbAction{Type: "text", Label: "👻 VK", Payload: `{"cmd":"vk"}`}},
-				{Action: kbAction{Type: "text", Label: "👻 Telemost", Payload: `{"cmd":"tm"}`}},
-				{Action: kbAction{Type: "text", Label: "👻 WB Stream", Payload: `{"cmd":"wb"}`}},
+				{Action: kbAction{Type: "text", Label: "🟦 VK", Payload: `{"cmd":"vk"}`}},
+				{Action: kbAction{Type: "text", Label: "🟥 Telemost", Payload: `{"cmd":"tm"}`}},
+				{Action: kbAction{Type: "text", Label: "🟪 WBStream", Payload: `{"cmd":"wb"}`}},
 			},
 			{
 				{Action: kbAction{Type: "text", Label: "📋 Active sessions", Payload: `{"cmd":"list"}`}},
@@ -39,7 +51,7 @@ func sessionsKeyboard(sessions []*session) string {
 	rows := make([][]kbButton, 0, len(sessions)+1)
 	for _, s := range sessions {
 		payload, _ := json.Marshal(map[string]string{"cmd": "close", "id": s.id})
-		label := "👻 " + s.platform + " " + s.id + " 🟢"
+		label := platformSquare(s.platform) + " " + s.platform + " " + s.id + " 🟢"
 		rows = append(rows, []kbButton{
 			{Action: kbAction{Type: "text", Label: label, Payload: string(payload)}},
 		})

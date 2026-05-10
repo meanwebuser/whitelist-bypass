@@ -43,15 +43,15 @@ export class RendererTabManager {
     switch (platform) {
       case Platform.Telemost:
         tab.mode = TunnelMode.HeadlessTelemost;
-        tab.name = 'Headless TM';
+        if (!tab.isBot) tab.name = 'Telemost';
         break;
       case Platform.WBStream:
         tab.mode = TunnelMode.HeadlessWBStream;
-        tab.name = 'Headless WB';
+        if (!tab.isBot) tab.name = 'WBStream';
         break;
       default:
         tab.mode = TunnelMode.HeadlessVK;
-        tab.name = 'Headless VK';
+        if (!tab.isBot) tab.name = 'VK';
     }
     tab.headless = true;
     tab.platform = platform;
@@ -66,9 +66,14 @@ export class RendererTabManager {
 
   createBotTab(data: BotTabData): void {
     if (!this.tabs[data.tabId]) {
-      const isHeadless = data.mode === TunnelMode.HeadlessVK || data.mode === TunnelMode.HeadlessTelemost;
-      const platformLabel = data.platform === Platform.Telemost ? 'TM' : 'VK';
-      const botName = isHeadless ? `Bot-Headless-${platformLabel}` : `Bot-${data.platform === Platform.Telemost ? 'Telemost' : 'VK'}`;
+      const isHeadless =
+        data.mode === TunnelMode.HeadlessVK ||
+        data.mode === TunnelMode.HeadlessTelemost ||
+        data.mode === TunnelMode.HeadlessWBStream;
+      let platformName = 'VK';
+      if (data.platform === Platform.Telemost) platformName = 'Telemost';
+      else if (data.platform === Platform.WBStream) platformName = 'WBStream';
+      const botName = isHeadless ? `Bot-${platformName}` : `Bot-${platformName} (legacy)`;
       this.tabs[data.tabId] = {
         wv: null,
         url: '',
@@ -120,8 +125,8 @@ export class RendererTabManager {
   getTabLabel(tab: RendererTab): string {
     if (tab.name) return tab.name;
     if (tab.url) {
-      if (tab.url.includes('vk.com')) return 'VK';
-      if (tab.url.includes('telemost')) return 'Telemost';
+      if (tab.url.includes('vk.com')) return 'VK (legacy)';
+      if (tab.url.includes('telemost')) return 'Telemost (legacy)';
     }
     return 'New';
   }

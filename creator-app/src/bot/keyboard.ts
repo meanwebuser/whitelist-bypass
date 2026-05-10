@@ -26,16 +26,16 @@ export function createMainKeyboard() {
     one_time: false,
     buttons: [
       [
-        { action: { type: 'text', label: '📞 VK DC', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'dc' }) } },
-        { action: { type: 'text', label: '📹 VK Video', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'video' }) } },
-        { action: { type: 'text', label: '👻 VK Headless', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'headless' }) } },
+        { action: { type: 'text', label: '🟦 VK', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'headless' }) } },
+        { action: { type: 'text', label: 'DC (legacy)', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'dc' }) } },
+        { action: { type: 'text', label: 'Video (legacy)', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'video' }) } },
       ],
       [
-        { action: { type: 'text', label: '📹 TM Video', payload: JSON.stringify({ cmd: BotCommand.TM, mode: 'video' }) } },
-        { action: { type: 'text', label: '👻 TM Headless', payload: JSON.stringify({ cmd: BotCommand.TM, mode: 'headless' }) } },
+        { action: { type: 'text', label: '🟥 Telemost', payload: JSON.stringify({ cmd: BotCommand.TM, mode: 'headless' }) } },
+        { action: { type: 'text', label: 'Video (legacy)', payload: JSON.stringify({ cmd: BotCommand.TM, mode: 'video' }) } },
       ],
       [
-        { action: { type: 'text', label: '👻 WB Headless', payload: JSON.stringify({ cmd: BotCommand.WB, mode: 'headless' }) } },
+        { action: { type: 'text', label: '🟪 WBStream', payload: JSON.stringify({ cmd: BotCommand.WB, mode: 'headless' }) } },
       ],
       [
         { action: { type: 'text', label: '📋 Active Tabs', payload: JSON.stringify({ cmd: BotCommand.List }) } },
