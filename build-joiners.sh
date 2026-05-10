@@ -12,17 +12,17 @@ mkdir -p "$PREBUILTS"
 echo "=== Building headless-wbstream-joiner (Linux) ==="
 cd "$WB_JOINER_DIR"
 echo "Linux x64..."
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "$PREBUILTS/headless-wbstream-joiner-linux-x64" .
+GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$PREBUILTS/headless-wbstream-joiner-linux-x64" .
 echo "Linux x86..."
-GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o "$PREBUILTS/headless-wbstream-joiner-linux-ia32" .
+GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$PREBUILTS/headless-wbstream-joiner-linux-ia32" .
 
 echo ""
 echo "=== Building headless-telemost-joiner (Linux) ==="
 cd "$TM_JOINER_DIR"
 echo "Linux x64..."
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "$PREBUILTS/headless-telemost-joiner-linux-x64" .
+GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$PREBUILTS/headless-telemost-joiner-linux-x64" .
 echo "Linux x86..."
-GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o "$PREBUILTS/headless-telemost-joiner-linux-ia32" .
+GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$PREBUILTS/headless-telemost-joiner-linux-ia32" .
 
 echo ""
 echo "=== Done ==="

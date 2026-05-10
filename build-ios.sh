@@ -16,7 +16,7 @@ IPA_PATH="$ROOT/prebuilts/whitelist-bypass-proxy.ipa"
 echo "Building gomobile .xcframework for iOS..."
 cd "$ROOT/relay"
 rm -rf "$ROOT/ios-proxy-app/Mobile.xcframework"
-gomobile bind -v -target=ios -o "$ROOT/ios-proxy-app/Mobile.xcframework" ./pion/ios/ 2>&1
+gomobile bind -v -trimpath -ldflags="-s -w" -target=ios -o "$ROOT/ios-proxy-app/Mobile.xcframework" ./pion/ios/ 2>&1
 
 echo "xcframework size:"
 du -sh "$ROOT/ios-proxy-app/Mobile.xcframework"

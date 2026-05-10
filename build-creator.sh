@@ -13,20 +13,20 @@ echo "=== Building relay binaries ==="
 cd "$RELAY_DIR"
 
 echo "macOS (universal)..."
-GOOS=darwin GOARCH=amd64 go build -o relay-darwin-amd64 .
-GOOS=darwin GOARCH=arm64 go build -o relay-darwin-arm64 .
+GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o relay-darwin-amd64 .
+GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o relay-darwin-arm64 .
 lipo -create -output relay-darwin relay-darwin-amd64 relay-darwin-arm64
 rm relay-darwin-amd64 relay-darwin-arm64
 
 echo "Windows x64..."
-GOOS=windows GOARCH=amd64 go build -o relay-windows-x64.exe .
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o relay-windows-x64.exe .
 echo "Windows x86..."
-GOOS=windows GOARCH=386 go build -o relay-windows-ia32.exe .
+GOOS=windows GOARCH=386 go build -trimpath -ldflags="-s -w" -o relay-windows-ia32.exe .
 
 echo "Linux x64..."
-GOOS=linux GOARCH=amd64 go build -o relay-linux-x64 .
+GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o relay-linux-x64 .
 echo "Linux x86..."
-GOOS=linux GOARCH=386 go build -o relay-linux-ia32 .
+GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o relay-linux-ia32 .
 
 ls -lh relay-darwin relay-windows-*.exe relay-linux-*
 
@@ -35,60 +35,60 @@ echo "=== Building headless-vk-creator ==="
 cd "$HEADLESS_VK_DIR"
 
 echo "macOS (universal)..."
-GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-darwin-amd64" .
-GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-darwin-arm64" .
+GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-darwin-amd64" .
+GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-darwin-arm64" .
 lipo -create -output "$HEADLESS_DIR/headless-vk-darwin" "$HEADLESS_DIR/headless-vk-darwin-amd64" "$HEADLESS_DIR/headless-vk-darwin-arm64"
 rm "$HEADLESS_DIR/headless-vk-darwin-amd64" "$HEADLESS_DIR/headless-vk-darwin-arm64"
 
 echo "Windows x64..."
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-windows-x64.exe" .
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-windows-x64.exe" .
 echo "Windows x86..."
-GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-windows-ia32.exe" .
+GOOS=windows GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-windows-ia32.exe" .
 
 echo "Linux x64..."
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-linux-x64" .
+GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-linux-x64" .
 echo "Linux x86..."
-GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-linux-ia32" .
+GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-vk-linux-ia32" .
 
 echo ""
 echo "=== Building headless-telemost-creator ==="
 cd "$HEADLESS_TM_DIR"
 
 echo "macOS (universal)..."
-GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-darwin-amd64" .
-GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-darwin-arm64" .
+GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-darwin-amd64" .
+GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-darwin-arm64" .
 lipo -create -output "$HEADLESS_DIR/headless-telemost-darwin" "$HEADLESS_DIR/headless-telemost-darwin-amd64" "$HEADLESS_DIR/headless-telemost-darwin-arm64"
 rm "$HEADLESS_DIR/headless-telemost-darwin-amd64" "$HEADLESS_DIR/headless-telemost-darwin-arm64"
 
 echo "Windows x64..."
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-windows-x64.exe" .
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-windows-x64.exe" .
 echo "Windows x86..."
-GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-windows-ia32.exe" .
+GOOS=windows GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-windows-ia32.exe" .
 
 echo "Linux x64..."
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-linux-x64" .
+GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-linux-x64" .
 echo "Linux x86..."
-GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-linux-ia32" .
+GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-telemost-linux-ia32" .
 
 echo ""
 echo "=== Building headless-wbstream-creator ==="
 cd "$HEADLESS_WB_DIR"
 
 echo "macOS (universal)..."
-GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-darwin-amd64" .
-GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-darwin-arm64" .
+GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-darwin-amd64" .
+GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-darwin-arm64" .
 lipo -create -output "$HEADLESS_DIR/headless-wbstream-darwin" "$HEADLESS_DIR/headless-wbstream-darwin-amd64" "$HEADLESS_DIR/headless-wbstream-darwin-arm64"
 rm "$HEADLESS_DIR/headless-wbstream-darwin-amd64" "$HEADLESS_DIR/headless-wbstream-darwin-arm64"
 
 echo "Windows x64..."
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-windows-x64.exe" .
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-windows-x64.exe" .
 echo "Windows x86..."
-GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-windows-ia32.exe" .
+GOOS=windows GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-windows-ia32.exe" .
 
 echo "Linux x64..."
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-linux-x64" .
+GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-linux-x64" .
 echo "Linux x86..."
-GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-linux-ia32" .
+GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$HEADLESS_DIR/headless-wbstream-linux-ia32" .
 
 ls -lh "$HEADLESS_DIR"/headless-vk-darwin "$HEADLESS_DIR"/headless-telemost-darwin "$HEADLESS_DIR"/headless-wbstream-darwin
 

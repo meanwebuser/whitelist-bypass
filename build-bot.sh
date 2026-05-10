@@ -10,9 +10,9 @@ mkdir -p "$PREBUILTS"
 echo "=== Building headless-vk-bot (Linux) ==="
 cd "$BOT_DIR"
 echo "Linux x64..."
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "$PREBUILTS/headless-vk-bot-linux-x64" .
+GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o "$PREBUILTS/headless-vk-bot-linux-x64" .
 echo "Linux x86..."
-GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o "$PREBUILTS/headless-vk-bot-linux-ia32" .
+GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o "$PREBUILTS/headless-vk-bot-linux-ia32" .
 
 echo ""
 echo "=== Done ==="
