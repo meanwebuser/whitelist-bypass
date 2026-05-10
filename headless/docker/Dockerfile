@@ -1,5 +1,7 @@
-FROM golang:1.26-bookworm AS build
-ENV CGO_ENABLED=0
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS build
+ARG TARGETOS
+ARG TARGETARCH
+ENV CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH
 WORKDIR /src
 
 COPY relay /src/relay
