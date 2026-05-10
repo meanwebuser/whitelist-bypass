@@ -401,4 +401,12 @@ class ProxyManager: ObservableObject {
         }
     }
 
+    func openHappProxy() {
+        let creds = "\(activeSocksUser):\(activeSocksPass)"
+        let credsB64 = Data(creds.utf8).base64EncodedString()
+        let proxyUri = "socks://\(credsB64)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
+        UIPasteboard.general.string = proxyUri
+        showToast(NSLocalizedString("toast_happ_params_copied", comment: ""))
+    }
+
 }

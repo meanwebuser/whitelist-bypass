@@ -50,6 +50,14 @@ struct ContentView: View {
                     if proxyManager.status == .tunnelConnected {
                         ProxyInfoView(proxyUrl: proxyManager.socksUrl, onCopy: proxyManager.copyProxyUrl)
 
+                        Button(action: { proxyManager.openHappProxy() }) {
+                            Label(NSLocalizedString("btn_open_in_happ", comment: ""), systemImage: "globe")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.purple)
+                        .padding(.horizontal)
+
                         Button(action: { proxyManager.openTelegramProxy() }) {
                             Label(NSLocalizedString("btn_open_in_telegram", comment: ""), systemImage: "paperplane.fill")
                                 .frame(maxWidth: .infinity)
