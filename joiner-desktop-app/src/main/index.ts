@@ -9,6 +9,11 @@ import { IPC, JoinerSettings } from '../constants';
 let joinerProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
 let captchaWindow: BrowserWindow | null = null;
+let userRequestedStop = false;
+let reconnectTimer: NodeJS.Timeout | null = null;
+let retryCount = 0;
+let lastSettings: JoinerSettings | null = null;
+const MAX_RETRIES = 8;
 
 function openCaptchaWindow(url: string) {
   if (captchaWindow && !captchaWindow.isDestroyed()) {
@@ -89,10 +94,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-ipcMain.handle(IPC.START, async (_e, settings: JoinerSettings) => {
-  if (joinerProcess) {
-    return { ok: false, error: 'joiner already running' };
-  }
+function spawnJoiner(settings: JoinerSettings): { ok: boolean; error?: string } {
   const exe = resolveJoinerExe();
   if (!existsSync(exe)) {
     return { ok: false, error: `desktop-joiner binary not found at ${exe}` };
@@ -142,7 +144,10 @@ ipcMain.handle(IPC.START, async (_e, settings: JoinerSettings) => {
   const handleOutput = (text: string) => {
     send(IPC.LOG, text);
     if (text.includes('TUNNEL ACTIVE')) send(IPC.STATUS, 'active');
-    if (text.includes('TUNNEL CONNECTED')) send(IPC.STATUS, 'connected');
+    if (text.includes('TUNNEL CONNECTED')) {
+      send(IPC.STATUS, 'connected');
+      retryCount = 0;
+    }
     const captchaMatch = text.match(/STATUS:CAPTCHA:(\S+)/);
     if (captchaMatch) {
       openCaptchaWindow(captchaMatch[1]);
@@ -158,11 +163,39 @@ ipcMain.handle(IPC.START, async (_e, settings: JoinerSettings) => {
     send(IPC.STATUS, 'stopped');
     send(IPC.RUNNING, false);
     joinerProcess = null;
+
+    if (userRequestedStop || !lastSettings) return;
+    if (retryCount >= MAX_RETRIES) {
+      send(IPC.LOG, `[main] auto-reconnect: giving up after ${MAX_RETRIES} attempts\n`);
+      return;
+    }
+    retryCount++;
+    const delayMs = Math.min(30_000, 2_000 * 2 ** (retryCount - 1));
+    send(IPC.LOG, `[main] auto-reconnect attempt ${retryCount}/${MAX_RETRIES} in ${Math.round(delayMs / 1000)}s\n`);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (userRequestedStop || !lastSettings) return;
+      const r = spawnJoiner(lastSettings);
+      if (!r.ok) send(IPC.LOG, `[main] auto-reconnect spawn failed: ${r.error}\n`);
+    }, delayMs);
   });
   return { ok: true };
+}
+
+ipcMain.handle(IPC.START, async (_e, settings: JoinerSettings) => {
+  if (joinerProcess) {
+    return { ok: false, error: 'joiner already running' };
+  }
+  userRequestedStop = false;
+  retryCount = 0;
+  lastSettings = settings;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  return spawnJoiner(settings);
 });
 
 ipcMain.handle(IPC.STOP, async () => {
+  userRequestedStop = true;
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
   stopJoiner();
   return { ok: true };
 });

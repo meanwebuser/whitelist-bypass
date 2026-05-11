@@ -34,6 +34,8 @@ import (
 
 type statusEmitter struct{}
 
+var tunnelLostCh = make(chan struct{}, 1)
+
 func (statusEmitter) EmitStatus(status string) {
 	log.Printf("[status] %s", status)
 	// CAPTCHA:url is fired by the VK auth path when an interactive
@@ -42,8 +44,20 @@ func (statusEmitter) EmitStatus(status string) {
 	if strings.HasPrefix(status, "CAPTCHA:") {
 		fmt.Printf("STATUS:%s\n", status)
 	}
+	if status == common.StatusTunnelLost {
+		select {
+		case tunnelLostCh <- struct{}{}:
+		default:
+		}
+	}
 }
-func (statusEmitter) EmitStatusError(msg string) { log.Printf("[status] ERROR: %s", msg) }
+func (statusEmitter) EmitStatusError(msg string) {
+	log.Printf("[status] ERROR: %s", msg)
+	select {
+	case tunnelLostCh <- struct{}{}:
+	default:
+	}
+}
 
 type fileCacheStore struct{ dir string }
 
@@ -234,13 +248,22 @@ func main() {
 		log.Fatalf("[config] unknown --platform %q", *platform)
 	}
 
-	<-sig
-	log.Printf("[main] shutting down")
+	var lost bool
+	select {
+	case <-sig:
+		log.Printf("[main] shutting down")
+	case <-tunnelLostCh:
+		log.Printf("[main] tunnel lost, exiting with code 2 to trigger auto-reconnect")
+		lost = true
+	}
 	if tun != nil {
 		tun.Stop()
 	}
 	// Give in-flight goroutines a beat to drain before the process exits.
 	time.Sleep(200 * time.Millisecond)
+	if lost {
+		os.Exit(2)
+	}
 }
 
 func splitCSV(s string) []string {

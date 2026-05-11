@@ -34,10 +34,20 @@ const logEl = $('log') as HTMLPreElement;
 const statusEl = $('status');
 const startBtn = $('start') as HTMLButtonElement;
 const stopBtn = $('stop') as HTMLButtonElement;
+const downloadLogsBtn = $('downloadLogs') as HTMLImageElement;
 const platformHint = $('platformHint');
 const linkInput = input('link');
 
 stopBtn.disabled = true;
+
+downloadLogsBtn.addEventListener('click', () => {
+  const blob = new Blob([logEl.textContent || ''], { type: 'text/plain' });
+  const anchor = document.createElement('a');
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = 'joiner-logs-' + new Date().toISOString().replace(/[:.]/g, '-') + '.txt';
+  anchor.click();
+  URL.revokeObjectURL(anchor.href);
+});
 
 function refreshPlatformHint() {
   const p = detectPlatform(linkInput.value.trim());
