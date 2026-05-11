@@ -1,5 +1,7 @@
 desktop-joiner-windows-*.exe
 desktop-joiner-linux-*
+desktop-joiner-darwin
+desktop-joiner-darwin-*
 desktop-joiner-bundle
 desktop-joiner-bundle.exe
 wintun-*.dll

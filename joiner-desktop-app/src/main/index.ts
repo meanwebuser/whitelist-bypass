@@ -43,12 +43,15 @@ function resolveJoinerExe(): string {
   const packaged = join(process.resourcesPath || '', exeName);
   if (existsSync(packaged)) return packaged;
 
+  const baseDir = join(__dirname, '..', '..', 'desktop-joiner');
+  if (process.platform === 'darwin') {
+    return join(baseDir, 'desktop-joiner-darwin');
+  }
   const archMap: Record<string, string> = { x64: 'x64', arm64: 'arm64', ia32: 'ia32' };
   const archTag = archMap[process.arch] ?? 'x64';
-  const platTag = process.platform === 'win32' ? 'windows' : 'linux';
   const suffix = process.platform === 'win32' ? '.exe' : '';
-  return join(__dirname, '..', '..', 'desktop-joiner',
-    `desktop-joiner-${platTag}-${archTag}${suffix}`);
+  const platTag = process.platform === 'win32' ? 'windows' : 'linux';
+  return join(baseDir, `desktop-joiner-${platTag}-${archTag}${suffix}`);
 }
 
 function send(channel: string, payload: unknown) {
@@ -94,9 +97,12 @@ ipcMain.handle(IPC.START, async (_e, settings: JoinerSettings) => {
   if (!existsSync(exe)) {
     return { ok: false, error: `desktop-joiner binary not found at ${exe}` };
   }
-  // wintun is Windows-only; on Linux always run in SOCKS5-only mode
-  // regardless of the noTun checkbox.
-  const noTun = process.platform !== 'win32' ? true : settings.noTun;
+  const tunSupported =
+    process.platform === 'win32' || process.platform === 'linux' || process.platform === 'darwin';
+  const noTun = tunSupported ? settings.noTun : true;
+  if (process.platform !== 'win32' && !noTun && process.getuid && process.getuid() !== 0) {
+    send(IPC.LOG, `[main] WARNING: ${process.platform} TUN routing needs root; relaunch with sudo or untick the TUN option\n`);
+  }
   const args = [
     '--platform', settings.platform,
     '--link', settings.link,
@@ -112,10 +118,15 @@ ipcMain.handle(IPC.START, async (_e, settings: JoinerSettings) => {
   if (settings.socksPass) args.push('--socks-pass', settings.socksPass);
   if (noTun) args.push('--no-tun');
 
-  const commandLine = [exe, ...args].map((s) => (/\s/.test(s) ? `"${s}"` : s)).join(' ');
+  const elevateOnLinux =
+    process.platform === 'linux' && !noTun &&
+    process.getuid && process.getuid() !== 0;
+  const spawnCmd = elevateOnLinux ? 'pkexec' : exe;
+  const spawnArgs = elevateOnLinux ? [exe, ...args] : args;
+  const commandLine = [spawnCmd, ...spawnArgs].map((s) => (/\s/.test(s) ? `"${s}"` : s)).join(' ');
   send(IPC.LOG, `[main] spawning: ${commandLine}\n`);
   try {
-    joinerProcess = spawn(exe, args, { windowsHide: true });
+    joinerProcess = spawn(spawnCmd, spawnArgs, { windowsHide: true });
   } catch (err) {
     return { ok: false, error: `spawn failed: ${(err as Error).message}` };
   }
@@ -159,10 +170,13 @@ ipcMain.handle(IPC.STOP, async () => {
 function stopJoiner() {
   closeCaptchaWindow();
   if (!joinerProcess) return;
+  // On Linux when the Go binary was spawned via pkexec, it runs as
+  // root and we (the user) cannot SIGTERM it. The binary watches
+  // stdin: writing "QUIT\n" and closing the pipe triggers the same
+  // shutdown path as SIGTERM.
+  try { joinerProcess.stdin?.write('QUIT\n'); } catch {}
+  try { joinerProcess.stdin?.end(); } catch {}
   try {
-    // SIGTERM on Windows ends up as TerminateProcess for the child.
-    // The Go binary registers a signal handler for SIGTERM which
-    // triggers Tunnel.Stop and tears down routes cleanly.
     joinerProcess.kill('SIGTERM');
   } catch {}
 }

@@ -23,6 +23,7 @@ npx tsc
 cleanup_artifacts() {
     rm -f "$JOINER_GO_DIR"/desktop-joiner-windows-*.exe \
           "$JOINER_GO_DIR"/desktop-joiner-linux-* \
+          "$JOINER_GO_DIR"/desktop-joiner-darwin \
           "$JOINER_GO_DIR"/desktop-joiner-bundle \
           "$JOINER_GO_DIR"/desktop-joiner-bundle.exe \
           "$JOINER_GO_DIR"/wintun-*.dll
@@ -46,6 +47,12 @@ echo "--- Linux x64 ---"
 cp "$JOINER_GO_DIR/desktop-joiner-linux-x64" "$JOINER_GO_DIR/desktop-joiner-bundle"
 chmod +x "$JOINER_GO_DIR/desktop-joiner-bundle"
 npx electron-builder --linux --x64 --publish never
+
+if [ "$(uname)" = "Darwin" ]; then
+    echo ""
+    echo "--- macOS (universal) ---"
+    npx electron-builder --mac --publish never || true
+fi
 
 "$ROOT/clean-prebuilts.sh"
 

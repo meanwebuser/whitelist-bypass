@@ -29,7 +29,7 @@ import (
 	"whitelist-bypass/relay/pion"
 	"whitelist-bypass/relay/tunnel"
 	"whitelist-bypass/relay/wbstream"
-	"whitelist-bypass/relay/wintunnel"
+	"whitelist-bypass/relay/desktoptun"
 )
 
 type statusEmitter struct{}
@@ -108,12 +108,12 @@ func main() {
 	}
 	common.MaskingEnabled = true
 
-	// One wintunnel.Tunnel covers both platforms. Created up-front so
+	// One desktoptun.Tunnel covers both platforms. Created up-front so
 	// signaling-host bypass routes can be installed before any platform
 	// code touches the network.
-	var tun *wintunnel.Tunnel
+	var tun *desktoptun.Tunnel
 	if !*noTun {
-		cfg := wintunnel.Config{
+		cfg := desktoptun.Config{
 			AdapterName: tunAdapter,
 			TunnelIP:    tunIP,
 			TunnelMask:  tunMask,
@@ -127,9 +127,9 @@ func main() {
 			LogFn:       log.Printf,
 		}
 		var err error
-		tun, err = wintunnel.New(cfg)
+		tun, err = desktoptun.New(cfg)
 		if err != nil {
-			log.Fatalf("[wintunnel] init: %v", err)
+			log.Fatalf("[desktoptun] init: %v", err)
 		}
 	}
 
@@ -151,6 +151,7 @@ func main() {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	watchStdinQuit(sig)
 
 	tunReady := make(chan struct{})
 	var tunOnce sync.Once
@@ -161,7 +162,7 @@ func main() {
 				return
 			}
 			if err := tun.Start(); err != nil {
-				log.Fatalf("[wintunnel] start: %v", err)
+				log.Fatalf("[desktoptun] start: %v", err)
 			}
 			// Now that the tunnel knows the original gateway,
 			// pin /32 bypass routes for the signaling hosts.

@@ -1,13 +1,13 @@
-//go:build !windows
+//go:build !windows && !linux && !darwin
 
-package wintunnel
+package desktoptun
 
 import (
 	"errors"
 	"net"
 )
 
-var errUnsupported = errors.New("wintunnel: only supported on windows")
+var errUnsupported = errors.New("desktoptun: only supported on windows, linux and darwin")
 
 type Config struct {
 	AdapterName string

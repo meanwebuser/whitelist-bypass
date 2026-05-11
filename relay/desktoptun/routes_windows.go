@@ -1,6 +1,6 @@
 //go:build windows
 
-package wintunnel
+package desktoptun
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// runHidden invokes a command with no console window. All wintunnel
+// runHidden invokes a command with no console window. All desktoptun
 // helpers use netsh / route / powershell here; subprocess parsing
 // avoids pulling in winipcfg-style cgo or large Go bindings.
 func runHidden(name string, args ...string) ([]byte, error) {

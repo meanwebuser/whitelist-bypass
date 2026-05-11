@@ -1,6 +1,6 @@
 //go:build windows
 
-package wintunnel
+package desktoptun
 
 import (
 	"errors"
@@ -57,10 +57,10 @@ type Tunnel struct {
 // New validates a Config and returns a Tunnel ready to Start.
 func New(cfg Config) (*Tunnel, error) {
 	if cfg.AdapterName == "" {
-		return nil, errors.New("wintunnel: AdapterName required")
+		return nil, errors.New("desktoptun: AdapterName required")
 	}
 	if cfg.TunnelIP == "" || cfg.TunnelMask == "" || cfg.TunnelPeer == "" {
-		return nil, errors.New("wintunnel: TunnelIP, TunnelMask and TunnelPeer required")
+		return nil, errors.New("desktoptun: TunnelIP, TunnelMask and TunnelPeer required")
 	}
 	if cfg.MTU <= 0 {
 		cfg.MTU = 1500
@@ -69,7 +69,7 @@ func New(cfg Config) (*Tunnel, error) {
 		cfg.SocksHost = "127.0.0.1"
 	}
 	if cfg.SocksPort <= 0 {
-		return nil, errors.New("wintunnel: SocksPort required")
+		return nil, errors.New("desktoptun: SocksPort required")
 	}
 	if cfg.LogFn == nil {
 		cfg.LogFn = log.Printf
@@ -94,16 +94,16 @@ func (t *Tunnel) Start() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.started {
-		return errors.New("wintunnel: already started")
+		return errors.New("desktoptun: already started")
 	}
 
 	gw, alias, err := defaultIPv4Gateway()
 	if err != nil {
-		return fmt.Errorf("wintunnel: read default gateway: %w", err)
+		return fmt.Errorf("desktoptun: read default gateway: %w", err)
 	}
 	t.origGateway = gw
 	t.origIfAlias = alias
-	t.log("[wintunnel] original default gateway %s via %q", gw, alias)
+	t.log("[desktoptun] original default gateway %s via %q", gw, alias)
 
 	proxy := fmt.Sprintf("socks5://%s:%d", t.cfg.SocksHost, t.cfg.SocksPort)
 	if t.cfg.SocksUser != "" {
@@ -115,7 +115,7 @@ func (t *Tunnel) Start() error {
 		Device: "tun://" + t.cfg.AdapterName,
 		MTU:    t.cfg.MTU,
 	}
-	t.log("[wintunnel] starting tun2socks engine adapter=%s mtu=%d proxy=%s",
+	t.log("[desktoptun] starting tun2socks engine adapter=%s mtu=%d proxy=%s",
 		t.cfg.AdapterName, t.cfg.MTU, proxy)
 	engine.Insert(key)
 	engine.Start()
@@ -123,14 +123,14 @@ func (t *Tunnel) Start() error {
 	// adapter exists now; configure IP/MTU/DNS, install default routes
 	if err := setAdapterIP(t.cfg.AdapterName, t.cfg.TunnelIP, t.cfg.TunnelMask); err != nil {
 		engine.Stop()
-		return fmt.Errorf("wintunnel: set adapter ip: %w", err)
+		return fmt.Errorf("desktoptun: set adapter ip: %w", err)
 	}
 	if err := setAdapterMTU(t.cfg.AdapterName, t.cfg.MTU); err != nil {
 		// non-fatal: log and continue
-		t.log("[wintunnel] set mtu failed (continuing): %v", err)
+		t.log("[desktoptun] set mtu failed (continuing): %v", err)
 	}
 	if err := setAdapterDNS(t.cfg.AdapterName, t.cfg.DNSServers); err != nil {
-		t.log("[wintunnel] set dns failed (continuing): %v", err)
+		t.log("[desktoptun] set dns failed (continuing): %v", err)
 	}
 	idx, err := adapterIPv4Index(t.cfg.AdapterName)
 	if err == nil {
@@ -139,12 +139,12 @@ func (t *Tunnel) Start() error {
 
 	for _, prefix := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
 		if err := addRouteViaAdapter(prefix, t.cfg.AdapterName, t.cfg.TunnelPeer, 2); err != nil {
-			t.log("[wintunnel] add default-half %s failed: %v", prefix, err)
+			t.log("[desktoptun] add default-half %s failed: %v", prefix, err)
 		}
 	}
 
 	t.started = true
-	t.log("[wintunnel] up: adapter=%s ip=%s/%s peer=%s",
+	t.log("[desktoptun] up: adapter=%s ip=%s/%s peer=%s",
 		t.cfg.AdapterName, t.cfg.TunnelIP, t.cfg.TunnelMask, t.cfg.TunnelPeer)
 	return nil
 }
@@ -161,19 +161,19 @@ func (t *Tunnel) Stop() {
 
 	for ip := range t.bypass {
 		if err := deleteHostRoute(ip); err != nil {
-			t.log("[wintunnel] remove bypass route %s: %v", ip, err)
+			t.log("[desktoptun] remove bypass route %s: %v", ip, err)
 		}
 	}
 	t.bypass = nil
 
 	for _, prefix := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
 		if err := deleteRouteByPrefix(prefix, t.cfg.AdapterName); err != nil {
-			t.log("[wintunnel] remove default-half %s: %v", prefix, err)
+			t.log("[desktoptun] remove default-half %s: %v", prefix, err)
 		}
 	}
 
 	engine.Stop()
-	t.log("[wintunnel] down")
+	t.log("[desktoptun] down")
 }
 
 // AddBypassIP installs a /32 route for ip via the original default
@@ -181,7 +181,7 @@ func (t *Tunnel) Stop() {
 // hosts skip the tunnel and reach the real network directly.
 func (t *Tunnel) AddBypassIP(ip net.IP) error {
 	if ip == nil {
-		return errors.New("wintunnel: nil IP")
+		return errors.New("desktoptun: nil IP")
 	}
 	v4 := ip.To4()
 	if v4 == nil {
@@ -197,15 +197,15 @@ func (t *Tunnel) AddBypassIP(ip net.IP) error {
 	gw := t.origGateway
 	t.mu.Unlock()
 	if gw == "" {
-		return errors.New("wintunnel: original gateway unknown, start the tunnel first")
+		return errors.New("desktoptun: original gateway unknown, start the tunnel first")
 	}
 	if err := addHostRoute(addr, gw, 1); err != nil {
-		return fmt.Errorf("wintunnel: add bypass %s via %s: %w", addr, gw, err)
+		return fmt.Errorf("desktoptun: add bypass %s via %s: %w", addr, gw, err)
 	}
 	t.mu.Lock()
 	t.bypass[addr] = struct{}{}
 	t.mu.Unlock()
-	t.log("[wintunnel] bypass %s -> %s", addr, gw)
+	t.log("[desktoptun] bypass %s -> %s", addr, gw)
 	return nil
 }
 
@@ -219,20 +219,20 @@ func (t *Tunnel) AddBypassHost(hostname string) ([]net.IP, error) {
 	}
 	ips, err := net.LookupIP(hostname)
 	if err != nil {
-		return nil, fmt.Errorf("wintunnel: resolve %s: %w", hostname, err)
+		return nil, fmt.Errorf("desktoptun: resolve %s: %w", hostname, err)
 	}
 	out := make([]net.IP, 0, len(ips))
 	for _, ip := range ips {
 		if v4 := ip.To4(); v4 != nil {
 			if addErr := t.AddBypassIP(v4); addErr != nil {
-				t.log("[wintunnel] bypass host %s ip %s: %v", hostname, v4, addErr)
+				t.log("[desktoptun] bypass host %s ip %s: %v", hostname, v4, addErr)
 				continue
 			}
 			out = append(out, v4)
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("wintunnel: no v4 addresses for %s", hostname)
+		return nil, fmt.Errorf("desktoptun: no v4 addresses for %s", hostname)
 	}
 	return out, nil
 }

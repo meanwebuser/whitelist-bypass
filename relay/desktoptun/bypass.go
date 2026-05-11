@@ -1,6 +1,4 @@
-//go:build windows
-
-package wintunnel
+package desktoptun
 
 import (
 	"net"

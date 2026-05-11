@@ -52,6 +52,18 @@
           "to": "desktop-joiner"
         }
       ]
+    },
+    "mac": {
+      "target": "dmg",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "icon": "resources/icon.icns",
+      "category": "public.app-category.utilities",
+      "extraResources": [
+        {
+          "from": "desktop-joiner/desktop-joiner-darwin",
+          "to": "desktop-joiner"
+        }
+      ]
     }
   }
 }
