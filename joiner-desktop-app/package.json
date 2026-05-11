@@ -32,12 +32,24 @@
       "requestedExecutionLevel": "requireAdministrator",
       "extraResources": [
         {
-          "from": "windows-joiner/windows-joiner-bundle.exe",
-          "to": "windows-joiner.exe"
+          "from": "desktop-joiner/desktop-joiner-bundle.exe",
+          "to": "desktop-joiner.exe"
         },
         {
-          "from": "windows-joiner/wintun-bundle.dll",
+          "from": "desktop-joiner/wintun-bundle.dll",
           "to": "wintun.dll"
+        }
+      ]
+    },
+    "linux": {
+      "target": "AppImage",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "icon": "resources/icon.png",
+      "category": "Network",
+      "extraResources": [
+        {
+          "from": "desktop-joiner/desktop-joiner-bundle",
+          "to": "desktop-joiner"
         }
       ]
     }

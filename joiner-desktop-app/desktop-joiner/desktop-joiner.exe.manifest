@@ -2,10 +2,10 @@
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
       type="win32"
-      name="whitelist.bypass.windows-joiner"
+      name="whitelist.bypass.desktop-joiner"
       version="1.0.0.0"
       processorArchitecture="*"/>
-  <description>Whitelist Bypass Windows Joiner</description>
+  <description>Whitelist Bypass Desktop Joiner</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

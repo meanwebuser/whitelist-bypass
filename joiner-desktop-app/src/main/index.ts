@@ -36,12 +36,19 @@ function closeCaptchaWindow() {
 }
 
 function resolveJoinerExe(): string {
-  // When packaged, electron-builder copies windows-joiner.exe into
-  // resources/. In dev, look next to the source binary.
-  const packaged = join(process.resourcesPath || '', 'windows-joiner.exe');
+  // When packaged, electron-builder copies the backend binary into
+  // resources/ under the OS-appropriate name. In dev, fall back to
+  // the per-arch artifact next to the Go source.
+  const exeName = process.platform === 'win32' ? 'desktop-joiner.exe' : 'desktop-joiner';
+  const packaged = join(process.resourcesPath || '', exeName);
   if (existsSync(packaged)) return packaged;
-  const fallback = join(__dirname, '..', '..', '..', 'prebuilts', 'windows-joiner-x64.exe');
-  return fallback;
+
+  const archMap: Record<string, string> = { x64: 'x64', arm64: 'arm64', ia32: 'ia32' };
+  const archTag = archMap[process.arch] ?? 'x64';
+  const platTag = process.platform === 'win32' ? 'windows' : 'linux';
+  const suffix = process.platform === 'win32' ? '.exe' : '';
+  return join(__dirname, '..', '..', 'desktop-joiner',
+    `desktop-joiner-${platTag}-${archTag}${suffix}`);
 }
 
 function send(channel: string, payload: unknown) {
@@ -85,8 +92,11 @@ ipcMain.handle(IPC.START, async (_e, settings: JoinerSettings) => {
   }
   const exe = resolveJoinerExe();
   if (!existsSync(exe)) {
-    return { ok: false, error: `windows-joiner.exe not found at ${exe}` };
+    return { ok: false, error: `desktop-joiner binary not found at ${exe}` };
   }
+  // wintun is Windows-only; on Linux always run in SOCKS5-only mode
+  // regardless of the noTun checkbox.
+  const noTun = process.platform !== 'win32' ? true : settings.noTun;
   const args = [
     '--platform', settings.platform,
     '--link', settings.link,
@@ -100,7 +110,7 @@ ipcMain.handle(IPC.START, async (_e, settings: JoinerSettings) => {
   ];
   if (settings.socksUser) args.push('--socks-user', settings.socksUser);
   if (settings.socksPass) args.push('--socks-pass', settings.socksPass);
-  if (settings.noTun) args.push('--no-tun');
+  if (noTun) args.push('--no-tun');
 
   const commandLine = [exe, ...args].map((s) => (/\s/.test(s) ? `"${s}"` : s)).join(' ');
   send(IPC.LOG, `[main] spawning: ${commandLine}\n`);

@@ -19,8 +19,8 @@ echo "=== Building Linux headless joiners ==="
 "$ROOT/build-joiners.sh"
 
 echo ""
-echo "=== Building Windows joiner (Go binary + wintun.dll) ==="
-"$ROOT/build-windows-joiner.sh"
+echo "=== Building desktop joiner (Windows + Linux Go binaries + wintun.dll) ==="
+"$ROOT/build-desktop-joiner.sh"
 
 echo ""
 echo "=== Building Linux headless-vk-bot ==="
@@ -34,6 +34,8 @@ else
     echo ""
     echo "=== Skipping iOS build (requires macOS) ==="
 fi
+
+"$ROOT/clean-prebuilts.sh"
 
 echo ""
 echo "=== Release complete ==="
