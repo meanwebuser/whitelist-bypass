@@ -49,12 +49,10 @@ build_linux() {
     ls -lh "$JOINER_GO_DIR/desktop-joiner-linux-$OUT_TAG"
 }
 
-build_windows amd64 x64   amd64
-build_windows arm64 arm64 arm64
-build_windows 386   ia32  x86
+build_windows amd64 x64  amd64
+build_windows 386   ia32 x86
 
 build_linux amd64 x64
-build_linux arm64 arm64
 
 rm -f "$JOINER_GO_DIR/wintun.zip"
 

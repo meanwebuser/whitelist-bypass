@@ -29,25 +29,23 @@ cleanup_artifacts() {
 }
 trap cleanup_artifacts EXIT
 
-for pair in "x64 --x64" "ia32 --ia32" "arm64 --arm64"; do
-    arch="${pair% *}"
-    flag="${pair#* }"
-    echo ""
-    echo "--- Windows $arch ---"
-    cp "$JOINER_GO_DIR/desktop-joiner-windows-$arch.exe" "$JOINER_GO_DIR/desktop-joiner-bundle.exe"
-    cp "$JOINER_GO_DIR/wintun-$arch.dll" "$JOINER_GO_DIR/wintun-bundle.dll"
-    npx electron-builder --win $flag --publish never
-done
+echo ""
+echo "--- Windows x64 ---"
+cp "$JOINER_GO_DIR/desktop-joiner-windows-x64.exe" "$JOINER_GO_DIR/desktop-joiner-bundle.exe"
+cp "$JOINER_GO_DIR/wintun-x64.dll" "$JOINER_GO_DIR/wintun-bundle.dll"
+npx electron-builder --win --x64 --publish never
 
-for pair in "x64 --x64" "arm64 --arm64"; do
-    arch="${pair% *}"
-    flag="${pair#* }"
-    echo ""
-    echo "--- Linux $arch ---"
-    cp "$JOINER_GO_DIR/desktop-joiner-linux-$arch" "$JOINER_GO_DIR/desktop-joiner-bundle"
-    chmod +x "$JOINER_GO_DIR/desktop-joiner-bundle"
-    npx electron-builder --linux $flag --publish never
-done
+echo ""
+echo "--- Windows x86 ---"
+cp "$JOINER_GO_DIR/desktop-joiner-windows-ia32.exe" "$JOINER_GO_DIR/desktop-joiner-bundle.exe"
+cp "$JOINER_GO_DIR/wintun-ia32.dll" "$JOINER_GO_DIR/wintun-bundle.dll"
+npx electron-builder --win --ia32 --publish never
+
+echo ""
+echo "--- Linux x64 ---"
+cp "$JOINER_GO_DIR/desktop-joiner-linux-x64" "$JOINER_GO_DIR/desktop-joiner-bundle"
+chmod +x "$JOINER_GO_DIR/desktop-joiner-bundle"
+npx electron-builder --linux --x64 --publish never
 
 "$ROOT/clean-prebuilts.sh"
 

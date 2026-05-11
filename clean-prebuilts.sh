@@ -32,7 +32,7 @@ for f in "$PREBUILTS"/"WhitelistBypass "*-*.exe \
     [ -e "$f" ] || continue
     case "$f" in
         *-x64.exe|*-ia32.exe|*-arm64.exe) ;;
-        *-x64.AppImage|*-arm64.AppImage) ;;
+        *-x86_64.AppImage|*-arm64.AppImage) ;;
         *-x64.dmg|*-arm64.dmg|*-universal.dmg) ;;
         *-x64.zip|*-arm64.zip|*-universal.zip) ;;
         *) rm -f "$f" ;;
