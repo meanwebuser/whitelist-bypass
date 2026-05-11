@@ -1,12 +1,11 @@
-// Command windows-joiner is the engine behind the Windows joiner GUI.
-// It runs a headless WB Stream or Telemost joiner exactly like the
-// Linux CLIs in headless/{wbstream,telemost}-joiner, but additionally
-// brings up a wintun adapter so every IP packet on the host is steered
-// through the resulting SOCKS5 proxy.
+// Command desktop-joiner is the engine behind the desktop joiner GUI.
+// On Windows it brings up a wintun adapter so every IP packet on the
+// host is steered through the resulting SOCKS5 proxy. On Linux it
+// only exposes the SOCKS5 proxy (TUN routing is left to the user).
 //
-// It must run with administrator rights (the embedded manifest asks
-// for them); creating wintun adapters and editing the route table
-// both require elevation.
+// On Windows it must run with administrator rights (the embedded
+// manifest asks for them); creating wintun adapters and editing the
+// route table both require elevation.
 package main
 
 import (

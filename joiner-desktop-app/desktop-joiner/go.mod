@@ -1,4 +1,4 @@
-module windows-joiner
+module desktop-joiner
 
 go 1.26.1
 

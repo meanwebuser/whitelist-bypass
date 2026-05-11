@@ -151,6 +151,8 @@ rm -f "$HEADLESS_DIR"/headless-telemost-bundle "$HEADLESS_DIR"/headless-telemost
 rm -f "$HEADLESS_DIR"/headless-wbstream-darwin "$HEADLESS_DIR"/headless-wbstream-windows-*.exe "$HEADLESS_DIR"/headless-wbstream-linux-*
 rm -f "$HEADLESS_DIR"/headless-wbstream-bundle "$HEADLESS_DIR"/headless-wbstream-bundle.exe
 
+"$ROOT/clean-prebuilts.sh"
+
 echo ""
 echo "=== Done ==="
 ls -lh "$ROOT/prebuilts/"
