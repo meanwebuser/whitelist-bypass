@@ -14,7 +14,7 @@ import (
 
 const (
 	APIBase = "https://stream.wb.ru"
-	WSURL   = "wss://wbstream01-el.wb.ru:7880"
+	WSURL   = "wss://rtc-el-01.wb.ru"
 	Origin  = "https://stream.wb.ru"
 )
 

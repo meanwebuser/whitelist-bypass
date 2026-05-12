@@ -280,7 +280,7 @@ func splitCSV(s string) []string {
 func signalingHosts(platform, link string) []string {
 	switch strings.ToLower(platform) {
 	case "wbstream", "wb":
-		return []string{"stream.wb.ru", "wbstream01-el.wb.ru"}
+		return []string{"stream.wb.ru", "rtc-el-01.wb.ru"}
 	case "telemost", "tm":
 		hosts := []string{"telemost.yandex.ru", "telemost-api.yandex.ru"}
 		if u, err := url.Parse(strings.TrimSpace(link)); err == nil && u.Host != "" {

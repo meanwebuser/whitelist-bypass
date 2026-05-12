@@ -5,10 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
 	"runtime/debug"
 	"strings"
-	"syscall"
+	"time"
 
 	"whitelist-bypass/relay/common"
 	"whitelist-bypass/relay/tunnel"
@@ -77,34 +76,37 @@ func main() {
 	}
 	log.Printf("[obf] key-source=%q localEpoch=0x%08x", roomID, obf.LocalEpoch())
 
-	sess := wbstream.NewSession(wbstream.SessionConfig{
-		RoomToken:   roomToken,
-		DisplayName: *displayName,
-		Obfuscator:  obf,
-		LogFn:       log.Printf,
-		RoomID:      roomID,
-		AccessToken: accessToken,
-		ReadBuf:     readBuf,
-	})
 	var activeBridge *tunnel.RelayBridge
-	sess.OnConnected = func(tun tunnel.DataTunnel) {
-		if activeBridge != nil {
-			activeBridge.Reset()
+	makeSession := func(token, access string) *wbstream.Session {
+		sess := wbstream.NewSession(wbstream.SessionConfig{
+			RoomToken:   token,
+			DisplayName: *displayName,
+			Obfuscator:  obf,
+			LogFn:       log.Printf,
+			RoomID:      roomID,
+			AccessToken: access,
+			ReadBuf:     readBuf,
+		})
+		sess.OnConnected = func(tun tunnel.DataTunnel) {
+			if activeBridge != nil {
+				activeBridge.Reset()
+			}
+			bridgeReadBuf := common.VP8BufSize
+			mode := "video"
+			if _, ok := tun.(*tunnel.DCTunnel); ok {
+				bridgeReadBuf = readBuf
+				mode = "dc"
+			}
+			activeBridge = tunnel.NewRelayBridge(tun, "creator", bridgeReadBuf, log.Printf)
+			fmt.Printf("\n  TUNNEL CONNECTED mode=%s\n", mode)
 		}
-		bridgeReadBuf := common.VP8BufSize
-		mode := "video"
-		if _, ok := tun.(*tunnel.DCTunnel); ok {
-			bridgeReadBuf = readBuf
-			mode = "dc"
+		sess.OnPeerRestart = func() {
+			if activeBridge != nil {
+				log.Printf("[creator] new peer detected, resetting relay bridge")
+				activeBridge.Reset()
+			}
 		}
-		activeBridge = tunnel.NewRelayBridge(tun, "creator", bridgeReadBuf, log.Printf)
-		fmt.Printf("\n  TUNNEL CONNECTED (mode=%s)\n", mode)
-	}
-	sess.OnPeerRestart = func() {
-		if activeBridge != nil {
-			log.Printf("[creator] new peer detected, resetting relay bridge")
-			activeBridge.Reset()
-		}
+		return sess
 	}
 
 	fmt.Println("")
@@ -112,13 +114,31 @@ func main() {
 	fmt.Println("  join_link: wbstream://" + roomID)
 	fmt.Println("")
 
-	if err := sess.Start(); err != nil {
-		log.Fatalf("[session] %v", err)
-	}
+	for {
+		sess := makeSession(roomToken, accessToken)
+		if err := sess.Start(); err != nil {
+			log.Printf("[session] start failed: %v, retrying in 5s", err)
+			sess.Close()
+			time.Sleep(5 * time.Second)
+		} else {
+			<-sess.Done()
+			log.Printf("[session] ended, rejoining in 3s")
+			sess.Close()
+		}
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
-	log.Printf("[main] shutting down")
-	sess.Close()
+		if activeBridge != nil {
+			activeBridge.Reset()
+		}
+		time.Sleep(3 * time.Second)
+
+		_, newRoomToken, newAccessToken, err := wbstream.AuthAndGetToken(nil, roomID, *displayName)
+		if err != nil {
+			log.Printf("[rejoin] auth failed: %v, retrying in 5s", err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		roomToken = newRoomToken
+		accessToken = newAccessToken
+		log.Printf("[rejoin] refreshed token for room=%s", roomID)
+	}
 }
