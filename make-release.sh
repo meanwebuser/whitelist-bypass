@@ -19,8 +19,8 @@ echo "=== Building Linux headless joiners ==="
 "$ROOT/build-joiners.sh"
 
 echo ""
-echo "=== Building desktop joiner (Windows + Linux Go binaries + wintun.dll) ==="
-"$ROOT/build-desktop-joiner.sh"
+echo "=== Building desktop joiner Electron app (Windows + Linux + macOS) ==="
+"$ROOT/build-joiner-app.sh"
 
 echo ""
 echo "=== Building Linux headless-vk-bot ==="
