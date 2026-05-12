@@ -132,6 +132,6 @@ function handleBotCallLink(tabManager: TabManager, msg: string, platform: Platfo
   }
   console.log(`[MAIN] Sending ${platform} link to peer ${tab.peerId} (tab ${tagged.tabId}):`, tagged.link);
   if (tabManager.botManager) {
-    tabManager.botManager.sendMessage(tab.peerId, `Call created!\n${tagged.link}`);
+    tabManager.botManager.sendMessage(tab.peerId, tagged.link);
   }
 }

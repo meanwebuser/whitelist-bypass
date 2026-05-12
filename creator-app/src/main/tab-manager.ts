@@ -198,7 +198,7 @@ export class TabManager {
     const tab = this.tabs.get(tabId);
     if (!tab || tab.peerId == null) return;
     console.log(`[MAIN] Headless call link for bot tab ${tabId}:`, link);
-    this._botManager.sendMessage(tab.peerId, `Call created!\n${link}`);
+    this._botManager.sendMessage(tab.peerId, link);
   }
 
   startRelay(tabId: string, tab: TabState): void {

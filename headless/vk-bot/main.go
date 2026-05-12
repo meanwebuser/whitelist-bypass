@@ -239,7 +239,7 @@ func (b *bot) handleSpawn(peerID int64, platform string) {
 		b.sendMessage(peerID, fmt.Sprintf("%s failed: %v", platform, err), mainMenuKeyboard())
 		return
 	}
-	b.sendMessage(peerID, formatSession(sess), mainMenuKeyboard())
+	b.sendMessage(peerID, sess.link, mainMenuKeyboard())
 }
 
 func (b *bot) spawn(platform string) (*session, error) {
