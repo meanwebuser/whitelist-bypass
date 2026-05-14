@@ -22,8 +22,6 @@ func main() {
 	displayName := flag.String("name", "Headless", "display name in the room")
 	resources := flag.String("resources", "default", "resource mode: moderate, default, unlimited")
 	writeFile := flag.String("write-file", "", "path to file where active slug is appended")
-	vp8FPS := flag.Int("vp8-fps", 24, "VP8 frame rate")
-	vp8Batch := flag.Int("vp8-batch", 30, "VP8 batch multiplier")
 	flag.Parse()
 
 	var memLimit int64
@@ -41,7 +39,7 @@ func main() {
 		debug.SetMemoryLimit(memLimit)
 	}
 	common.MaskingEnabled = true
-	log.Printf("[config] resources=%s name=%q vp8 fps=%d batch=%d", *resources, *displayName, *vp8FPS, *vp8Batch)
+	log.Printf("[config] resources=%s name=%q", *resources, *displayName)
 
 	if *cookiesPath == "" {
 		log.Fatalf("[FATAL] --cookies is required")
@@ -107,8 +105,7 @@ func main() {
 			Obfuscator:  obf,
 			DisplayName: *displayName,
 			LogFn:       log.Printf,
-			VP8FPS:      *vp8FPS,
-			VP8Batch:    *vp8Batch,
+			Role:        dion.RoleCreator,
 		})
 		call.OnConnected = func(tun tunnel.DataTunnel) {
 			if activeBridge != nil {

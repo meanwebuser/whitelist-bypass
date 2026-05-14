@@ -39,6 +39,16 @@ const (
 	MethodServerStopVideoFromUser   = "server:response:stop_video_from_user"
 	MethodClientCamStateChange      = "client:request:cam_state_change"
 	MethodClientMicStateChange      = "client:request:mic_state_change"
+	MethodClientScreenSharingSwitchOn        = "client:request:screensharing_switch_on"
+	MethodClientScreenSharingSwitchOff       = "client:request:screensharing_switch_off"
+	MethodClientGetScreenSharingFromUser     = "client:request:get_screensharing_from_user"
+	MethodClientStopScreenSharingFromUser    = "client:request:stop_screensharing_from_user"
+	MethodClientScreensharingQualityChange   = "client:request:screensharing_quality_change"
+	MethodServerGetScreenSharingFromUser     = "server:response:get_screensharing_from_user"
+	MethodClientClientStatZip       = "client:request:client_stat_zip"
+	MethodClientKickOne             = "client:request:kick_one"
+	MethodServerKickOneResponse     = "server:response:kick_one"
+	MethodServerYouKicked           = "server:you_kicked"
 	MethodServerYourCamStateChanged    = "server:response:your_cam_state_changed"
 	MethodServerYourMicStateChanged    = "server:response:your_mic_state_changed"
 	MethodServerSpeakerCamStateChanged = "server:speaker_cam_state_changed"
@@ -214,6 +224,8 @@ type SignalingClient struct {
 	OnConfSpeakersState       func(ConfSpeakersStateResponse)
 	OnSpeakerCamStateChanged  func(SpeakerCamStateChangedParams)
 	OnSpeakerMicStateChanged  func(SpeakerMicStateChangedParams)
+	OnGetVideoFromUserResponse         func(resp GetVideoFromUserResponse, errCode int, errMessage string)
+	OnGetScreenSharingFromUserResponse func(resp GetScreenSharingFromUserResponse, errCode int, errMessage string)
 	OnHeartbeat               func()
 	OnUnknown                 func(method string, params json.RawMessage)
 	OnDataChannelMessage      func(method string, params json.RawMessage)
@@ -367,6 +379,132 @@ func (c *SignalingClient) SendMicStateChange(state bool) error {
 	return c.sendFrame(MethodClientMicStateChange, map[string]any{"state": state})
 }
 
+func (c *SignalingClient) SendScreenSharingSwitchOn() error {
+	return c.sendFrame(MethodClientScreenSharingSwitchOn, map[string]any{})
+}
+
+func (c *SignalingClient) SendScreenSharingSwitchOff() error {
+	return c.sendFrame(MethodClientScreenSharingSwitchOff, map[string]any{})
+}
+
+type GetScreenSharingFromUserRequest struct {
+	SessionID     string `json:"session_id"`
+	TransceiverID string `json:"transceiver_id"`
+	UserID        string `json:"user_id"`
+}
+
+type GetScreenSharingFromUserResponse struct {
+	SessionID     string `json:"session_id"`
+	TransceiverID string `json:"transceiver_id"`
+}
+
+func (c *SignalingClient) SendGetScreenSharingFromUser(request GetScreenSharingFromUserRequest) error {
+	return c.sendFrame(MethodClientGetScreenSharingFromUser, request)
+}
+
+// SendScreensharingQualityChange flips the SFU's screenshare quality budget
+// between the two known values ("default" / "good"). Per the SPA bundle this
+// is the same RPC the "Max quality screen sharing" toggle calls; the wire
+// field name is just "quality".
+func (c *SignalingClient) SendScreensharingQualityChange(quality string) error {
+	return c.sendFrame(MethodClientScreensharingQualityChange, map[string]any{"quality": quality})
+}
+
+func (c *SignalingClient) SendKickOne(sessionID string) error {
+	return c.sendFrame(MethodClientKickOne, map[string]any{"session_id": sessionID})
+}
+
+func (c *SignalingClient) SendPCIceStat() error {
+	return c.sendFrame(MethodClientPCICEStat, map[string]any{"device": "web"})
+}
+
+type ClientStatVideoIn struct {
+	BytesReceived           int64   `json:"bytes_received"`
+	Codec                   string  `json:"codec"`
+	IsEnabled               bool    `json:"is_enabled"`
+	JitterBufferDelay       float64 `json:"jitter_buffer_delay"`
+	JitterBufferEmittedCount int    `json:"jitter_buffer_emitted_count"`
+	Jitter                  float64 `json:"jitter"`
+	Mid                     int     `json:"mid"`
+	PacketsLost             int     `json:"packets_lost"`
+	PacketsReceived         int     `json:"packets_received"`
+	Framerate               int     `json:"framerate"`
+	FreezeCount             int     `json:"freeze_count"`
+	Resolution              ClientStatResolution `json:"resolution"`
+	Rid                     string  `json:"rid"`
+	TotalFreezesDuration    int     `json:"total_freezes_duration"`
+	SessionID               string  `json:"session_id"`
+}
+
+type ClientStatVideoOut struct {
+	Mid             int                    `json:"mid"`
+	BytesSent       int64                  `json:"bytes_sent"`
+	Codec           string                 `json:"codec"`
+	IsEnabled       bool                   `json:"is_enabled"`
+	PacketsSent     int                    `json:"packets_sent"`
+	RemoteStats     ClientStatRemoteStats  `json:"remote_stats"`
+	TargetBitrate   int                    `json:"target_bitrate"`
+	Framerate       int                    `json:"framerate"`
+	FreezeCount     int                    `json:"freeze_count"`
+	Resolution      ClientStatResolution   `json:"resolution"`
+	Rid             string                 `json:"rid"`
+	TotalFreezesDuration int               `json:"total_freezes_duration"`
+	SessionID       string                 `json:"session_id"`
+	ScalabilityMode string                 `json:"scalability_mode"`
+}
+
+type ClientStatResolution struct {
+	Height int `json:"height"`
+	Width  int `json:"width"`
+}
+
+type ClientStatRemoteStats struct {
+	Jitter              float64 `json:"jitter"`
+	FractionPacketsLost float64 `json:"fraction_packets_lost"`
+	PacketsLost         int     `json:"packets_lost"`
+	RTT                 float64 `json:"rtt"`
+}
+
+type ClientStatAudioIn struct {
+	BytesReceived            int64   `json:"bytes_received"`
+	Codec                    string  `json:"codec"`
+	IsEnabled                bool    `json:"is_enabled"`
+	JitterBufferDelay        float64 `json:"jitter_buffer_delay"`
+	JitterBufferEmittedCount int     `json:"jitter_buffer_emitted_count"`
+	Jitter                   float64 `json:"jitter"`
+	Mid                      int     `json:"mid"`
+	PacketsLost              int     `json:"packets_lost"`
+	PacketsReceived          int     `json:"packets_received"`
+}
+
+type ClientStatConnection struct {
+	BytesReceived int64   `json:"bytes_received"`
+	BytesSent     int64   `json:"bytes_sent"`
+	CurrentRTT    float64 `json:"current_rtt"`
+}
+
+type ClientStatReport struct {
+	ReportTimeUnixMS int64                 `json:"report_time_unix_ms"`
+	Connection       ClientStatConnection  `json:"connection"`
+	Audio            struct {
+		In ClientStatAudioIn `json:"in"`
+	} `json:"audio"`
+	Video struct {
+		In    []ClientStatVideoIn  `json:"in"`
+		OutV2 []ClientStatVideoOut `json:"out_v2"`
+		Out   ClientStatVideoOut   `json:"out"`
+	} `json:"video"`
+	Screensharing struct{} `json:"screensharing"`
+}
+
+func (c *SignalingClient) SendClientStatZip(report ClientStatReport) error {
+	encoded, err := ZipEncode(report)
+	if err != nil {
+		return fmt.Errorf("zip client_stat: %w", err)
+	}
+	return c.sendFrame(MethodClientClientStatZip, encoded)
+}
+
 func DefaultConfSpeakersStateRequest() ConfSpeakersStateRequest {
 	return ConfSpeakersStateRequest{
 		SessionIDs: []string{},
@@ -506,6 +644,30 @@ func (c *SignalingClient) dispatch(frame Frame) {
 	case MethodServerHeartbeat:
 		if c.OnHeartbeat != nil {
 			c.OnHeartbeat()
+		}
+	case MethodServerGetVideoFromUser:
+		var resp GetVideoFromUserResponse
+		_ = json.Unmarshal(frame.Params, &resp)
+		errCode := 0
+		errMsg := ""
+		if frame.Error != nil {
+			errCode = frame.Error.Code
+			errMsg = frame.Error.Message
+		}
+		if c.OnGetVideoFromUserResponse != nil {
+			c.OnGetVideoFromUserResponse(resp, errCode, errMsg)
+		}
+	case MethodServerGetScreenSharingFromUser:
+		var resp GetScreenSharingFromUserResponse
+		_ = json.Unmarshal(frame.Params, &resp)
+		errCode := 0
+		errMsg := ""
+		if frame.Error != nil {
+			errCode = frame.Error.Code
+			errMsg = frame.Error.Message
+		}
+		if c.OnGetScreenSharingFromUserResponse != nil {
+			c.OnGetScreenSharingFromUserResponse(resp, errCode, errMsg)
 		}
 	default:
 		if c.OnUnknown != nil {

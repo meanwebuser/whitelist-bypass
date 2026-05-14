@@ -39,8 +39,6 @@ func (j *DionHeadlessJoiner) RunWithParams(jsonParams string) {
 	var params struct {
 		RoomID      string `json:"roomId"`
 		DisplayName string `json:"displayName"`
-		VP8FPS      int    `json:"vp8Fps"`
-		VP8Batch    int    `json:"vp8Batch"`
 	}
 	if err := json.Unmarshal([]byte(jsonParams), &params); err != nil {
 		j.logFn("dion-joiner: failed to parse params: %v", err)
@@ -58,7 +56,7 @@ func (j *DionHeadlessJoiner) RunWithParams(jsonParams string) {
 	}
 
 	httpClient := j.makeHTTPClient()
-	j.logFn("dion-joiner: room=%s name=%s vp8Fps=%d vp8Batch=%d", slug, params.DisplayName, params.VP8FPS, params.VP8Batch)
+	j.logFn("dion-joiner: room=%s name=%s", slug, params.DisplayName)
 	j.Status.EmitStatus(common.StatusConnecting)
 
 	auth, event, err := dion.JoinAsGuest(httpClient, slug, params.DisplayName)
@@ -89,11 +87,10 @@ func (j *DionHeadlessJoiner) RunWithParams(jsonParams string) {
 		Obfuscator:     obf,
 		DisplayName:    params.DisplayName,
 		LogFn:          j.logFn,
-		VP8FPS:         params.VP8FPS,
-		VP8Batch:       params.VP8Batch,
 		SettingEngine:  settingEngine,
 		NetDialContext: j.makeDialContext(),
 		ResolveICEHost: j.ResolveFn,
+		Role:           dion.RoleJoiner,
 	})
 	call.OnConnected = func(tun tunnel.DataTunnel) {
 		j.logFn("dion-joiner: === TUNNEL CONNECTED ===")

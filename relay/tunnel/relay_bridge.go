@@ -31,6 +31,10 @@ type RelayBridge struct {
 	once       sync.Once
 	socksUser  string
 	socksPass  string
+
+	listenerMu sync.Mutex
+	listener   net.Listener
+	closed     atomic.Bool
 }
 
 func NewRelayBridgeWithAuth(tunnel DataTunnel, mode string, readBuf int, logFn func(string, ...any), socksUser, socksPass string) *RelayBridge {
@@ -49,13 +53,16 @@ func NewRelayBridge(tunnel DataTunnel, mode string, readBuf int, logFn func(stri
 		ready:   make(chan struct{}),
 	}
 	tunnel.SetOnData(rb.handleTunnelData)
-	tunnel.SetOnClose(rb.closeAll)
+	tunnel.SetOnClose(rb.Close)
 	return rb
 }
 
 func (rb *RelayBridge) closeAll() {
-	rb.logFn("relay: closing all connections")
+	var ids []uint32
 	rb.conns.Range(func(key, value any) bool {
+		if id, ok := key.(uint32); ok {
+			ids = append(ids, id)
+		}
 		switch v := value.(type) {
 		case net.Conn:
 			v.Close()
@@ -65,10 +72,38 @@ func (rb *RelayBridge) closeAll() {
 		rb.conns.Delete(key)
 		return true
 	})
+	udpCount := 0
+	rb.udpClients.Range(func(key, _ any) bool {
+		udpCount++
+		rb.udpClients.Delete(key)
+		return true
+	})
+	rb.logFn("relay: closeAll mode=%s tcp=%d udp=%d ids=%v nextID=%d", rb.mode, len(ids), udpCount, ids, rb.nextID.Load())
 }
 
 func (rb *RelayBridge) Reset() {
 	rb.closeAll()
+}
+
+func (rb *RelayBridge) Close() {
+	if !rb.closed.CompareAndSwap(false, true) {
+		return
+	}
+	rb.listenerMu.Lock()
+	ln := rb.listener
+	rb.listener = nil
+	rb.listenerMu.Unlock()
+	if ln != nil {
+		rb.logFn("relay: bridge Close closing socks listener")
+		ln.Close()
+	}
+	rb.closeAll()
+}
+
+func (rb *RelayBridge) Stats() (tcpConns, udpConns int, nextID uint32) {
+	rb.conns.Range(func(_, _ any) bool { tcpConns++; return true })
+	rb.udpClients.Range(func(_, _ any) bool { udpConns++; return true })
+	return tcpConns, udpConns, rb.nextID.Load()
 }
 
 func (rb *RelayBridge) MarkReady() {
@@ -106,6 +141,7 @@ func (rb *RelayBridge) handleJoinerMessage(connID uint32, msgType byte, payload 
 	if msgType == MsgUDPReply {
 		uval, ok := rb.udpClients.Load(connID)
 		if !ok {
+			rb.logFn("relay[joiner]: drop MsgUDPReply for unknown conn %d", connID)
 			return
 		}
 		uc := uval.(*udpClient)
@@ -118,16 +154,27 @@ func (rb *RelayBridge) handleJoinerMessage(connID uint32, msgType byte, payload 
 	}
 	val, ok := rb.conns.Load(connID)
 	if !ok {
+		rb.logFn("relay[joiner]: drop msgType=%d for unknown conn %d (payload=%dB)", msgType, connID, len(payload))
 		return
 	}
 	sc := val.(*socksConn)
 	switch msgType {
 	case MsgConnectOK:
-		sc.rdy <- nil
+		select {
+		case sc.rdy <- nil:
+		default:
+			rb.logFn("relay[joiner]: MsgConnectOK %d: rdy already signalled (duplicate)", connID)
+		}
 	case MsgConnectErr:
-		sc.rdy <- fmt.Errorf("%s", payload)
+		select {
+		case sc.rdy <- fmt.Errorf("%s", payload):
+		default:
+			rb.logFn("relay[joiner]: MsgConnectErr %d: rdy already signalled (duplicate)", connID)
+		}
 	case MsgData:
-		sc.conn.Write(payload)
+		if _, err := sc.conn.Write(payload); err != nil {
+			rb.logFn("relay[joiner]: write to socks %d failed: %s", connID, common.MaskError(err))
+		}
 	case MsgClose:
 		sc.conn.Close()
 		rb.conns.Delete(connID)
@@ -141,9 +188,14 @@ func (rb *RelayBridge) handleCreatorMessage(connID uint32, msgType byte, payload
 	case MsgUDP:
 		go rb.handleUDP(connID, payload)
 	case MsgData:
-		if val, ok := rb.conns.Load(connID); ok {
-			if c, ok := val.(net.Conn); ok {
-				c.Write(payload)
+		val, ok := rb.conns.Load(connID)
+		if !ok {
+			rb.logFn("relay[creator]: drop MsgData for unknown conn %d (payload=%dB)", connID, len(payload))
+			return
+		}
+		if c, ok := val.(net.Conn); ok {
+			if _, err := c.Write(payload); err != nil {
+				rb.logFn("relay[creator]: write to target %d failed: %s", connID, common.MaskError(err))
 			}
 		}
 	case MsgClose:
@@ -151,6 +203,8 @@ func (rb *RelayBridge) handleCreatorMessage(connID uint32, msgType byte, payload
 			if c, ok := val.(net.Conn); ok {
 				c.Close()
 			}
+		} else {
+			rb.logFn("relay[creator]: drop MsgClose for unknown conn %d", connID)
 		}
 	}
 }
@@ -200,14 +254,23 @@ func (rb *RelayBridge) connectTCP(connID uint32, addr string) {
 	rb.logFn("relay: CONNECTED %d -> %s", connID, common.MaskAddr(addr))
 
 	buf := make([]byte, rb.readBuf)
+	var totalRead int64
+	var reads int
 	for {
 		n, err := conn.Read(buf)
 		if n > 0 {
 			rb.send(connID, MsgData, buf[:n])
+			totalRead += int64(n)
+			reads++
+			if reads == 1 {
+				rb.logFn("relay: conn %d first read %dB", connID, n)
+			}
 		}
 		if err != nil {
 			if err != io.EOF {
-				rb.logFn("relay: conn %d read error: %s", connID, common.MaskError(err))
+				rb.logFn("relay: conn %d read error: %s (read %d times, %dB)", connID, common.MaskError(err), reads, totalRead)
+			} else if reads == 0 {
+				rb.logFn("relay: conn %d EOF with no data read", connID)
 			}
 			break
 		}
@@ -224,14 +287,29 @@ type socksConn struct {
 }
 
 func (rb *RelayBridge) ListenSOCKS(addr string) error {
+	if rb.closed.Load() {
+		return fmt.Errorf("relay: bridge already closed")
+	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
+	rb.listenerMu.Lock()
+	if rb.closed.Load() {
+		rb.listenerMu.Unlock()
+		ln.Close()
+		return fmt.Errorf("relay: bridge already closed")
+	}
+	rb.listener = ln
+	rb.listenerMu.Unlock()
 	rb.logFn("relay: SOCKS5 on %s", addr)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if rb.closed.Load() {
+				rb.logFn("relay: SOCKS listener stopped (bridge closed)")
+				return nil
+			}
 			rb.logFn("relay: accept error: %v", err)
 			continue
 		}
@@ -241,6 +319,10 @@ func (rb *RelayBridge) ListenSOCKS(addr string) error {
 
 func (rb *RelayBridge) handleSOCKS(conn net.Conn) {
 	<-rb.ready
+	if rb.closed.Load() {
+		conn.Close()
+		return
+	}
 	buf := make([]byte, common.HandshakeBuf)
 	n, err := conn.Read(buf)
 	if err != nil || n < 2 || buf[0] != common.Ver {
@@ -313,26 +395,46 @@ func (rb *RelayBridge) handleSOCKS(conn net.Conn) {
 	rb.logFn("relay: SOCKS CONNECT %d -> %s", id, common.MaskAddr(host))
 	rb.send(id, MsgConnect, []byte(host))
 
-	if err := <-sc.rdy; err != nil {
-		rb.logFn("relay: SOCKS CONNECT %d failed: %s", id, common.MaskError(err))
+	rdyStart := time.Now()
+	select {
+	case rdyErr := <-sc.rdy:
+		if rdyErr != nil {
+			rb.logFn("relay: SOCKS CONNECT %d failed after %s: %s", id, time.Since(rdyStart), common.MaskError(rdyErr))
+			conn.Write(common.ConnFail)
+			conn.Close()
+			rb.conns.Delete(id)
+			return
+		}
+	case <-time.After(20 * time.Second):
+		rb.logFn("relay: SOCKS CONNECT %d TIMEOUT after %s waiting for MsgConnectOK", id, time.Since(rdyStart))
 		conn.Write(common.ConnFail)
 		conn.Close()
 		rb.conns.Delete(id)
 		return
 	}
 	conn.Write(common.OK)
-	rb.logFn("relay: SOCKS CONNECTED %d -> %s", id, common.MaskAddr(host))
+	rb.logFn("relay: SOCKS CONNECTED %d -> %s rdy_wait=%s", id, common.MaskAddr(host), time.Since(rdyStart))
 
 	go func() {
 		readBuf := make([]byte, rb.readBuf)
+		var totalSent int64
+		var sends int
 		for {
 			rn, rerr := conn.Read(readBuf)
 			if rn > 0 {
 				rb.send(id, MsgData, readBuf[:rn])
+				totalSent += int64(rn)
+				sends++
+				if sends == 1 {
+					rb.logFn("relay: SOCKS %d first send %dB to tunnel", id, rn)
+				}
 			}
 			if rerr != nil {
 				rb.send(id, MsgClose, nil)
 				rb.conns.Delete(id)
+				if rerr != io.EOF {
+					rb.logFn("relay: SOCKS %d read error: %s (sent %d times, %dB)", id, common.MaskError(rerr), sends, totalSent)
+				}
 				return
 			}
 		}

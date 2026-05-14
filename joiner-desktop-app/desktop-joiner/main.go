@@ -169,6 +169,11 @@ func main() {
 
 	tunReady := make(chan struct{})
 	var tunOnce sync.Once
+	var (
+		pendingMu      sync.Mutex
+		pending        []string
+		tunStarted     bool
+	)
 	bringUpTun := func() {
 		tunOnce.Do(func() {
 			if tun == nil {
@@ -178,13 +183,21 @@ func main() {
 			if err := tun.Start(); err != nil {
 				log.Fatalf("[desktoptun] start: %v", err)
 			}
-			// Now that the tunnel knows the original gateway,
-			// pin /32 bypass routes for the signaling hosts.
 			for host, ips := range preResolved {
 				for _, ip := range ips {
 					if err := tun.AddBypassIP(ip); err != nil {
 						log.Printf("[bypass] %s ip %s: %v", host, ip, err)
 					}
+				}
+			}
+			pendingMu.Lock()
+			drained := pending
+			pending = nil
+			tunStarted = true
+			pendingMu.Unlock()
+			for _, c := range drained {
+				if err := tun.AddBypassFromCandidate(c); err != nil {
+					log.Printf("[bypass] replay: %v", err)
 				}
 			}
 			fmt.Printf("\n  TUNNEL ACTIVE on adapter %q (DNS=%s)\n  all traffic now egresses via %s\n\n",
@@ -193,21 +206,29 @@ func main() {
 		})
 	}
 
+	tryBypass := func(c string) {
+		if err := tun.AddBypassFromCandidate(c); err != nil {
+			pendingMu.Lock()
+			if !tunStarted {
+				pending = append(pending, c)
+				pendingMu.Unlock()
+				return
+			}
+			pendingMu.Unlock()
+			log.Printf("[bypass] candidate: %v", err)
+		}
+	}
+
 	addCandidate := func(target int, candidateOrSDP string) {
 		if tun == nil {
 			return
 		}
-		if err := tun.AddBypassFromCandidate(candidateOrSDP); err != nil {
-			log.Printf("[bypass] candidate: %v", err)
-		}
-		// SDP path: scan every candidate line in the blob
+		tryBypass(candidateOrSDP)
 		if strings.Contains(candidateOrSDP, "a=candidate:") {
 			for _, line := range strings.Split(candidateOrSDP, "\n") {
 				line = strings.TrimRight(line, "\r")
 				if strings.HasPrefix(line, "a=candidate:") {
-					if err := tun.AddBypassFromCandidate(line); err != nil {
-						log.Printf("[bypass] sdp candidate: %v", err)
-					}
+					tryBypass(line)
 				}
 			}
 		}

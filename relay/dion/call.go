@@ -17,8 +17,23 @@ import (
 )
 
 const (
-	sendVideoMidIndex   = 12
-	defaultRecvVideoMid = "0"
+	sendVideoMidIndex       = 12
+	sendScreenShareMidIndex = 13
+	recvScreenShareMidStr   = "14"
+	defaultRecvVideoMid     = "1"
+	recvVideoMidCount       = 9
+
+	creatorVP8FPS   = 24
+	creatorVP8Batch = 10
+	joinerVP8FPS    = 24
+	joinerVP8Batch  = 5
+)
+
+type Role string
+
+const (
+	RoleCreator Role = "creator"
+	RoleJoiner  Role = "joiner"
 )
 
 // CallConfig configures a Call lifecycle. Auth must already have a valid
@@ -30,9 +45,8 @@ type CallConfig struct {
 	Obfuscator  *tunnel.TunnelObfuscator
 	DisplayName string
 	LogFn       func(string, ...any)
-	VP8FPS      int
-	VP8Batch    int
 	RecvMid     string
+	Role        Role
 
 	// SettingEngine, NetDialContext, and ResolveICEHost are forwarded to Pion
 	// and the WebSocket dialer. All three are no-ops if nil (desktop default).
@@ -68,6 +82,9 @@ type Call struct {
 	peersMu    sync.Mutex
 	peersByID  map[string]*PeerEntry
 	subscribed map[string]bool
+	peerToMid  map[string]string
+	freeMids   []string
+	pendingSubs []string
 
 	onConnectedFired atomic.Bool
 
@@ -82,13 +99,28 @@ func NewCall(cfg CallConfig) *Call {
 	if cfg.LogFn == nil {
 		cfg.LogFn = log.Printf
 	}
+	if cfg.Role == "" {
+		cfg.Role = RoleCreator
+	}
 	if cfg.RecvMid == "" {
 		cfg.RecvMid = defaultRecvVideoMid
+	}
+	var freeMids []string
+	if cfg.Role == RoleJoiner {
+		freeMids = []string{recvScreenShareMidStr}
+	} else {
+		freeMids = make([]string, 0, recvVideoMidCount)
+		for midIndex := 1; midIndex < recvVideoMidCount; midIndex++ {
+			freeMids = append(freeMids, fmt.Sprintf("%d", midIndex))
+		}
+		freeMids = append(freeMids, "0")
 	}
 	return &Call{
 		cfg:        cfg,
 		peersByID:  make(map[string]*PeerEntry),
 		subscribed: make(map[string]bool),
+		peerToMid:  make(map[string]string),
+		freeMids:   freeMids,
 		done:       make(chan struct{}),
 	}
 }
@@ -155,6 +187,8 @@ func (c *Call) Start() error {
 	signaling.OnSpeakerDisconnected = c.handleSpeakerDisconnected
 	signaling.OnSpeakerCamStateChanged = c.handleSpeakerCamStateChanged
 	signaling.OnConfSpeakersState = c.handleConfSpeakersState
+	signaling.OnGetVideoFromUserResponse = c.handleGetVideoFromUserResponse
+	signaling.OnGetScreenSharingFromUserResponse = c.handleGetScreenSharingFromUserResponse
 
 	readLoopDone := make(chan error, 1)
 	go func() { readLoopDone <- signaling.ReadLoop() }()
@@ -181,24 +215,31 @@ func (c *Call) Start() error {
 	}
 	c.peer = peer
 
+	sendMidIndex := sendVideoMidIndex
+	trackLabel := "dion-tunnel-" + sessionID
+	if c.cfg.Role == RoleCreator {
+		sendMidIndex = sendScreenShareMidIndex
+		trackLabel = "dion-tunnel-screen-" + sessionID
+	}
 	track, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
-		"video", "dion-tunnel-"+sessionID,
+		"video", trackLabel,
 	)
 	if err != nil {
 		return fmt.Errorf("NewTrackLocalStaticSample: %w", err)
 	}
 	c.sendTrack = track
-	if len(peer.Transceivers) <= sendVideoMidIndex {
+	if len(peer.Transceivers) <= sendMidIndex {
 		return fmt.Errorf("transceiver layout short, have %d", len(peer.Transceivers))
 	}
-	sender := peer.Transceivers[sendVideoMidIndex].Sender()
+	sender := peer.Transceivers[sendMidIndex].Sender()
 	if sender == nil {
-		return fmt.Errorf("mid=%d sender nil", sendVideoMidIndex)
+		return fmt.Errorf("mid=%d sender nil", sendMidIndex)
 	}
 	if err := sender.ReplaceTrack(track); err != nil {
 		return fmt.Errorf("ReplaceTrack: %w", err)
 	}
+	c.cfg.LogFn("[call] role=%s attached send track to mid=%d", c.cfg.Role, sendMidIndex)
 
 	peer.PC.OnTrack(func(remoteTrack *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		c.cfg.LogFn("[call] OnTrack id=%q kind=%s codec=%s ssrc=%d",
@@ -320,17 +361,35 @@ func (c *Call) Start() error {
 	}
 	c.cfg.LogFn("[ice] connected")
 
+	fps, batch := joinerVP8FPS, joinerVP8Batch
+	if c.cfg.Role == RoleCreator {
+		fps, batch = creatorVP8FPS, creatorVP8Batch
+	}
 	c.vp8tun = tunnel.NewVP8DataTunnel(c.sendTrack, c.cfg.Obfuscator, c.cfg.LogFn)
-	c.vp8tun.Start(c.cfg.VP8FPS, c.cfg.VP8Batch)
+	c.vp8tun.Start(fps, batch)
 	c.fireOnConnected(c.vp8tun)
 
-	if err := signaling.SendCamStateChange(true); err != nil {
-		c.cfg.LogFn("[call] SendCamStateChange: %v", err)
+	if c.cfg.Role == RoleCreator {
+		if err := signaling.SendScreenSharingSwitchOn(); err != nil {
+			c.cfg.LogFn("[call] SendScreenSharingSwitchOn: %v", err)
+		} else {
+			c.cfg.LogFn("[call] sent screensharing_switch_on")
+		}
+		if err := signaling.SendScreensharingQualityChange("good"); err != nil {
+			c.cfg.LogFn("[call] SendScreensharingQualityChange: %v", err)
+		} else {
+			c.cfg.LogFn("[call] sent screensharing_quality_change=good")
+		}
 	} else {
-		c.cfg.LogFn("[call] sent cam_state_change=true")
+		if err := signaling.SendCamStateChange(true); err != nil {
+			c.cfg.LogFn("[call] SendCamStateChange: %v", err)
+		} else {
+			c.cfg.LogFn("[call] sent cam_state_change=true")
+		}
 	}
 
 	go c.discoverPeersAndSubscribe()
+	go c.runStatReporter()
 
 	go func() {
 		defer close(c.done)
@@ -359,15 +418,42 @@ func (c *Call) handleSpeakerJoined(params SpeakerJoinedParams) {
 		return
 	}
 	c.peersMu.Lock()
+	_, wasKnown := c.peersByID[params.SessionID]
 	c.peersByID[params.SessionID] = &PeerEntry{
 		SessionID: params.SessionID,
 		UserID:    params.UserID,
 		Name:      params.Name,
 		CamState:  params.CamState,
 	}
+	var toKick []string
+	if !wasKnown {
+		for id := range c.peersByID {
+			if id != params.SessionID {
+				toKick = append(toKick, id)
+			}
+		}
+	}
 	c.peersMu.Unlock()
 	c.cfg.LogFn("[call] speaker_joined session_id=%s name=%q cam=%v", params.SessionID, params.Name, params.CamState)
-	if params.CamState {
+
+	for _, staleID := range toKick {
+		if err := c.signaling.SendKickOne(staleID); err != nil {
+			c.cfg.LogFn("[call] SendKickOne(%s): %v", staleID, err)
+			continue
+		}
+		c.cfg.LogFn("[call] kicked stale peer session_id=%s for newcomer=%s", staleID, params.SessionID)
+		c.peersMu.Lock()
+		delete(c.peersByID, staleID)
+		delete(c.subscribed, staleID)
+		c.releaseMidLocked(staleID)
+		c.peersMu.Unlock()
+	}
+	if len(toKick) > 0 && c.OnPeerRestart != nil {
+		c.cfg.LogFn("[call] firing OnPeerRestart from kick path (kicked=%d newcomer=%s)", len(toKick), params.SessionID)
+		c.OnPeerRestart()
+	}
+
+	if c.cfg.Role == RoleJoiner || params.CamState {
 		c.subscribeIfNeeded(params.SessionID)
 	}
 }
@@ -376,6 +462,7 @@ func (c *Call) handleSpeakerDisconnected(params SpeakerDisconnectedParams) {
 	c.peersMu.Lock()
 	delete(c.peersByID, params.SessionID)
 	delete(c.subscribed, params.SessionID)
+	c.releaseMidLocked(params.SessionID)
 	c.peersMu.Unlock()
 	c.cfg.LogFn("[call] speaker_disconnected session_id=%s", params.SessionID)
 }
@@ -410,7 +497,7 @@ func (c *Call) handleConfSpeakersState(response ConfSpeakersStateResponse) {
 			CamState:  entry.CamState,
 		}
 		c.peersMu.Unlock()
-		if entry.CamState {
+		if c.cfg.Role == RoleJoiner || entry.CamState {
 			c.subscribeIfNeeded(entry.SessionID)
 		}
 	}
@@ -434,24 +521,91 @@ func (c *Call) subscribeIfNeeded(peerSessionID string) {
 		c.peersMu.Unlock()
 		return
 	}
-	c.subscribed[peerSessionID] = true
-	request := GetVideoFromUserRequest{
-		SessionID:     entry.SessionID,
-		TransceiverID: c.cfg.RecvMid,
-		UserID:        entry.UserID,
-		Username:      entry.Name,
+	if len(c.freeMids) == 0 {
+		c.peersMu.Unlock()
+		c.cfg.LogFn("[call] no free recv mid for peer %s, ignoring", peerSessionID)
+		return
 	}
+	mid := c.freeMids[0]
+	c.freeMids = c.freeMids[1:]
+	c.peerToMid[peerSessionID] = mid
+	c.subscribed[peerSessionID] = true
+	c.pendingSubs = append(c.pendingSubs, peerSessionID)
 	c.peersMu.Unlock()
-	if err := c.signaling.SendGetVideoFromUser(request); err != nil {
-		c.cfg.LogFn("[call] SendGetVideoFromUser session_id=%s: %v", peerSessionID, err)
+	var sendErr error
+	if c.cfg.Role == RoleJoiner {
+		sendErr = c.signaling.SendGetScreenSharingFromUser(GetScreenSharingFromUserRequest{
+			SessionID:     entry.SessionID,
+			TransceiverID: mid,
+			UserID:        entry.UserID,
+		})
+	} else {
+		sendErr = c.signaling.SendGetVideoFromUser(GetVideoFromUserRequest{
+			SessionID:     entry.SessionID,
+			TransceiverID: mid,
+			UserID:        entry.UserID,
+			Username:      entry.Name,
+		})
+	}
+	if sendErr != nil {
+		c.cfg.LogFn("[call] subscribe to peer %s failed: %v", peerSessionID, sendErr)
 		c.peersMu.Lock()
 		delete(c.subscribed, peerSessionID)
+		delete(c.peerToMid, peerSessionID)
+		c.freeMids = append(c.freeMids, mid)
+		if len(c.pendingSubs) > 0 && c.pendingSubs[len(c.pendingSubs)-1] == peerSessionID {
+			c.pendingSubs = c.pendingSubs[:len(c.pendingSubs)-1]
+		}
 		c.peersMu.Unlock()
 		return
 	}
-	c.cfg.LogFn("[call] subscribed to %s on mid=%s", peerSessionID, c.cfg.RecvMid)
+	c.cfg.LogFn("[call] subscribed to %s on mid=%s", peerSessionID, mid)
 	if c.OnPeerRestart != nil {
+		c.cfg.LogFn("[call] firing OnPeerRestart from subscribe path (peer=%s)", peerSessionID)
 		c.OnPeerRestart()
+	}
+}
+
+func (c *Call) handleGetVideoFromUserResponse(resp GetVideoFromUserResponse, errCode int, errMsg string) {
+	c.handleSubscribeResponse("get_video_from_user", resp.SessionID, resp.TransceiverID, errCode, errMsg)
+}
+
+func (c *Call) handleGetScreenSharingFromUserResponse(resp GetScreenSharingFromUserResponse, errCode int, errMsg string) {
+	c.handleSubscribeResponse("get_screensharing_from_user", resp.SessionID, resp.TransceiverID, errCode, errMsg)
+}
+
+func (c *Call) handleSubscribeResponse(rpc, sessionID, transceiverID string, errCode int, errMsg string) {
+	c.peersMu.Lock()
+	if sessionID == "" && len(c.pendingSubs) > 0 {
+		sessionID = c.pendingSubs[0]
+		c.pendingSubs = c.pendingSubs[1:]
+	} else if len(c.pendingSubs) > 0 {
+		for i, pending := range c.pendingSubs {
+			if pending == sessionID {
+				c.pendingSubs = append(c.pendingSubs[:i], c.pendingSubs[i+1:]...)
+				break
+			}
+		}
+	}
+	if errCode != 0 {
+		mid := c.peerToMid[sessionID]
+		delete(c.subscribed, sessionID)
+		delete(c.peerToMid, sessionID)
+		if mid != "" {
+			c.freeMids = append(c.freeMids, mid)
+		}
+		c.peersMu.Unlock()
+		c.cfg.LogFn("[call] %s FAILED session=%s mid=%s code=%d msg=%q", rpc, sessionID, mid, errCode, errMsg)
+		return
+	}
+	c.peersMu.Unlock()
+	c.cfg.LogFn("[call] %s OK session=%s mid=%s", rpc, sessionID, transceiverID)
+}
+
+func (c *Call) releaseMidLocked(peerSessionID string) {
+	if mid, ok := c.peerToMid[peerSessionID]; ok {
+		delete(c.peerToMid, peerSessionID)
+		c.freeMids = append(c.freeMids, mid)
 	}
 }
 
@@ -498,6 +652,71 @@ func (c *Call) readVP8Track(track *webrtc.TrackRemote) {
 		frameBuf = frameBuf[:0]
 		frameValid = false
 	}
+}
+
+func (c *Call) runStatReporter() {
+	select {
+	case <-c.done:
+		return
+	case <-time.After(1500 * time.Millisecond):
+	}
+	if err := c.signaling.SendPCIceStat(); err != nil {
+		c.cfg.LogFn("[call] SendPCIceStat: %v", err)
+	} else {
+		c.cfg.LogFn("[call] sent pc_ice_stat")
+	}
+	c.sendStatReport()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-ticker.C:
+			c.sendStatReport()
+		}
+	}
+}
+
+func (c *Call) sendStatReport() {
+	report := ClientStatReport{
+		ReportTimeUnixMS: time.Now().UnixMilli(),
+		Connection:       ClientStatConnection{},
+	}
+	report.Audio.In = ClientStatAudioIn{Codec: "opus", IsEnabled: true, Mid: 9}
+	report.Video.In = c.buildVideoInStats()
+	outStat := ClientStatVideoOut{
+		Mid:             sendVideoMidIndex,
+		Codec:           "VP8",
+		IsEnabled:       true,
+		Resolution:      ClientStatResolution{Width: 1280, Height: 720},
+		Framerate:       c.vp8tun.FPS(),
+		ScalabilityMode: "L1T1",
+	}
+	report.Video.Out = outStat
+	report.Video.OutV2 = []ClientStatVideoOut{outStat}
+	if err := c.signaling.SendClientStatZip(report); err != nil {
+		c.cfg.LogFn("[call] SendClientStatZip: %v", err)
+	}
+}
+
+func (c *Call) buildVideoInStats() []ClientStatVideoIn {
+	c.peersMu.Lock()
+	defer c.peersMu.Unlock()
+	out := make([]ClientStatVideoIn, 0, len(c.peerToMid))
+	for sessionID, midStr := range c.peerToMid {
+		midInt := 0
+		fmt.Sscanf(midStr, "%d", &midInt)
+		out = append(out, ClientStatVideoIn{
+			Codec:      "VP8",
+			IsEnabled:  true,
+			Mid:        midInt,
+			Resolution: ClientStatResolution{Width: 1280, Height: 720},
+			Framerate:  c.vp8tun.FPS(),
+			SessionID:  sessionID,
+		})
+	}
+	return out
 }
 
 func drainTrack(track *webrtc.TrackRemote) {
