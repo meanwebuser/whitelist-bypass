@@ -55,15 +55,18 @@ export function renderContent(tm: RendererTabManager): void {
     let title = 'VK';
     if (activeTab.platform === Platform.Telemost) title = 'Telemost';
     else if (activeTab.platform === Platform.WBStream) title = 'WBStream';
+    else if (activeTab.platform === Platform.Dion) title = 'DION';
     document.getElementById('headlessTitle')!.textContent = title;
     document.getElementById('headlessStatus')!.textContent = activeTab.headlessStatus || 'Starting...';
     const callInfo = activeTab.callInfo;
     const callInfoVK = document.getElementById('headlessCallInfo')!;
     const callInfoTM = document.getElementById('headlessCallInfoTM')!;
     const callInfoWB = document.getElementById('headlessCallInfoWB')!;
+    const callInfoDion = document.getElementById('headlessCallInfoDion')!;
     callInfoVK.style.display = 'none';
     callInfoTM.style.display = 'none';
     callInfoWB.style.display = 'none';
+    callInfoDion.style.display = 'none';
     if (callInfo) {
       if (activeTab.platform === Platform.WBStream) {
         callInfoWB.style.display = 'block';
@@ -72,6 +75,9 @@ export function renderContent(tm: RendererTabManager): void {
         callInfoTM.style.display = 'block';
         document.getElementById('headlessTMJoinLink')!.textContent = callInfo.joinLink || '';
         document.getElementById('headlessTMProtocol')!.textContent = callInfo.protocol || '';
+      } else if (activeTab.platform === Platform.Dion) {
+        callInfoDion.style.display = 'block';
+        document.getElementById('headlessDionJoinLink')!.textContent = callInfo.joinLink || '';
       } else {
         callInfoVK.style.display = 'block';
         document.getElementById('headlessJoinLink')!.textContent = callInfo.joinLink || '';

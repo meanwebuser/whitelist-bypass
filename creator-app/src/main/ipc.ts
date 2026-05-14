@@ -8,6 +8,7 @@ import {
   SESSION_PARTITION,
   VK_COOKIE_DOMAINS,
   YANDEX_COOKIE_DOMAINS,
+  DION_COOKIE_DOMAINS,
 } from '../constants';
 import { TunnelMode, Platform, BotSettings } from '../types';
 
@@ -97,7 +98,10 @@ export function registerIpcHandlers(tabManager: TabManager): void {
   ipcMain.handle(IPC.GET_COOKIES, async (_e, domain: string) => {
     const ses = session.fromPartition(SESSION_PARTITION);
     const all = await ses.cookies.get({});
-    const domains = domain === 'yandex' ? YANDEX_COOKIE_DOMAINS : VK_COOKIE_DOMAINS;
+    let domains: string[];
+    if (domain === 'yandex') domains = YANDEX_COOKIE_DOMAINS;
+    else if (domain === 'dion') domains = DION_COOKIE_DOMAINS;
+    else domains = VK_COOKIE_DOMAINS;
     const filtered = all.filter((cookie) => {
       return cookie.domain != null && domains.some((d) => cookie.domain!.includes(d));
     });

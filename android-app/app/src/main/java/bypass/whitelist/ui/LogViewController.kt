@@ -1,8 +1,12 @@
 package bypass.whitelist.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.text.method.ScrollingMovementMethod
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.FileProvider
 import bypass.whitelist.R
@@ -36,6 +40,13 @@ class LogViewController(
         logWriter.reset()
         logView.text = ""
         logView.scrollTo(0, 0)
+    }
+
+    fun copyLogs() {
+        val contents = if (logWriter.file.exists()) logWriter.file.readText() else logWriter.displayText()
+        val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("relay.log", contents))
+        Toast.makeText(activity, R.string.copy_logs_toast, Toast.LENGTH_SHORT).show()
     }
 
     fun shareLogs() {

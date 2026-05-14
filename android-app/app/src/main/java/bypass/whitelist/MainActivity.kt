@@ -20,6 +20,7 @@ import bypass.whitelist.tunnel.TunnelMode
 import bypass.whitelist.tunnel.ProxyService
 import bypass.whitelist.tunnel.TunnelVpnService
 import bypass.whitelist.tunnel.VpnStatus
+import bypass.whitelist.ui.HeadlessDionFragment
 import bypass.whitelist.ui.HeadlessTelemostFragment
 import bypass.whitelist.ui.HeadlessWBStreamFragment
 import bypass.whitelist.ui.HeadlessVkFragment
@@ -87,6 +88,7 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
 
         findViewById<Button>(R.id.goButton).setOnClickListener { onGoPressed() }
         findViewById<ImageButton>(R.id.shareLogsButton).setOnClickListener { logCtrl.shareLogs() }
+        findViewById<ImageButton>(R.id.copyLogsButton).setOnClickListener { logCtrl.copyLogs() }
         findViewById<ImageButton>(R.id.gearButton).setOnClickListener {
             SettingsDialogFragment().show(supportFragmentManager, SettingsDialogFragment.TAG)
         }
@@ -169,7 +171,7 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
         if (url.isEmpty()) return
 
         val platform = CallPlatform.fromUrl(url)
-        if (Prefs.tunnelMode == TunnelMode.DC && platform == CallPlatform.TELEMOST) {
+        if (Prefs.tunnelMode == TunnelMode.DC && (platform == CallPlatform.TELEMOST || platform == CallPlatform.DION)) {
             Prefs.tunnelMode = TunnelMode.VIDEO
             statusCtrl.tunnelMode = TunnelMode.VIDEO
             Toast.makeText(this, R.string.dc_mode_not_supported, Toast.LENGTH_SHORT).show()
@@ -187,11 +189,12 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
             Prefs.lastUrl = url
         }
 
-        val fragment = if (Prefs.headless || platform == CallPlatform.WBSTREAM) {
+        val fragment = if (Prefs.headless || platform == CallPlatform.WBSTREAM || platform == CallPlatform.DION) {
             when (platform) {
                 CallPlatform.VK -> HeadlessVkFragment.newInstance(url)
                 CallPlatform.TELEMOST -> HeadlessTelemostFragment.newInstance(url)
                 CallPlatform.WBSTREAM -> HeadlessWBStreamFragment.newInstance(url)
+                CallPlatform.DION -> HeadlessDionFragment.newInstance(url)
             }
         } else {
             JsHookJoinFragment.newInstance(url)

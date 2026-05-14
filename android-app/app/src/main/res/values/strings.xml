@@ -5,6 +5,8 @@
     <string name="btn_go">GO</string>
     <string name="btn_disconnect">Disconnect</string>
     <string name="share_logs">Share logs</string>
+    <string name="copy_logs">Copy logs</string>
+    <string name="copy_logs_toast">Logs copied to clipboard</string>
     <string name="menu_reconnect_on_start">Reconnect on app start</string>
     <string name="menu_show_logs">Show logs</string>
     <string name="menu_share_logs">Share logs</string>

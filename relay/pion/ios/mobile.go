@@ -119,6 +119,26 @@ func StartWBStreamHeadless(socksPort int, socksUser, socksPass string, callback 
 	callback.OnStatus(common.StatusReady)
 }
 
+func StartDionHeadless(socksPort int, socksUser, socksPass string, callback HeadlessCallback) {
+	StopHeadless()
+
+	activeHeadless.Lock()
+	activeHeadless.callback = callback
+	activeHeadless.stopped = false
+	activeHeadless.platform = "dion"
+	activeHeadless.Unlock()
+
+	logFn, resolveFn, statusEmitter := makeHelpers(callback)
+	dionJoiner := joiner.NewDionHeadlessJoiner(logFn, resolveFn, statusEmitter, nil)
+	dionJoiner.OnConnected = makeOnConnected(socksPort, socksUser, socksPass, logFn, callback)
+
+	activeHeadless.Lock()
+	activeHeadless.joiner = dionJoiner
+	activeHeadless.Unlock()
+
+	callback.OnStatus(common.StatusReady)
+}
+
 func StartTelemostHeadless(socksPort int, socksUser, socksPass string, callback HeadlessCallback) {
 	StopHeadless()
 
@@ -203,6 +223,10 @@ func SendJoinParams(jsonParams string) {
 	case "wbstream":
 		if wbJoiner, ok := currentJoiner.(*joiner.WBStreamHeadlessJoiner); ok {
 			go wbJoiner.RunWithParams(jsonParams)
+		}
+	case "dion":
+		if dionJoiner, ok := currentJoiner.(*joiner.DionHeadlessJoiner); ok {
+			go dionJoiner.RunWithParams(jsonParams)
 		}
 	}
 }

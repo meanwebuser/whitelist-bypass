@@ -6,12 +6,14 @@ export enum TunnelMode {
   HeadlessVK = 'headless-vk',
   HeadlessTelemost = 'headless-telemost',
   HeadlessWBStream = 'headless-wbstream',
+  HeadlessDion = 'headless-dion',
 }
 
 export enum Platform {
   VK = 'vk',
   Telemost = 'telemost',
   WBStream = 'wbstream',
+  Dion = 'dion',
 }
 
 export enum RelayMode {

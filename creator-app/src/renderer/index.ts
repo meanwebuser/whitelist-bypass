@@ -58,6 +58,7 @@ function bindToolbarEvents(): void {
   document.getElementById('btnHeadlessVK')!.addEventListener('click', () => tm.switchToHeadless(Platform.VK));
   document.getElementById('btnHeadlessTM')!.addEventListener('click', () => tm.switchToHeadless(Platform.Telemost));
   document.getElementById('btnHeadlessWB')!.addEventListener('click', () => tm.switchToHeadless(Platform.WBStream));
+  document.getElementById('btnHeadlessDion')!.addEventListener('click', () => tm.switchToHeadless(Platform.Dion));
   document.getElementById('modeSelect')!.addEventListener('change', (event) => {
     tm.setTunnelMode((event.target as HTMLSelectElement).value);
   });
@@ -73,6 +74,13 @@ function bindActionBarEvents(): void {
       'yandex',
       'cookies-yandex.json',
       'No Yandex cookies found.\nPlease log into Yandex (telemost.yandex.ru) first.',
+    );
+  });
+  document.getElementById('btnDionCookies')!.addEventListener('click', () => {
+    exportCookies(
+      'dion',
+      'cookies-dion.json',
+      'No DION cookies found.\nPlease log into DION (dion.vc) first.',
     );
   });
   document.getElementById('btnSettings')!.addEventListener('click', openSettings);
@@ -162,6 +170,8 @@ function init(): void {
       tm.switchToHeadless(Platform.Telemost);
     } else if (data.mode === TunnelMode.HeadlessWBStream) {
       tm.switchToHeadless(Platform.WBStream);
+    } else if (data.mode === TunnelMode.HeadlessDion) {
+      tm.switchToHeadless(Platform.Dion);
     } else {
       const url = data.platform === Platform.Telemost ? TELEMOST_URL : VK_IM_URL;
       loadURL(tm, url);

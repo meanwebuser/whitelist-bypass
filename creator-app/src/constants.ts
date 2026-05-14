@@ -12,11 +12,14 @@ export const VK_API_VERSION = '5.131';
 export const VK_API_BASE_URL = 'https://api.vk.com/method';
 export const VK_IM_URL = 'https://vk.com/im';
 export const TELEMOST_URL = 'https://telemost.yandex.ru/';
+export const DION_URL = 'https://dion.vc/';
 
 export const VK_LOGIN_URL = 'https://vk.com/';
 export const YANDEX_LOGIN_URL = 'https://passport.yandex.ru/auth?retpath=https%3A%2F%2Ftelemost.yandex.ru%2F';
+export const DION_LOGIN_URL = 'https://dion.vc/login';
 export const VK_AUTH_COOKIE = 'remixsid';
 export const YANDEX_AUTH_COOKIE = 'Session_id';
+export const DION_AUTH_COOKIE = 'vc-refresh-token';
 
 export const SESSION_PARTITION = 'persist:creator';
 export const WINDOW_WIDTH = 1200;
@@ -28,6 +31,7 @@ export const USER_AGENT =
 
 export const VK_COOKIE_DOMAINS = ['vk.com', 'vk.ru'];
 export const YANDEX_COOKIE_DOMAINS = ['yandex.ru', 'yandex.net', 'ya.ru'];
+export const DION_COOKIE_DOMAINS = ['dion.vc'];
 
 export enum Selector {
   VK_ADMIT = '[data-testid="calls_waiting_hall_promote"]',

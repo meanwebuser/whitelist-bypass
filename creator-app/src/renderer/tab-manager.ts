@@ -49,6 +49,10 @@ export class RendererTabManager {
         tab.mode = TunnelMode.HeadlessWBStream;
         if (!tab.isBot) tab.name = 'WBStream';
         break;
+      case Platform.Dion:
+        tab.mode = TunnelMode.HeadlessDion;
+        if (!tab.isBot) tab.name = 'DION';
+        break;
       default:
         tab.mode = TunnelMode.HeadlessVK;
         if (!tab.isBot) tab.name = 'VK';
@@ -69,10 +73,12 @@ export class RendererTabManager {
       const isHeadless =
         data.mode === TunnelMode.HeadlessVK ||
         data.mode === TunnelMode.HeadlessTelemost ||
-        data.mode === TunnelMode.HeadlessWBStream;
+        data.mode === TunnelMode.HeadlessWBStream ||
+        data.mode === TunnelMode.HeadlessDion;
       let platformName = 'VK';
       if (data.platform === Platform.Telemost) platformName = 'Telemost';
       else if (data.platform === Platform.WBStream) platformName = 'WBStream';
+      else if (data.platform === Platform.Dion) platformName = 'DION';
       const botName = isHeadless ? `Bot-${platformName}` : `Bot-${platformName} (legacy)`;
       this.tabs[data.tabId] = {
         wv: null,
@@ -127,6 +133,7 @@ export class RendererTabManager {
     if (tab.url) {
       if (tab.url.includes('vk.com')) return 'VK (legacy)';
       if (tab.url.includes('telemost')) return 'Telemost (legacy)';
+      if (tab.url.includes('dion.vc')) return 'DION';
     }
     return 'New';
   }

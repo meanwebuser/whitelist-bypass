@@ -164,6 +164,12 @@ body {
   color: white;
 }
 
+.btn-headless-dion {
+  background: #00b894;
+  color: white;
+  opacity: 0.85;
+}
+
 .btn-headless {
   background: #0077ff;
   color: white;
@@ -336,6 +342,10 @@ body {
 
 .logs.relay-only .log-panel:first-child {
   border-right: none;
+}
+
+.logs.relay-only {
+  height: 280px;
 }
 
 .log-title {

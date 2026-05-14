@@ -118,10 +118,16 @@ enum CallPlatform: String {
     case vk = "vk"
     case telemost = "telemost"
     case wbstream = "wbstream"
+    case dion = "dion"
 
     static let wbstreamPrefix = "wbstream://"
+    static let dionPrefix = "dion://"
+    static let dionEventInfix = "dion.vc/event/"
 
     static func detect(url: String) -> CallPlatform {
+        if url.hasPrefix(dionPrefix) || url.contains(dionEventInfix) {
+            return .dion
+        }
         if url.hasPrefix(wbstreamPrefix) {
             return .wbstream
         }
@@ -132,10 +138,20 @@ enum CallPlatform: String {
     }
 
     static func extractRoomId(url: String) -> String {
-        if url.hasPrefix(wbstreamPrefix) {
-            return String(url.dropFirst(wbstreamPrefix.count)).trimmingCharacters(in: .whitespaces)
+        let trimmed = url.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix(wbstreamPrefix) {
+            return String(trimmed.dropFirst(wbstreamPrefix.count)).trimmingCharacters(in: .whitespaces)
         }
-        return url.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix(dionPrefix) {
+            return String(trimmed.dropFirst(dionPrefix.count)).trimmingCharacters(in: .whitespaces)
+        }
+        if let range = trimmed.range(of: dionEventInfix) {
+            var slug = String(trimmed[range.upperBound...])
+            if let qmark = slug.firstIndex(of: "?") { slug = String(slug[..<qmark]) }
+            if let slash = slug.firstIndex(of: "/") { slug = String(slug[..<slash]) }
+            return slug.trimmingCharacters(in: .whitespaces)
+        }
+        return trimmed
     }
 }
 
@@ -270,7 +286,7 @@ class ProxyManager: ObservableObject {
         detectedPlatform = CallPlatform.detect(url: callUrl)
         appendLog("Platform: \(detectedPlatform.rawValue)")
 
-        if tunnelMode == .dc && detectedPlatform == .telemost {
+        if tunnelMode == .dc && (detectedPlatform == .telemost || detectedPlatform == .dion) {
             tunnelMode = .video
             showToast(NSLocalizedString("dc_mode_not_supported", comment: ""))
         }
@@ -302,6 +318,21 @@ class ProxyManager: ObservableObject {
                 "roomId": CallPlatform.extractRoomId(url: callUrl),
                 "displayName": displayName,
                 "tunnelMode": tunnelMode.rawValue,
+                "vp8Fps": vp8Fps,
+                "vp8Batch": vp8Batch,
+            ]
+            if let jsonData = try? JSONSerialization.data(withJSONObject: joinParams),
+               let jsonString = String(data: jsonData, encoding: .utf8) {
+                IosSendJoinParams(jsonString)
+                appendLog("Sent join params")
+            }
+
+        case .dion:
+            IosStartDionHeadless(socksPort, activeSocksUser, activeSocksPass, bridge)
+            appendLog("Started DION headless joiner")
+            let joinParams: [String: Any] = [
+                "roomId": CallPlatform.extractRoomId(url: callUrl),
+                "displayName": displayName,
                 "vp8Fps": vp8Fps,
                 "vp8Batch": vp8Batch,
             ]
