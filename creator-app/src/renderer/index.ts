@@ -16,7 +16,7 @@ import {
   detachLoginWebview,
 } from './dom';
 import { VK_IM_URL, TELEMOST_URL } from '../constants';
-import { Platform, Bridge, BotTabData, LogPanel, TunnelMode } from '../types';
+import { Platform, Bridge, BotTabData, LogPanel, TunnelMode, HeadlessMode } from '../types';
 
 declare const window: Window & { bridge: Bridge };
 
@@ -128,6 +128,40 @@ function bindHeadlessEvents(): void {
       if (sourceEl) copyToClipboard(sourceEl.textContent || '');
     }
   });
+  document.getElementById('btnHeadlessCreate')!.addEventListener('click', () => {
+    clearHeadlessJoinError();
+    tm.startHeadlessCall({ mode: HeadlessMode.Create });
+  });
+  document.getElementById('btnHeadlessJoin')!.addEventListener('click', () => {
+    const targetInput = document.getElementById('headlessStartTarget') as HTMLInputElement;
+    const target = targetInput.value.trim();
+    if (!target) {
+      showHeadlessJoinError('Enter a room or link to join.');
+      targetInput.focus();
+      return;
+    }
+    clearHeadlessJoinError();
+    tm.startHeadlessCall({ mode: HeadlessMode.Join, target });
+  });
+  document.getElementById('headlessStartTarget')!.addEventListener('input', (event) => {
+    const tab = tm.getActiveTab();
+    if (tab) tab.headlessStartTarget = (event.target as HTMLInputElement).value;
+    clearHeadlessJoinError();
+  });
+}
+
+function showHeadlessJoinError(msg: string): void {
+  const errEl = document.getElementById('headlessStartError')!;
+  const input = document.getElementById('headlessStartTarget') as HTMLInputElement;
+  errEl.textContent = msg;
+  input.classList.add('invalid');
+}
+
+function clearHeadlessJoinError(): void {
+  const errEl = document.getElementById('headlessStartError')!;
+  const input = document.getElementById('headlessStartTarget') as HTMLInputElement;
+  errEl.textContent = '';
+  input.classList.remove('invalid');
 }
 
 function openSettings(): void {

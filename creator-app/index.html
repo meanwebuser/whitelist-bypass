@@ -38,6 +38,20 @@
   </div>
   <div class="headless-info" id="headlessInfo">
     <div class="headless-title" id="headlessTitle">Headless</div>
+    <div class="headless-start" id="headlessStart">
+      <div class="headless-start-card">
+        <div class="headless-start-card-title">Create a new call</div>
+        <div class="headless-start-card-desc">Start a fresh room and get a shareable link.</div>
+        <button class="headless-start-btn primary" id="btnHeadlessCreate">Create new</button>
+      </div>
+      <div class="headless-start-card">
+        <div class="headless-start-card-title">Join an existing call</div>
+        <div class="headless-start-card-desc" id="headlessStartTargetLabel">Paste a room id or link.</div>
+        <input type="text" id="headlessStartTarget" class="headless-start-input" placeholder="">
+        <div class="headless-start-error" id="headlessStartError"></div>
+        <button class="headless-start-btn" id="btnHeadlessJoin">Join existing</button>
+      </div>
+    </div>
     <div class="headless-status" id="headlessStatus">Starting...</div>
     <div class="headless-call-info" id="headlessCallInfo">
       <div class="headless-row"><span class="headless-label">Join link:</span> <a id="headlessJoinLink" href="#" class="headless-link"></a><img class="headless-copy" src="resources/icons8-copy-50.png" data-copy="headlessJoinLink" title="Copy"></div>

@@ -82,6 +82,16 @@ export interface CallInfo {
   protocol?: string;
 }
 
+export enum HeadlessMode {
+  Create = 'create',
+  Join = 'join',
+}
+
+export interface HeadlessStartArgs {
+  mode: HeadlessMode;
+  target?: string;
+}
+
 export interface Webview extends Electron.WebviewTag {
   getURL(): string;
   setAudioMuted(muted: boolean): void;
@@ -100,6 +110,8 @@ export interface RendererTab {
   peerId?: number;
   platform?: Platform;
   headless?: boolean;
+  headlessStarted?: boolean;
+  headlessStartTarget?: string;
   headlessStatus?: string;
   callInfo?: CallInfo;
   tunnelConnected?: boolean;
@@ -130,7 +142,7 @@ export interface Bridge {
   getCallCreatorCode(scriptFile: string): Promise<string>;
   onBotError(cb: (msg: string) => void): void;
   getCookies(domain: string): Promise<Electron.Cookie[]>;
-  startHeadless(tabId: string, platform: string): Promise<void>;
+  startHeadless(tabId: string, platform: string, args: HeadlessStartArgs): Promise<void>;
   sendBotCallLink(tabId: string, link: string): Promise<void>;
   onCloseBotTab(cb: (data: { tabId: string }) => void): void;
   onLoginRequired(cb: (tabId: string, url: string) => void): void;

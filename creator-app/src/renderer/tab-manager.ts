@@ -1,4 +1,13 @@
-import { RendererTab, BotTabData, BotSettings, TunnelMode, Platform, Bridge } from '../types';
+import {
+  RendererTab,
+  BotTabData,
+  BotSettings,
+  TunnelMode,
+  Platform,
+  Bridge,
+  HeadlessMode,
+  HeadlessStartArgs,
+} from '../types';
 import { HeadlessLogMarker } from '../constants';
 
 declare const window: Window & { bridge: Bridge };
@@ -58,13 +67,27 @@ export class RendererTabManager {
         if (!tab.isBot) tab.name = 'VK';
     }
     tab.headless = true;
+    tab.headlessStarted = false;
     tab.platform = platform;
     tab.callInfo = undefined;
-    tab.headlessStatus = 'Starting...';
+    tab.headlessStatus = undefined;
     tab.tunnelConnected = false;
     tab.relayLogs = '';
     tab.hookLogs = '';
-    window.bridge.startHeadless(this.activeTabId, platform);
+    if (tab.isBot) {
+      this.startHeadlessCall({ mode: HeadlessMode.Create });
+    }
+    this.onRender();
+  }
+
+  startHeadlessCall(args: HeadlessStartArgs): void {
+    if (!this.activeTabId) return;
+    const tab = this.tabs[this.activeTabId];
+    if (!tab || !tab.headless || !tab.platform) return;
+    tab.headlessStarted = true;
+    tab.headlessStatus = 'Starting...';
+    tab.callInfo = undefined;
+    window.bridge.startHeadless(this.activeTabId, tab.platform, args);
     this.onRender();
   }
 

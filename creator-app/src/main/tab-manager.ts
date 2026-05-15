@@ -4,7 +4,17 @@ import { BrowserWindow, session } from 'electron';
 import * as net from 'net';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { TabState, PortPair, TabListEntry, Platform, TunnelMode, RelayMode, CallStatus } from '../types';
+import {
+  TabState,
+  PortPair,
+  TabListEntry,
+  Platform,
+  TunnelMode,
+  RelayMode,
+  CallStatus,
+  HeadlessStartArgs,
+  HeadlessMode,
+} from '../types';
 import {
   INITIAL_PORT_BASE,
   IPC,
@@ -273,14 +283,35 @@ export class TabManager {
     }
   }
 
-  async startHeadless(tabId: string, platform: Platform): Promise<void> {
+  private joinFlagFor(platform: Platform): string | null {
+    switch (platform) {
+      case Platform.VK:
+        return '--vk-link';
+      case Platform.Telemost:
+        return '--tm-link';
+      case Platform.WBStream:
+      case Platform.Dion:
+        return '--room';
+      default:
+        return null;
+    }
+  }
+
+  async startHeadless(tabId: string, platform: Platform, args: HeadlessStartArgs): Promise<void> {
     const tab = await this.getOrCreateTab(tabId);
     tab.platform = platform;
+    const joinTarget = args.mode === HeadlessMode.Join ? (args.target || '').trim() : '';
+    if (args.mode === HeadlessMode.Join && !joinTarget) {
+      this.sendLog(tabId, 'Join requested but no target link/room provided.');
+      return;
+    }
 
     if (platform === Platform.WBStream) {
       tab.tunnelMode = TunnelMode.HeadlessWBStream;
       this.killRelay(tabId, tab);
-      const proc = spawn(this.headlessWBStreamPath, ['--resources', 'default'], {
+      const wbArgs = ['--resources', 'default'];
+      if (joinTarget) wbArgs.push('--room', joinTarget);
+      const proc = spawn(this.headlessWBStreamPath, wbArgs, {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       tab.relay = proc;
@@ -314,7 +345,12 @@ export class TabManager {
     this.killRelay(tabId, tab);
     const cookiesPath = path.join(app.getPath('userData'), `cookies-${platform}.json`);
     await fs.writeFile(cookiesPath, JSON.stringify(cookies));
-    const proc = spawn(config.binaryPath, ['--resources', 'default', '--cookies', cookiesPath], {
+    const spawnArgs = ['--resources', 'default', '--cookies', cookiesPath];
+    if (joinTarget) {
+      const flag = this.joinFlagFor(platform);
+      if (flag) spawnArgs.push(flag, joinTarget);
+    }
+    const proc = spawn(config.binaryPath, spawnArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     tab.relay = proc;
@@ -330,7 +366,7 @@ export class TabManager {
         this.sendLog(tabId, `${config.platformName} session rejected (401), clearing and re-prompting login.`);
         await this.clearAuthCookies(config.cookieDomains, config.authCookie);
         if (this.tabs.get(tabId) === tab) {
-          this.startHeadless(tabId, platform);
+          this.startHeadless(tabId, platform, args);
         }
       }
     });

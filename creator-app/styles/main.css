@@ -314,6 +314,94 @@ body {
   filter: invert(0.88);
 }
 
+.headless-start {
+  display: none;
+  margin-top: 8px;
+  gap: 16px;
+  max-width: 520px;
+  flex-direction: column;
+}
+
+.headless-start.visible {
+  display: flex;
+}
+
+.headless-start-card {
+  border: 1px solid #333;
+  border-radius: 8px;
+  background: #1e1e1e;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.headless-start-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.headless-start-card-desc {
+  font-size: 12px;
+  color: #888;
+}
+
+.headless-start-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background: #141414;
+  color: #e0e0e0;
+  font-family: monospace;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.headless-start-input:focus {
+  border-color: #4fc3f7;
+}
+
+.headless-start-input.invalid {
+  border-color: #ef5350;
+}
+
+.headless-start-error {
+  min-height: 14px;
+  color: #ef5350;
+  font-size: 12px;
+}
+
+.headless-start-btn {
+  align-self: flex-start;
+  padding: 6px 14px;
+  border: 1px solid #555;
+  border-radius: 6px;
+  background: #2a2a2a;
+  color: #e0e0e0;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.headless-start-btn:hover {
+  background: #353535;
+  border-color: #777;
+}
+
+.headless-start-btn.primary {
+  background: #0077ff;
+  border-color: #0077ff;
+  color: white;
+}
+
+.headless-start-btn.primary:hover {
+  background: #0066dd;
+  border-color: #0066dd;
+}
+
 .headless-tunnel {
   margin-top: 16px;
   display: none;

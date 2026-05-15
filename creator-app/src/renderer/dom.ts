@@ -57,7 +57,35 @@ export function renderContent(tm: RendererTabManager): void {
     else if (activeTab.platform === Platform.WBStream) title = 'WBStream';
     else if (activeTab.platform === Platform.Dion) title = 'DION';
     document.getElementById('headlessTitle')!.textContent = title;
-    document.getElementById('headlessStatus')!.textContent = activeTab.headlessStatus || 'Starting...';
+    const startEl = document.getElementById('headlessStart')!;
+    const statusEl = document.getElementById('headlessStatus')!;
+    if (!activeTab.headlessStarted) {
+      startEl.classList.add('visible');
+      statusEl.style.display = 'none';
+      const targetInput = document.getElementById('headlessStartTarget') as HTMLInputElement;
+      const targetLabel = document.getElementById('headlessStartTargetLabel')!;
+      const errorEl = document.getElementById('headlessStartError')!;
+      targetInput.value = activeTab.headlessStartTarget || '';
+      targetInput.classList.remove('invalid');
+      errorEl.textContent = '';
+      if (activeTab.platform === Platform.WBStream) {
+        targetLabel.textContent = 'Paste a room id or stream.wb.ru/room/<id> link.';
+        targetInput.placeholder = 'https://stream.wb.ru/room/<id>';
+      } else if (activeTab.platform === Platform.Dion) {
+        targetLabel.textContent = 'Paste a room id or dion.vc event link.';
+        targetInput.placeholder = 'abc-def-ghi';
+      } else if (activeTab.platform === Platform.Telemost) {
+        targetLabel.textContent = 'Paste a Telemost conference link.';
+        targetInput.placeholder = 'https://telemost.yandex.ru/j/...';
+      } else {
+        targetLabel.textContent = 'Paste a VK call link.';
+        targetInput.placeholder = 'https://vk.com/call/join/...';
+      }
+    } else {
+      startEl.classList.remove('visible');
+      statusEl.style.display = '';
+      statusEl.textContent = activeTab.headlessStatus || 'Starting...';
+    }
     const callInfo = activeTab.callInfo;
     const callInfoVK = document.getElementById('headlessCallInfo')!;
     const callInfoTM = document.getElementById('headlessCallInfoTM')!;

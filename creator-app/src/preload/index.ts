@@ -35,8 +35,8 @@ import { IPC } from '../constants';
   getCookies(domain: string) {
     return ipcRenderer.invoke(IPC.GET_COOKIES, domain);
   },
-  startHeadless(tabId: string, platform: string) {
-    return ipcRenderer.invoke(IPC.START_HEADLESS, tabId, platform);
+  startHeadless(tabId: string, platform: string, args: any) {
+    return ipcRenderer.invoke(IPC.START_HEADLESS, tabId, platform, args);
   },
   sendBotCallLink(tabId: string, link: string) {
     return ipcRenderer.invoke(IPC.SEND_BOT_CALL_LINK, tabId, link);

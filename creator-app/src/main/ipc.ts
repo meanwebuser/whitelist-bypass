@@ -10,7 +10,7 @@ import {
   YANDEX_COOKIE_DOMAINS,
   DION_COOKIE_DOMAINS,
 } from '../constants';
-import { TunnelMode, Platform, BotSettings } from '../types';
+import { TunnelMode, Platform, BotSettings, HeadlessStartArgs } from '../types';
 
 export function registerIpcHandlers(tabManager: TabManager): void {
   ipcMain.handle(IPC.GET_HOOK_CODE, async (_e, tabId: string, url: string) => {
@@ -33,8 +33,8 @@ export function registerIpcHandlers(tabManager: TabManager): void {
     tabManager.startRelay(tabId, tab);
   });
 
-  ipcMain.handle(IPC.START_HEADLESS, async (_e, tabId: string, platform: string) => {
-    await tabManager.startHeadless(tabId, platform as Platform);
+  ipcMain.handle(IPC.START_HEADLESS, async (_e, tabId: string, platform: string, args: HeadlessStartArgs) => {
+    await tabManager.startHeadless(tabId, platform as Platform, args);
   });
 
   ipcMain.handle(IPC.CLOSE_TAB, (_e, tabId: string) => {
