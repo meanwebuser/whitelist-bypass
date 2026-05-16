@@ -184,13 +184,11 @@ Standalone Go-бинарник `headless-vk-bot` - то же самое, что 
    - `headless-vk-creator-linux-x64`
    - `headless-telemost-creator-linux-x64`
    - `headless-wbstream-creator-linux-x64`
+   - `headless-dion-creator-linux-x64`
 
    Не забудьте дать права на выполнение: `chmod +x /usr/local/bin/headless-*`.
-3. Подготовьте куки:
-   - VK: экспортируйте через десктопный Creator кнопкой **VK Cookies**.
-   - Telemost: кнопкой **Yandex Cookies**.
-   - WB Stream куки не нужны (анонимный гостевой токен).
-4. Скопируйте куки на сервер.
+3. Подготовьте куки - все четыре платформы требуют залогиненную сессию. В десктопном Creator нажмите **Export Cookies** - получите `cookies.zip` со всеми четырьмя файлами (`cookies-vk.json`, `cookies-yandex.json`, `cookies-wbstream.json`, `cookies-dion.json`).
+4. Распакуйте архив и скопируйте куки на сервер.
 
 ### Запуск
 
@@ -201,7 +199,9 @@ Standalone Go-бинарник `headless-vk-bot` - то же самое, что 
   --user-id <vk_id_1>,<vk_id_2> \
   --bins-dir /usr/local/bin \
   --vk-cookies /etc/whitelist-bypass/cookies-vk.json \
-  --tm-cookies /etc/whitelist-bypass/cookies-yandex.json
+  --tm-cookies /etc/whitelist-bypass/cookies-yandex.json \
+  --wb-cookies /etc/whitelist-bypass/cookies-wbstream.json \
+  --dion-cookies /etc/whitelist-bypass/cookies-dion.json
 ```
 
 ### Флаги
@@ -211,9 +211,11 @@ Standalone Go-бинарник `headless-vk-bot` - то же самое, что 
 | `--token <str>` | Community access token (обязательно) |
 | `--group-id <id>` | ID сообщества, только цифры (обязательно) |
 | `--user-id <ids>` | Список VK ID через запятую (`12345,67890`), которым разрешено отправлять команды. Пусто = разрешено всем (НЕ рекомендуется) |
-| `--bins-dir <dir>` | Папка, где лежат `headless-vk-creator` / `headless-telemost-creator` / `headless-wbstream-creator` (обязательно) |
-| `--vk-cookies <path>` | Путь к VK куки (нужен для `/vk`) |
-| `--tm-cookies <path>` | Путь к Yandex куки (нужен для `/tm`) |
+| `--bins-dir <dir>` | Папка, где лежат `headless-vk-creator` / `headless-telemost-creator` / `headless-wbstream-creator` / `headless-dion-creator` (обязательно) |
+| `--vk-cookies <path>` | Путь к VK куки (нужен для `/vk` и для join по VK call-ссылке) |
+| `--tm-cookies <path>` | Путь к Yandex куки (нужен для `/tm` и для join по Telemost-ссылке) |
+| `--wb-cookies <path>` | Путь к WB Stream куки (нужен для `/wb` и для join по `wbstream://` / `stream.wb.ru` ссылке) |
+| `--dion-cookies <path>` | Путь к DION куки (нужен для `/dion` и для join по `dion://` / `dion.vc` ссылке) |
 | `--sessions-dir <dir>` | Папка для логов запущенных creators. Опционально - без флага логи не пишутся, stdout/stderr creators отбрасываются |
 | `--resources <mode>` | Режим ресурсов, передаётся каждому запускаемому creator: `default` / `moderate` / `unlimited`. По умолчанию `default`. `custom` не поддерживается, так как у каждого бинарника свой набор флагов настройки |
 
@@ -236,7 +238,9 @@ ExecStart=/usr/local/bin/headless-vk-bot \
   --user-id <vk_id_1>,<vk_id_2> \
   --bins-dir /usr/local/bin \
   --vk-cookies /etc/whitelist-bypass/cookies-vk.json \
-  --tm-cookies /etc/whitelist-bypass/cookies-yandex.json
+  --tm-cookies /etc/whitelist-bypass/cookies-yandex.json \
+  --wb-cookies /etc/whitelist-bypass/cookies-wbstream.json \
+  --dion-cookies /etc/whitelist-bypass/cookies-dion.json
 Restart=always
 RestartSec=5
 User=wlb
@@ -257,14 +261,14 @@ sudo journalctl -u wlb-vk-bot -f
 
 ### Запуск через Docker
 
-Альтернатива systemd. Готовый образ публикуется в GHCR (`ghcr.io/kulikov0/whitelist-bypass-bot`) - под капотом тот же `headless-vk-bot` плюс три creator-бинарника. Поддерживаемые архитектуры: `linux/amd64`, `linux/arm64`, `linux/386`.
+Альтернатива systemd. Готовый образ публикуется в GHCR (`ghcr.io/kulikov0/whitelist-bypass-bot`) - под капотом тот же `headless-vk-bot` плюс четыре creator-бинарника. Поддерживаемые архитектуры: `linux/amd64`, `linux/arm64`, `linux/386`.
 
 ```sh
 mkdir wlb-bot && cd wlb-bot
 curl -O https://raw.githubusercontent.com/kulikov0/whitelist-bypass/main/headless/docker/docker-compose.yml
 curl -L https://raw.githubusercontent.com/kulikov0/whitelist-bypass/main/headless/docker/.env.example -o .env
 # отредактируйте .env: VK_TOKEN, VK_GROUP_ID, VK_USER_IDS
-# положите рядом cookies-vk.json и cookies-telemost.json
+# положите рядом cookies-vk.json, cookies-telemost.json, cookies-wbstream.json, cookies-dion.json
 # (для платформ, которые не используете - создайте файл с содержимым `[]`)
 docker compose up -d
 docker compose logs -f
@@ -286,6 +290,8 @@ docker compose pull && docker compose up -d
 | `SESSIONS_DIR` | нет | `/data/sessions` | `--sessions-dir` |
 | `VK_COOKIES` | нет | `/data/cookies-vk.json` если есть | `--vk-cookies` |
 | `TM_COOKIES` | нет | `/data/cookies-telemost.json` если есть | `--tm-cookies` |
+| `WB_COOKIES` | нет | `/data/cookies-wbstream.json` если есть | `--wb-cookies` |
+| `DION_COOKIES` | нет | `/data/cookies-dion.json` если есть | `--dion-cookies` |
 
 > Если WebRTC-туннель не доходит через сетевой бридж Docker (UDP может отбрасываться), добавьте в `docker-compose.yml` строку `network_mode: host` под сервисом `bot`.
 
@@ -294,6 +300,7 @@ docker compose pull && docker compose up -d
 - `/vk` - запустить `headless-vk-creator`
 - `/tm` - запустить `headless-telemost-creator`
 - `/wb` - запустить `headless-wbstream-creator`
+- `/dion` - запустить `headless-dion-creator`
 - `/list` - список активных сессий
 - `/close <id>` - закрыть сессию по короткому ID
 - `/start` - показать главное меню
