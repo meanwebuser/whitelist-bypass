@@ -25,6 +25,8 @@ func platformSquare(platform string) string {
 		return "🟥"
 	case "wb", "wbstream":
 		return "🟪"
+	case "dion":
+		return "🟩"
 	}
 	return ""
 }
@@ -36,10 +38,29 @@ func mainMenuKeyboard() string {
 			{
 				{Action: kbAction{Type: "text", Label: "🟦 VK", Payload: `{"cmd":"vk"}`}},
 				{Action: kbAction{Type: "text", Label: "🟥 Telemost", Payload: `{"cmd":"tm"}`}},
+			},
+			{
 				{Action: kbAction{Type: "text", Label: "🟪 WBStream", Payload: `{"cmd":"wb"}`}},
+				{Action: kbAction{Type: "text", Label: "🟩 DION", Payload: `{"cmd":"dion"}`}},
+			},
+			{
+				{Action: kbAction{Type: "text", Label: "🔗 Join by link", Payload: `{"cmd":"join-prompt"}`}},
 			},
 			{
 				{Action: kbAction{Type: "text", Label: "📋 Active sessions", Payload: `{"cmd":"list"}`}},
+			},
+		},
+	}
+	data, _ := json.Marshal(kb)
+	return string(data)
+}
+
+func waitingKeyboard() string {
+	kb := keyboard{
+		OneTime: false,
+		Buttons: [][]kbButton{
+			{
+				{Action: kbAction{Type: "text", Label: "◀️ Back", Payload: `{"cmd":"menu"}`}},
 			},
 		},
 	}
