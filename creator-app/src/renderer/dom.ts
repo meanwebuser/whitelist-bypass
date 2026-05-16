@@ -1,5 +1,5 @@
 import { Platform, Bridge, LogPanel, TunnelMode, Webview } from '../types';
-import { SESSION_PARTITION, HOOK_POLL_INTERVAL_MS, CALL_CREATOR_INJECT_DELAY_MS } from '../constants';
+import { SESSION_PARTITION, HOOK_POLL_INTERVAL_MS, CALL_CREATOR_INJECT_DELAY_MS, USER_AGENT } from '../constants';
 import { RendererTabManager } from './tab-manager';
 
 declare const window: Window & { bridge: Bridge };
@@ -40,9 +40,9 @@ export function renderContent(tm: RendererTabManager): void {
   }
 
   welcome.style.display = 'none';
-  logsPanel.style.display = 'flex';
 
   const activeTab = tm.tabs[tm.activeTabId];
+  logsPanel.style.display = activeTab.loginWebview ? 'none' : 'flex';
   hookPanel.style.display = activeTab.headless ? 'none' : 'flex';
   logsPanel.classList.toggle('relay-only', activeTab.headless === true);
   if (activeTab.loginWebview) {
@@ -152,7 +152,7 @@ export function attachLoginWebview(tm: RendererTabManager, tabId: string, url: s
   const webview = document.createElement('webview') as unknown as Webview;
   webview.setAttribute('src', url);
   webview.setAttribute('partition', SESSION_PARTITION);
-  webview.setAttribute('useragent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+  webview.setAttribute('useragent', USER_AGENT);
   webview.classList.add('webview-full');
   webview.dataset.tabId = tabId;
   document.getElementById('content')!.appendChild(webview);
@@ -185,7 +185,7 @@ export function loadURL(tm: RendererTabManager, url: string): void {
   webview.setAttribute('partition', SESSION_PARTITION);
   webview.setAttribute('nodeintegration', '');
   webview.setAttribute('nodeintegrationinsubframes', '');
-  webview.setAttribute('useragent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36');
+  webview.setAttribute('useragent', USER_AGENT);
   webview.classList.add('webview-full');
   webview.dataset.tabId = tm.activeTabId;
   document.getElementById('content')!.appendChild(webview);

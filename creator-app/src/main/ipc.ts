@@ -9,6 +9,7 @@ import {
   VK_COOKIE_DOMAINS,
   YANDEX_COOKIE_DOMAINS,
   DION_COOKIE_DOMAINS,
+  WBSTREAM_COOKIE_DOMAINS,
 } from '../constants';
 import { TunnelMode, Platform, BotSettings, HeadlessStartArgs } from '../types';
 
@@ -101,6 +102,7 @@ export function registerIpcHandlers(tabManager: TabManager): void {
     let domains: string[];
     if (domain === 'yandex') domains = YANDEX_COOKIE_DOMAINS;
     else if (domain === 'dion') domains = DION_COOKIE_DOMAINS;
+    else if (domain === 'wbstream') domains = WBSTREAM_COOKIE_DOMAINS;
     else domains = VK_COOKIE_DOMAINS;
     const filtered = all.filter((cookie) => {
       return cookie.domain != null && domains.some((d) => cookie.domain!.includes(d));

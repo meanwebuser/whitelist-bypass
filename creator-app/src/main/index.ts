@@ -1,4 +1,4 @@
-import { app } from 'electron';
+import { app, protocol } from 'electron';
 import { TabManager } from './tab-manager';
 import { createWindow } from './window';
 import { registerIpcHandlers } from './ipc';
@@ -7,7 +7,12 @@ const tabManager = new TabManager();
 
 registerIpcHandlers(tabManager);
 
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'wbstream', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+]);
+
 app.whenReady().then(() => {
+  protocol.handle('wbstream', () => new Response(null, { status: 204 }));
   const win = createWindow(tabManager);
   tabManager.mainWindow = win;
 });
