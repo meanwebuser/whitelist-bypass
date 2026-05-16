@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strings"
 	"syscall"
 	"time"
 
@@ -56,12 +55,12 @@ func main() {
 		log.Fatalf("[FATAL] EnsureValidToken: %v", err)
 	}
 
-	requestedSlug := normalizeRoom(*roomFlag)
+	requestedRoom := dion.ParseRoom(*roomFlag)
 	var event *dion.EventInfo
-	if requestedSlug != "" {
-		event, err = auth.GetEventBySlug(requestedSlug)
+	if requestedRoom != "" {
+		event, err = auth.GetEventBySlug(requestedRoom)
 		if err != nil {
-			log.Fatalf("[FATAL] GetEventBySlug(%s): %v", requestedSlug, err)
+			log.Fatalf("[FATAL] GetEventBySlug(%s): %v", requestedRoom, err)
 		}
 		log.Printf("[room] rejoined room=%s id=%s", event.Slug, event.ID)
 	} else {
@@ -72,7 +71,7 @@ func main() {
 		log.Printf("[room] created room=%s id=%s", event.Slug, event.ID)
 	}
 
-	joinLink := fmt.Sprintf("%s/event/%s", dion.WebBase, event.Slug)
+	joinLink := "dion://" + event.Slug
 	if *writeFile != "" {
 		fileHandle, err := os.OpenFile(*writeFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
@@ -167,20 +166,3 @@ func main() {
 	}
 }
 
-func normalizeRoom(input string) string {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return ""
-	}
-	trimmed = strings.TrimPrefix(trimmed, "https://")
-	trimmed = strings.TrimPrefix(trimmed, "http://")
-	trimmed = strings.TrimPrefix(trimmed, "dion.vc/")
-	trimmed = strings.TrimPrefix(trimmed, "event/")
-	if idx := strings.Index(trimmed, "?"); idx >= 0 {
-		trimmed = trimmed[:idx]
-	}
-	if idx := strings.Index(trimmed, "/"); idx >= 0 {
-		trimmed = trimmed[:idx]
-	}
-	return trimmed
-}

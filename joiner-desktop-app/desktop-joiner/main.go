@@ -26,6 +26,7 @@ import (
 
 	joinerCommon "whitelist-bypass/relay/pion/headless-joiner-common"
 	"whitelist-bypass/relay/common"
+	"whitelist-bypass/relay/dion"
 	"whitelist-bypass/relay/pion"
 	"whitelist-bypass/relay/tunnel"
 	"whitelist-bypass/relay/wbstream"
@@ -92,8 +93,8 @@ const (
 )
 
 func main() {
-	platform := flag.String("platform", "", "wbstream | telemost | vk (required)")
-	link := flag.String("link", "", "WB Stream room link, Telemost join URI, or VK call link (required)")
+	platform := flag.String("platform", "", "wbstream | telemost | vk | dion (required)")
+	link := flag.String("link", "", "WB Stream room link, Telemost join URI, VK call link, or DION event link (required)")
 	displayName := flag.String("name", "Joiner", "display name in the room")
 	socksPort := flag.Int("socks-port", 1080, "local SOCKS5 port")
 	socksUser := flag.String("socks-user", "", "optional SOCKS5 username")
@@ -265,6 +266,8 @@ func main() {
 	case "vk":
 		runVK(*link, *displayName, *tunnelMode, *vp8FPS, *vp8Batch,
 			onConnected, addCandidate)
+	case "dion", "dn":
+		runDion(*link, *displayName, onConnected, addCandidate)
 	default:
 		log.Fatalf("[config] unknown --platform %q", *platform)
 	}
@@ -314,6 +317,8 @@ func signalingHosts(platform, link string) []string {
 			hosts = append(hosts, u.Host)
 		}
 		return hosts
+	case "dion", "dn":
+		return []string{"dion.vc", "api.dion.vc", "api-clients.dion.vc"}
 	}
 	return nil
 }
@@ -417,6 +422,48 @@ func runVK(link, name, mode string, fps, batch int,
 	inner.OnConnected = onConnected
 	inner.OnRemoteCandidate = onCandidate
 	go inner.RunWithParams(string(patched))
+}
+
+func runDion(link, name string,
+	onConnected func(tunnel.DataTunnel),
+	onCandidate func(int, string),
+) {
+	room := dion.ParseRoom(link)
+	if room == "" {
+		log.Fatalf("[dion] --link must be a room id or https://dion.vc/event/<id>")
+	}
+	auth, event, err := dion.JoinAsGuest(nil, room, name)
+	if err != nil {
+		log.Fatalf("[dion] JoinAsGuest: %v", err)
+	}
+	log.Printf("[dion] room=%s event_id=%s", event.Slug, event.ID)
+
+	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(event.Slug))
+	if err != nil {
+		log.Fatalf("[dion] obfuscator: %v", err)
+	}
+
+	call := dion.NewCall(dion.CallConfig{
+		Auth:        auth,
+		Event:       event,
+		Obfuscator:  obf,
+		DisplayName: name,
+		LogFn:       log.Printf,
+		Role:        dion.RoleJoiner,
+	})
+	call.OnConnected = onConnected
+	call.OnRemoteSDP = func(sdp string) { onCandidate(0, sdp) }
+
+	if err := call.Start(); err != nil {
+		log.Fatalf("[dion] call.Start: %v", err)
+	}
+	go func() {
+		<-call.Done()
+		select {
+		case tunnelLostCh <- struct{}{}:
+		default:
+		}
+	}()
 }
 
 func resolveHostname(hostname string) (string, error) {

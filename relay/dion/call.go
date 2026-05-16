@@ -90,6 +90,7 @@ type Call struct {
 
 	OnConnected   func(tunnel.DataTunnel)
 	OnPeerRestart func()
+	OnRemoteSDP   func(sdp string)
 
 	done     chan struct{}
 	closeOnce sync.Once
@@ -338,6 +339,9 @@ func (c *Call) Start() error {
 		return fmt.Errorf("read loop ended before sdp_answer: %v", err)
 	case <-time.After(20 * time.Second):
 		return fmt.Errorf("timeout waiting for sdp_answer")
+	}
+	if c.OnRemoteSDP != nil {
+		c.OnRemoteSDP(answer.Answer)
 	}
 	if err := peer.PC.SetRemoteDescription(webrtc.SessionDescription{
 		Type: webrtc.SDPTypeAnswer,

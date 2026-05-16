@@ -32,6 +32,28 @@ const (
 	Origin         = "https://dion.vc"
 )
 
+// ParseRoom accepts a bare room id, a dion://<id> link, or a
+// https://dion.vc/event/<id> URL and returns the room id. Trailing query
+// strings and path segments are stripped.
+func ParseRoom(input string) string {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimPrefix(trimmed, "dion://")
+	trimmed = strings.TrimPrefix(trimmed, "https://")
+	trimmed = strings.TrimPrefix(trimmed, "http://")
+	trimmed = strings.TrimPrefix(trimmed, "dion.vc/")
+	trimmed = strings.TrimPrefix(trimmed, "event/")
+	if idx := strings.Index(trimmed, "?"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	if idx := strings.Index(trimmed, "/"); idx >= 0 {
+		trimmed = trimmed[:idx]
+	}
+	return trimmed
+}
+
 type GuestUser struct {
 	ID                string   `json:"id"`
 	Name              string   `json:"name"`

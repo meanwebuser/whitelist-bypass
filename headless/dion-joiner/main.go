@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strings"
 	"syscall"
 	"time"
 
@@ -42,12 +41,12 @@ func main() {
 	common.MaskingEnabled = true
 	log.Printf("[config] resources=%s name=%q", *resources, *displayName)
 
-	requestedSlug := normalizeRoom(*roomFlag)
-	if requestedSlug == "" {
-		log.Fatal("--room is required (room ID or https://dion.vc/event/<room>)")
+	requestedRoom := dion.ParseRoom(*roomFlag)
+	if requestedRoom == "" {
+		log.Fatal("--room is required (room id or https://dion.vc/event/<id>)")
 	}
 
-	auth, event, err := dion.JoinAsGuest(nil, requestedSlug, *displayName)
+	auth, event, err := dion.JoinAsGuest(nil, requestedRoom, *displayName)
 	if err != nil {
 		log.Fatalf("[FATAL] JoinAsGuest: %v", err)
 	}
@@ -129,20 +128,3 @@ func main() {
 	}
 }
 
-func normalizeRoom(input string) string {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return ""
-	}
-	trimmed = strings.TrimPrefix(trimmed, "https://")
-	trimmed = strings.TrimPrefix(trimmed, "http://")
-	trimmed = strings.TrimPrefix(trimmed, "dion.vc/")
-	trimmed = strings.TrimPrefix(trimmed, "event/")
-	if idx := strings.Index(trimmed, "?"); idx >= 0 {
-		trimmed = trimmed[:idx]
-	}
-	if idx := strings.Index(trimmed, "/"); idx >= 0 {
-		trimmed = trimmed[:idx]
-	}
-	return trimmed
-}

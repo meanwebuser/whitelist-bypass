@@ -485,7 +485,7 @@ export class TabManager {
 
   async buildCookiesZip(): Promise<Buffer> {
     const platforms: { filename: string; domains: string[] }[] = [
-      { filename: 'vk-cookies.json', domains: VK_COOKIE_DOMAINS },
+      { filename: 'cookies-vk.json', domains: VK_COOKIE_DOMAINS },
       { filename: 'cookies-yandex.json', domains: YANDEX_COOKIE_DOMAINS },
       { filename: 'cookies-dion.json', domains: DION_COOKIE_DOMAINS },
       { filename: 'cookies-wbstream.json', domains: WBSTREAM_COOKIE_DOMAINS },
