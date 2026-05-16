@@ -96,7 +96,8 @@ func (s *Session) Start() error {
 	})
 	s.lk.OnReady = s.onLKReady
 	s.lk.OnTrack = s.onRemoteTrack
-	s.lk.OnDataChannel = s.onRemoteDataChannel
+	// DC tunnel disabled: WB Stream DC mode is dead.
+	// s.lk.OnDataChannel = s.onRemoteDataChannel
 	s.lk.OnPubConnected = s.startTunnel
 	if s.cfg.AccessToken != "" && s.cfg.RoomID != "" {
 		s.lk.OnParticipantUpdate = s.onParticipantUpdate
@@ -150,24 +151,25 @@ func (s *Session) onLKReady() {
 		return
 	}
 
-	ordered := true
-	dc, err := pubPC.CreateDataChannel("_reliable", &webrtc.DataChannelInit{
-		Ordered: &ordered,
-	})
-	if err != nil {
-		s.cfg.LogFn("[lk] create reliable DC: %v", err)
-		return
-	}
-	s.mu.Lock()
-	s.pubReliableDC = dc
-	s.mu.Unlock()
-	dc.OnOpen(func() {
-		s.cfg.LogFn("[lk] reliable DC open")
-		s.mu.Lock()
-		s.pubReliableDCReady = true
-		s.mu.Unlock()
-		s.maybeStartDCTunnel()
-	})
+	// DC tunnel disabled: WB Stream DC mode is dead.
+	// ordered := true
+	// dc, err := pubPC.CreateDataChannel("_reliable", &webrtc.DataChannelInit{
+	// 	Ordered: &ordered,
+	// })
+	// if err != nil {
+	// 	s.cfg.LogFn("[lk] create reliable DC: %v", err)
+	// 	return
+	// }
+	// s.mu.Lock()
+	// s.pubReliableDC = dc
+	// s.mu.Unlock()
+	// dc.OnOpen(func() {
+	// 	s.cfg.LogFn("[lk] reliable DC open")
+	// 	s.mu.Lock()
+	// 	s.pubReliableDCReady = true
+	// 	s.mu.Unlock()
+	// 	s.maybeStartDCTunnel()
+	// })
 
 	if err := s.lk.SendAddTrack(track.ID(), "videochannel",
 		livekit.TrackTypeVideo, livekit.TrackSourceCamera, 1280, 720); err != nil {
@@ -202,13 +204,15 @@ func (s *Session) startTunnel() {
 	s.mu.Unlock()
 	s.cfg.LogFn("[lk] vp8 tunnel writer started")
 
-	if s.cfg.TunnelMode == TunnelModeVideo {
-		s.fireOnConnected(s.vp8tun)
-		return
-	}
-	if s.cfg.TunnelMode == "" {
-		s.vp8tun.SetOnData(func(payload []byte) { s.activate(s.vp8tun, payload) })
-	}
+	// DC tunnel disabled: only video mode is supported.
+	s.fireOnConnected(s.vp8tun)
+	// if s.cfg.TunnelMode == TunnelModeVideo {
+	// 	s.fireOnConnected(s.vp8tun)
+	// 	return
+	// }
+	// if s.cfg.TunnelMode == "" {
+	// 	s.vp8tun.SetOnData(func(payload []byte) { s.activate(s.vp8tun, payload) })
+	// }
 }
 
 func (s *Session) maybeStartDCTunnel() {

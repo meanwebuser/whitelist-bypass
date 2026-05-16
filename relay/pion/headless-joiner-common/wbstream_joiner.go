@@ -39,7 +39,6 @@ func (j *WBStreamHeadlessJoiner) RunWithParams(jsonParams string) {
 	var params struct {
 		RoomID      string `json:"roomId"`
 		DisplayName string `json:"displayName"`
-		TunnelMode  string `json:"tunnelMode"`
 		VP8FPS      int    `json:"vp8Fps"`
 		VP8Batch    int    `json:"vp8Batch"`
 	}
@@ -88,7 +87,6 @@ func (j *WBStreamHeadlessJoiner) RunWithParams(jsonParams string) {
 		RoomToken:      roomToken,
 		ServerURL:      serverURL,
 		DisplayName:    params.DisplayName,
-		TunnelMode:     params.TunnelMode,
 		Obfuscator:     obf,
 		LogFn:          j.logFn,
 		SettingEngine:  settingEngine,
