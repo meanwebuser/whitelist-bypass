@@ -83,6 +83,13 @@ function bindActionBarEvents(): void {
       'No DION cookies found.\nPlease log into DION (dion.vc) first.',
     );
   });
+  document.getElementById('btnWBStreamCookies')!.addEventListener('click', () => {
+    exportCookies(
+      'wbstream',
+      'cookies-wbstream.json',
+      'No WB Stream cookies found.\nPlease log into stream.wb.ru first.',
+    );
+  });
   document.getElementById('btnSettings')!.addEventListener('click', openSettings);
   document.getElementById('tabBot')!.addEventListener('click', () => {
     if (!tm.botSettings.token || !tm.botSettings.groupId) {

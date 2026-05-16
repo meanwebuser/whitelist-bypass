@@ -23,12 +23,15 @@ import {
   VK_COOKIE_DOMAINS,
   YANDEX_COOKIE_DOMAINS,
   DION_COOKIE_DOMAINS,
+  WBSTREAM_COOKIE_DOMAINS,
   VK_LOGIN_URL,
   YANDEX_LOGIN_URL,
   DION_LOGIN_URL,
+  WBSTREAM_LOGIN_URL,
   VK_AUTH_COOKIE,
   YANDEX_AUTH_COOKIE,
   DION_AUTH_COOKIE,
+  WBSTREAM_AUTH_COOKIE,
   LOG_CAPTURE_SNIPPET,
 } from '../constants';
 import { BotManager } from '../bot/bot-manager';
@@ -278,6 +281,16 @@ export class TabManager {
           binaryPath: this.headlessVKPath,
           getCookies: () => this.getVKCookies(),
         };
+      case Platform.WBStream:
+        return {
+          tunnelMode: TunnelMode.HeadlessWBStream,
+          authCookie: WBSTREAM_AUTH_COOKIE,
+          loginUrl: WBSTREAM_LOGIN_URL,
+          cookieDomains: WBSTREAM_COOKIE_DOMAINS,
+          platformName: 'WB Stream',
+          binaryPath: this.headlessWBStreamPath,
+          getCookies: () => this.getWBStreamCookies(),
+        };
       default:
         return null;
     }
@@ -306,22 +319,6 @@ export class TabManager {
       return;
     }
 
-    if (platform === Platform.WBStream) {
-      tab.tunnelMode = TunnelMode.HeadlessWBStream;
-      this.killRelay(tabId, tab);
-      const wbArgs = ['--resources', 'default'];
-      if (joinTarget) wbArgs.push('--room', joinTarget);
-      const proc = spawn(this.headlessWBStreamPath, wbArgs, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      tab.relay = proc;
-      this.attachProcessOutput(proc, tabId);
-      proc.on('close', (code) => {
-        this.sendLog(tabId, `Headless exited with code ${code}`);
-      });
-      return;
-    }
-
     const config = this.headlessConfig(platform);
     if (!config) {
       this.sendLog(tabId, `Unsupported headless platform: ${platform}`);
@@ -329,12 +326,19 @@ export class TabManager {
     }
     tab.tunnelMode = config.tunnelMode;
     let cookies = await config.getCookies();
-    if (!cookies.some((c) => c.name === config.authCookie)) {
+    const refreshCookie = platform === Platform.WBStream ? 'wbx-refresh' : config.authCookie;
+    const needsLogin = !cookies.some((c) => c.name === refreshCookie);
+    if (needsLogin) {
       this.sendLog(tabId, `No ${config.platformName} session found, opening login.`);
       if (this._mainWindow && !this._mainWindow.isDestroyed()) {
         this._mainWindow.webContents.send(IPC.LOGIN_REQUIRED, { tabId, url: config.loginUrl });
       }
-      await this.waitForLogin(config.cookieDomains, config.authCookie);
+      if (platform === Platform.WBStream) {
+        this.sendLog(tabId, 'Waiting for x_wbaas_token, wbx-refresh, wbx-validation-key...');
+        await this.waitForCookies(['x_wbaas_token', 'wbx-refresh', 'wbx-validation-key']);
+      } else {
+        await this.waitForLogin(config.cookieDomains, config.authCookie);
+      }
       if (this._mainWindow && !this._mainWindow.isDestroyed()) {
         this._mainWindow.webContents.send(IPC.LOGIN_DONE, { tabId });
       }
@@ -363,11 +367,8 @@ export class TabManager {
     proc.on('close', async (code) => {
       this.sendLog(tabId, `Headless exited with code ${code}`);
       if (sawAuthFailure) {
-        this.sendLog(tabId, `${config.platformName} session rejected (401), clearing and re-prompting login.`);
         await this.clearAuthCookies(config.cookieDomains, config.authCookie);
-        if (this.tabs.get(tabId) === tab) {
-          this.startHeadless(tabId, platform, args);
-        }
+        if (this.tabs.get(tabId) === tab) this.startHeadless(tabId, platform, args);
       }
     });
   }
@@ -481,6 +482,65 @@ export class TabManager {
     return all
       .filter((c) => c.domain != null && DION_COOKIE_DOMAINS.some((d) => c.domain!.includes(d)))
       .map((c) => ({ name: c.name, value: c.value }));
+  }
+
+  private waitForCookies(names: string[]): Promise<void> {
+    return new Promise((resolve) => {
+      const ses = session.fromPartition(SESSION_PARTITION);
+      const remaining = new Set(names);
+      const finish = () => {
+        ses.cookies.removeListener('changed', onChanged);
+        resolve();
+      };
+      const onChanged = (
+        _e: Electron.Event,
+        cookie: Electron.Cookie,
+        _cause: string,
+        removed: boolean,
+      ) => {
+        if (removed) return;
+        if (!remaining.has(cookie.name)) return;
+        remaining.delete(cookie.name);
+        if (remaining.size === 0) finish();
+      };
+      ses.cookies.on('changed', onChanged);
+      Promise.all(names.map((name) => ses.cookies.get({ name }))).then((results) => {
+        results.forEach((found, i) => {
+          if (found.length > 0) remaining.delete(names[i]);
+        });
+        if (remaining.size === 0) finish();
+      });
+    });
+  }
+
+  async getWBStreamCookies(): Promise<{ name: string; value: string }[]> {
+    const ses = session.fromPartition(SESSION_PARTITION);
+    const all = await ses.cookies.get({});
+    return all
+      .filter((c) => c.domain != null && WBSTREAM_COOKIE_DOMAINS.some((d) => c.domain!.includes(d)))
+      .map((c) => ({ name: c.name, value: c.value }));
+  }
+
+  async setWBStreamDeviceId(id: string): Promise<void> {
+    if (!id) return;
+    const ses = session.fromPartition(SESSION_PARTITION);
+    const existing = await ses.cookies.get({ url: 'https://stream.wb.ru/', name: '__wb_device_id' });
+    if (existing.length > 0 && existing[0].value === id) return;
+    try {
+      await ses.cookies.set({
+        url: 'https://stream.wb.ru/',
+        name: '__wb_device_id',
+        value: id,
+        domain: 'stream.wb.ru',
+        path: '/',
+        secure: true,
+        httpOnly: false,
+        expirationDate: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365 * 5,
+      });
+      console.log(`[wb-device-id] persisted ${id}`);
+    } catch (err) {
+      console.log(`[wb-device-id] failed to persist:`, err);
+    }
   }
 
 }

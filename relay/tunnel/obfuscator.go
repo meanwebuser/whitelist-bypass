@@ -18,10 +18,6 @@ var vp8Keepalive = []byte{
 	0x99, 0x84, 0x88, 0xfc,
 }
 
-// vp8Interframe is a valid VP8 P-frame header. SFUs that VP8-validate forwarded
-// packets accept payloads following a P-frame header much more loosely than
-// after a keyframe header, so data frames use this prefix while keepalives keep
-// the keyframe-shaped vp8Keepalive prefix.
 var vp8Interframe = []byte{
 	0xb1, 0x01, 0x00, 0x08, 0x11, 0x18, 0x00, 0x18,
 	0x00, 0x18, 0x58, 0x2f, 0xf4, 0x00, 0x08, 0x00,

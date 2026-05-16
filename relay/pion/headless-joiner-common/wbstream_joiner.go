@@ -61,12 +61,13 @@ func (j *WBStreamHeadlessJoiner) RunWithParams(jsonParams string) {
 	j.logFn("wbstream-joiner: room=%s name=%s vp8Fps=%d vp8Batch=%d", params.RoomID, params.DisplayName, params.VP8FPS, params.VP8Batch)
 	j.Status.EmitStatus(common.StatusConnecting)
 
-	roomID, roomToken, _, err := wbstream.AuthAndGetToken(httpClient, params.RoomID, params.DisplayName)
+	roomID, roomToken, _, serverURL, err := wbstream.AuthAndGetToken(httpClient, params.RoomID, params.DisplayName)
 	if err != nil {
 		j.logFn("wbstream-joiner: auth failed: %v", err)
 		j.Status.EmitStatusError("auth: " + err.Error())
 		return
 	}
+	j.logFn("wbstream-joiner: server=%s", serverURL)
 
 	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(roomID))
 	if err != nil {
@@ -85,6 +86,7 @@ func (j *WBStreamHeadlessJoiner) RunWithParams(jsonParams string) {
 
 	sess := wbstream.NewSession(wbstream.SessionConfig{
 		RoomToken:      roomToken,
+		ServerURL:      serverURL,
 		DisplayName:    params.DisplayName,
 		TunnelMode:     params.TunnelMode,
 		Obfuscator:     obf,

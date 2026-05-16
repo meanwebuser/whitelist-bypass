@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strings"
 	"syscall"
 
 	"whitelist-bypass/relay/common"
@@ -16,7 +15,7 @@ import (
 )
 
 func main() {
-	roomFlag := flag.String("room", "", "WB Stream room id or wbstream://<id> (required)")
+	roomFlag := flag.String("room", "", "WB Stream room id, wbstream://<id>, or https://stream.wb.ru/room/<id> (required)")
 	displayName := flag.String("name", "Joiner", "display name in the room")
 	socksPort := flag.Int("socks-port", 1080, "SOCKS5 listen port")
 	socksUser := flag.String("socks-user", "", "SOCKS5 username (optional)")
@@ -47,12 +46,12 @@ func main() {
 	}
 	common.MaskingEnabled = true
 
-	roomID := strings.TrimPrefix(strings.TrimSpace(*roomFlag), "wbstream://")
-	id, roomToken, _, err := wbstream.AuthAndGetToken(nil, roomID, *displayName)
+	roomID := wbstream.ParseRoomID(*roomFlag)
+	id, roomToken, _, serverURL, err := wbstream.AuthAndGetToken(nil, roomID, *displayName)
 	if err != nil {
 		log.Fatalf("[auth] %v", err)
 	}
-	log.Printf("[auth] room=%s mode=%s", id, *tunnelMode)
+	log.Printf("[auth] room=%s server=%s mode=%s", id, serverURL, *tunnelMode)
 
 	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(id))
 	if err != nil {
@@ -62,6 +61,7 @@ func main() {
 
 	sess := wbstream.NewSession(wbstream.SessionConfig{
 		RoomToken:   roomToken,
+		ServerURL:   serverURL,
 		DisplayName: *displayName,
 		TunnelMode:  *tunnelMode,
 		Obfuscator:  obf,

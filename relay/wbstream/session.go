@@ -31,6 +31,7 @@ const (
 
 type SessionConfig struct {
 	RoomToken      string
+	ServerURL      string
 	DisplayName    string
 	TunnelMode     string
 	Obfuscator     *tunnel.TunnelObfuscator
@@ -84,7 +85,7 @@ func (s *Session) Done() <-chan struct{} { return s.done }
 
 func (s *Session) Start() error {
 	s.lk = livekit.NewClient(livekit.Config{
-		ServerURL:      WSURL,
+		ServerURL:      s.cfg.ServerURL,
 		Token:          s.cfg.RoomToken,
 		Origin:         Origin,
 		UserAgent:      common.UserAgent,

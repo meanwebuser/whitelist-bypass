@@ -322,12 +322,12 @@ func runWBStream(link, name, mode string, fps, batch int,
 	onConnected func(tunnel.DataTunnel),
 	onCandidate func(int, string),
 ) {
-	id := strings.TrimPrefix(strings.TrimSpace(link), "wbstream://")
-	roomID, roomToken, _, err := wbstream.AuthAndGetToken(nil, id, name)
+	id := wbstream.ParseRoomID(link)
+	roomID, roomToken, _, serverURL, err := wbstream.AuthAndGetToken(nil, id, name)
 	if err != nil {
 		log.Fatalf("[wb] auth: %v", err)
 	}
-	log.Printf("[wb] room=%s mode=%s", roomID, mode)
+	log.Printf("[wb] room=%s server=%s mode=%s", roomID, serverURL, mode)
 
 	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(roomID))
 	if err != nil {
@@ -336,6 +336,7 @@ func runWBStream(link, name, mode string, fps, batch int,
 
 	sess := wbstream.NewSession(wbstream.SessionConfig{
 		RoomToken:   roomToken,
+		ServerURL:   serverURL,
 		DisplayName: name,
 		TunnelMode:  mode,
 		Obfuscator:  obf,

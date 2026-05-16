@@ -67,9 +67,37 @@ export function createWindow(tabManager: TabManager): BrowserWindow {
 
   const autoclickers = new Map<number, { telemost: TelemostAutoclick; vk: VkAutoclick }>();
 
+  const wbDeviceIdHook = `(function(){
+    try {
+      var key = 'wb_auth_api_device_id';
+      var existing = localStorage.getItem(key);
+      if (existing) console.log('[WB_DEVICE_ID]', existing);
+      var orig = Storage.prototype.setItem;
+      Storage.prototype.setItem = function(k, v) {
+        if (k === key) console.log('[WB_DEVICE_ID]', v);
+        return orig.apply(this, arguments);
+      };
+    } catch (e) {}
+  })();`;
+
   win.webContents.on('did-attach-webview', (_e, wvContents) => {
     wvContents.on('before-input-event', (_e, input) => {
       if (input.key === 'F12') wvContents.openDevTools();
+    });
+
+    wvContents.on('will-navigate', (event, url) => {
+      if (!url.startsWith('http://') && !url.startsWith('https://')) event.preventDefault();
+    });
+    wvContents.setWindowOpenHandler(({ url }) => {
+      if (!url.startsWith('http://') && !url.startsWith('https://')) return { action: 'deny' };
+      return { action: 'allow' };
+    });
+
+    wvContents.on('dom-ready', () => {
+      const url = wvContents.getURL();
+      if (url.includes('stream.wb.ru')) {
+        wvContents.executeJavaScript(wbDeviceIdHook, true).catch(() => {});
+      }
     });
 
     wvContents.on('did-navigate', (_e, url) => {
@@ -101,6 +129,11 @@ export function createWindow(tabManager: TabManager): BrowserWindow {
 
       handleBotCallLink(tabManager, msg, Platform.VK);
       handleBotCallLink(tabManager, msg, Platform.Telemost);
+
+      const deviceIdMatch = msg.match(/\[WB_DEVICE_ID\]\s+(\S+)/);
+      if (deviceIdMatch) {
+        tabManager.setWBStreamDeviceId(deviceIdMatch[1]).catch(() => {});
+      }
 
       const callStatus = parseCallStatus(msg);
       if (callStatus) {
