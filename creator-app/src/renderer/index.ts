@@ -9,7 +9,7 @@ import {
   closeError,
   clearLog,
   saveLogs,
-  exportCookies,
+  exportCookiesZip,
   copyToClipboard,
   renameTab,
   attachLoginWebview,
@@ -66,30 +66,7 @@ function bindToolbarEvents(): void {
 }
 
 function bindActionBarEvents(): void {
-  document.getElementById('btnVkCookies')!.addEventListener('click', () => {
-    exportCookies('.vk.com', 'vk-cookies.json', 'No VK cookies found.\nPlease log into VK first.');
-  });
-  document.getElementById('btnYandexCookies')!.addEventListener('click', () => {
-    exportCookies(
-      'yandex',
-      'cookies-yandex.json',
-      'No Yandex cookies found.\nPlease log into Yandex (telemost.yandex.ru) first.',
-    );
-  });
-  document.getElementById('btnDionCookies')!.addEventListener('click', () => {
-    exportCookies(
-      'dion',
-      'cookies-dion.json',
-      'No DION cookies found.\nPlease log into DION (dion.vc) first.',
-    );
-  });
-  document.getElementById('btnWBStreamCookies')!.addEventListener('click', () => {
-    exportCookies(
-      'wbstream',
-      'cookies-wbstream.json',
-      'No WB Stream cookies found.\nPlease log into stream.wb.ru first.',
-    );
-  });
+  document.getElementById('btnExportCookies')!.addEventListener('click', exportCookiesZip);
   document.getElementById('btnSettings')!.addEventListener('click', openSettings);
   document.getElementById('tabBot')!.addEventListener('click', () => {
     if (!tm.botSettings.token || !tm.botSettings.groupId) {

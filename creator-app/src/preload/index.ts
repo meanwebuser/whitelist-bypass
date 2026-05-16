@@ -32,8 +32,8 @@ import { IPC } from '../constants';
   onBotError(cb: (msg: string) => void) {
     ipcRenderer.on(IPC.BOT_ERROR, (_e, msg) => cb(msg));
   },
-  getCookies(domain: string) {
-    return ipcRenderer.invoke(IPC.GET_COOKIES, domain);
+  exportCookiesZip() {
+    return ipcRenderer.invoke(IPC.EXPORT_COOKIES_ZIP);
   },
   startHeadless(tabId: string, platform: string, args: any) {
     return ipcRenderer.invoke(IPC.START_HEADLESS, tabId, platform, args);

@@ -35,17 +35,8 @@ import {
   LOG_CAPTURE_SNIPPET,
 } from '../constants';
 import { BotManager } from '../bot/bot-manager';
-
-function resolveResourcePath(devRelative: string, packedName: string): string {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath!, packedName);
-  }
-  return path.join(__dirname, '..', '..', '..', devRelative);
-}
-
-function binaryName(base: string): string {
-  return process.platform === 'win32' ? base + '.exe' : base;
-}
+import { buildStoredZip } from './util/zip';
+import { resolveResourcePath, binaryName } from './util/paths';
 
 export class TabManager {
   private tabs = new Map<string, TabState>();
@@ -248,7 +239,6 @@ export class TabManager {
     cookieDomains: string[];
     platformName: string;
     binaryPath: string;
-    getCookies: () => Promise<{ name: string; value: string }[]>;
   } | null {
     switch (platform) {
       case Platform.Telemost:
@@ -259,7 +249,6 @@ export class TabManager {
           cookieDomains: YANDEX_COOKIE_DOMAINS,
           platformName: 'Yandex',
           binaryPath: this.headlessTelemostPath,
-          getCookies: () => this.getYandexCookies(),
         };
       case Platform.Dion:
         return {
@@ -269,7 +258,6 @@ export class TabManager {
           cookieDomains: DION_COOKIE_DOMAINS,
           platformName: 'DION',
           binaryPath: this.headlessDionPath,
-          getCookies: () => this.getDionCookies(),
         };
       case Platform.VK:
         return {
@@ -279,7 +267,6 @@ export class TabManager {
           cookieDomains: VK_COOKIE_DOMAINS,
           platformName: 'VK',
           binaryPath: this.headlessVKPath,
-          getCookies: () => this.getVKCookies(),
         };
       case Platform.WBStream:
         return {
@@ -289,7 +276,6 @@ export class TabManager {
           cookieDomains: WBSTREAM_COOKIE_DOMAINS,
           platformName: 'WB Stream',
           binaryPath: this.headlessWBStreamPath,
-          getCookies: () => this.getWBStreamCookies(),
         };
       default:
         return null;
@@ -325,7 +311,7 @@ export class TabManager {
       return;
     }
     tab.tunnelMode = config.tunnelMode;
-    let cookies = await config.getCookies();
+    let cookies = await this.getCookiesForDomains(config.cookieDomains);
     const refreshCookie = platform === Platform.WBStream ? 'wbx-refresh' : config.authCookie;
     const needsLogin = !cookies.some((c) => c.name === refreshCookie);
     if (needsLogin) {
@@ -343,7 +329,7 @@ export class TabManager {
         this._mainWindow.webContents.send(IPC.LOGIN_DONE, { tabId });
       }
       this.sendLog(tabId, `${config.platformName} login captured.`);
-      cookies = await config.getCookies();
+      cookies = await this.getCookiesForDomains(config.cookieDomains);
     }
     this.sendLog(tabId, `${config.platformName} cookies (${cookies.length}): ${cookies.map((c) => c.name).join(', ')}`);
     this.killRelay(tabId, tab);
@@ -460,27 +446,11 @@ export class TabManager {
     setTimeout(() => this.startRelay(tabId, tab), RELAY_RESTART_DELAY_MS);
   }
 
-  async getVKCookies(): Promise<{ name: string; value: string }[]> {
+  private async getCookiesForDomains(domains: string[]): Promise<{ name: string; value: string }[]> {
     const ses = session.fromPartition(SESSION_PARTITION);
     const all = await ses.cookies.get({});
     return all
-      .filter((c) => c.domain != null && VK_COOKIE_DOMAINS.some((d) => c.domain!.includes(d)))
-      .map((c) => ({ name: c.name, value: c.value }));
-  }
-
-  async getYandexCookies(): Promise<{ name: string; value: string }[]> {
-    const ses = session.fromPartition(SESSION_PARTITION);
-    const all = await ses.cookies.get({});
-    return all
-      .filter((c) => c.domain != null && YANDEX_COOKIE_DOMAINS.some((d) => c.domain!.includes(d)))
-      .map((c) => ({ name: c.name, value: c.value }));
-  }
-
-  async getDionCookies(): Promise<{ name: string; value: string }[]> {
-    const ses = session.fromPartition(SESSION_PARTITION);
-    const all = await ses.cookies.get({});
-    return all
-      .filter((c) => c.domain != null && DION_COOKIE_DOMAINS.some((d) => c.domain!.includes(d)))
+      .filter((c) => c.domain != null && domains.some((d) => c.domain!.includes(d)))
       .map((c) => ({ name: c.name, value: c.value }));
   }
 
@@ -513,12 +483,19 @@ export class TabManager {
     });
   }
 
-  async getWBStreamCookies(): Promise<{ name: string; value: string }[]> {
-    const ses = session.fromPartition(SESSION_PARTITION);
-    const all = await ses.cookies.get({});
-    return all
-      .filter((c) => c.domain != null && WBSTREAM_COOKIE_DOMAINS.some((d) => c.domain!.includes(d)))
-      .map((c) => ({ name: c.name, value: c.value }));
+  async buildCookiesZip(): Promise<Buffer> {
+    const platforms: { filename: string; domains: string[] }[] = [
+      { filename: 'vk-cookies.json', domains: VK_COOKIE_DOMAINS },
+      { filename: 'cookies-yandex.json', domains: YANDEX_COOKIE_DOMAINS },
+      { filename: 'cookies-dion.json', domains: DION_COOKIE_DOMAINS },
+      { filename: 'cookies-wbstream.json', domains: WBSTREAM_COOKIE_DOMAINS },
+    ];
+    const cookies = await Promise.all(platforms.map((p) => this.getCookiesForDomains(p.domains)));
+    const entries = platforms.map((p, i) => ({
+      name: p.filename,
+      data: Buffer.from(JSON.stringify(cookies[i], null, 2), 'utf8'),
+    }));
+    return buildStoredZip(entries);
   }
 
   async setWBStreamDeviceId(id: string): Promise<void> {

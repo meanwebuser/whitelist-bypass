@@ -285,17 +285,12 @@ export function saveLogs(): void {
   URL.revokeObjectURL(anchor.href);
 }
 
-export function exportCookies(domain: string, filename: string, errorMsg: string): void {
-  window.bridge.getCookies(domain).then((cookies) => {
-    if (!cookies.length) {
-      showError(errorMsg);
-      return;
-    }
-    const simple = cookies.map((cookie) => ({ name: cookie.name, value: cookie.value }));
-    const blob = new Blob([JSON.stringify(simple, null, 2)], { type: 'application/json' });
+export function exportCookiesZip(): void {
+  window.bridge.exportCookiesZip().then((bytes) => {
+    const blob = new Blob([new Uint8Array(bytes)], { type: 'application/zip' });
     const anchor = document.createElement('a');
     anchor.href = URL.createObjectURL(blob);
-    anchor.download = filename;
+    anchor.download = 'cookies.zip';
     anchor.click();
     URL.revokeObjectURL(anchor.href);
   });

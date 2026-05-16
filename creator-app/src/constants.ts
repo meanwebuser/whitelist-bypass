@@ -58,7 +58,7 @@ export enum IPC {
   CLOSE_TAB = 'close-tab',
   START_BOT = 'start-bot',
   STOP_BOT = 'stop-bot',
-  GET_COOKIES = 'get-cookies',
+  EXPORT_COOKIES_ZIP = 'export-cookies-zip',
   RELAY_LOG = 'relay-log',
   CREATE_BOT_TAB = 'create-bot-tab',
   CLOSE_BOT_TAB = 'close-bot-tab',

@@ -4,7 +4,8 @@ import { TabManager } from './tab-manager';
 import { VkAutoclick } from '../autoclick/vk';
 import { TelemostAutoclick } from '../autoclick/telemost';
 import { SESSION_PARTITION, USER_AGENT, WINDOW_WIDTH, WINDOW_HEIGHT } from '../constants';
-import { Platform, CallStatus } from '../types';
+import { Platform } from '../types';
+import { parseCallStatus, extractTaggedCallLink, parseWBDeviceId } from './util/log-tags';
 
 function stripCSP(ses: Session): void {
   ses.webRequest.onHeadersReceived((details, callback) => {
@@ -15,28 +16,6 @@ function stripCSP(ses: Session): void {
     delete headers['Content-Security-Policy-Report-Only'];
     callback({ responseHeaders: headers });
   });
-}
-
-function parseCallStatus(msg: string): { tabId: string; status: CallStatus } | null {
-  const prefix = '[CALL_STATUS] ';
-  const idx = msg.indexOf(prefix);
-  if (idx === -1) return null;
-  const parts = msg.substring(idx + prefix.length);
-  const colonIdx = parts.indexOf(':');
-  if (colonIdx === -1) return null;
-  const status = parts.substring(colonIdx + 1);
-  return {
-    tabId: parts.substring(0, colonIdx),
-    status: status === CallStatus.Active ? CallStatus.Active : CallStatus.Inactive,
-  };
-}
-
-function extractTaggedCallLink(msg: string, platform: Platform): { tabId: string; link: string } | null {
-  const tag = platform === Platform.Telemost ? 'Telemost' : 'VKCalls';
-  const re = new RegExp('\\[BOT\\] ' + tag + '\\[([^\\]]*)\\]: call link:\\s*(.+)$');
-  const match = msg.match(re);
-  if (!match) return null;
-  return { tabId: match[1].trim(), link: match[2].trim() };
 }
 
 export function createWindow(tabManager: TabManager): BrowserWindow {
@@ -130,9 +109,9 @@ export function createWindow(tabManager: TabManager): BrowserWindow {
       handleBotCallLink(tabManager, msg, Platform.VK);
       handleBotCallLink(tabManager, msg, Platform.Telemost);
 
-      const deviceIdMatch = msg.match(/\[WB_DEVICE_ID\]\s+(\S+)/);
-      if (deviceIdMatch) {
-        tabManager.setWBStreamDeviceId(deviceIdMatch[1]).catch(() => {});
+      const deviceId = parseWBDeviceId(msg);
+      if (deviceId) {
+        tabManager.setWBStreamDeviceId(deviceId).catch(() => {});
       }
 
       const callStatus = parseCallStatus(msg);

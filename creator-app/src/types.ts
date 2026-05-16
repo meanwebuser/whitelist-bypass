@@ -141,7 +141,7 @@ export interface Bridge {
   onCreateBotTab(cb: (data: BotTabData) => void): void;
   getCallCreatorCode(scriptFile: string): Promise<string>;
   onBotError(cb: (msg: string) => void): void;
-  getCookies(domain: string): Promise<Electron.Cookie[]>;
+  exportCookiesZip(): Promise<Uint8Array>;
   startHeadless(tabId: string, platform: string, args: HeadlessStartArgs): Promise<void>;
   sendBotCallLink(tabId: string, link: string): Promise<void>;
   onCloseBotTab(cb: (data: { tabId: string }) => void): void;

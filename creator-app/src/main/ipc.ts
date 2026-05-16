@@ -1,16 +1,9 @@
-import { ipcMain, session } from 'electron';
+import { ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { TabManager } from './tab-manager';
 import { BotManager } from '../bot/bot-manager';
-import {
-  IPC,
-  SESSION_PARTITION,
-  VK_COOKIE_DOMAINS,
-  YANDEX_COOKIE_DOMAINS,
-  DION_COOKIE_DOMAINS,
-  WBSTREAM_COOKIE_DOMAINS,
-} from '../constants';
+import { IPC } from '../constants';
 import { TunnelMode, Platform, BotSettings, HeadlessStartArgs } from '../types';
 
 export function registerIpcHandlers(tabManager: TabManager): void {
@@ -96,18 +89,7 @@ export function registerIpcHandlers(tabManager: TabManager): void {
     tabManager.sendBotCallLink(tabId, link);
   });
 
-  ipcMain.handle(IPC.GET_COOKIES, async (_e, domain: string) => {
-    const ses = session.fromPartition(SESSION_PARTITION);
-    const all = await ses.cookies.get({});
-    let domains: string[];
-    if (domain === 'yandex') domains = YANDEX_COOKIE_DOMAINS;
-    else if (domain === 'dion') domains = DION_COOKIE_DOMAINS;
-    else if (domain === 'wbstream') domains = WBSTREAM_COOKIE_DOMAINS;
-    else domains = VK_COOKIE_DOMAINS;
-    const filtered = all.filter((cookie) => {
-      return cookie.domain != null && domains.some((d) => cookie.domain!.includes(d));
-    });
-    console.log(`[COOKIES] total: ${all.length} ${domain}: ${filtered.length}`);
-    return filtered;
+  ipcMain.handle(IPC.EXPORT_COOKIES_ZIP, async () => {
+    return tabManager.buildCookiesZip();
   });
 }
