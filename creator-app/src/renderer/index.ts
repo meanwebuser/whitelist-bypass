@@ -23,6 +23,7 @@ declare const window: Window & { bridge: Bridge };
 const tm = new RendererTabManager(() => {
   renderTabs(tm);
   renderContent(tm);
+  renderBotButton(tm);
 });
 
 function bindTabBarEvents(): void {
@@ -183,13 +184,13 @@ function init(): void {
     tm.createBotTab(data);
     (document.getElementById('modeSelect') as HTMLSelectElement).value = data.mode;
     if (data.mode === TunnelMode.HeadlessVK) {
-      tm.switchToHeadless(Platform.VK);
+      tm.switchToHeadless(Platform.VK, data.joinTarget);
     } else if (data.mode === TunnelMode.HeadlessTelemost) {
-      tm.switchToHeadless(Platform.Telemost);
+      tm.switchToHeadless(Platform.Telemost, data.joinTarget);
     } else if (data.mode === TunnelMode.HeadlessWBStream) {
-      tm.switchToHeadless(Platform.WBStream);
+      tm.switchToHeadless(Platform.WBStream, data.joinTarget);
     } else if (data.mode === TunnelMode.HeadlessDion) {
-      tm.switchToHeadless(Platform.Dion);
+      tm.switchToHeadless(Platform.Dion, data.joinTarget);
     } else {
       const url = data.platform === Platform.Telemost ? TELEMOST_URL : VK_IM_URL;
       loadURL(tm, url);

@@ -59,7 +59,7 @@ func main() {
 	rawCookies := common.LoadCookies(*cookiesPath)
 	deviceID := common.CookieValue(rawCookies, "__wb_device_id")
 	if deviceID == "" {
-		log.Fatalf("[auth] cookies file is missing __wb_device_id; re-export via creator-app's 'WB Cookies' button")
+		log.Fatalf("[auth] cookies file is missing __wb_device_id; re-export via creator-app's 'Export Cookies' button")
 	}
 	cookieHeader := common.FilterCookies(rawCookies, wbstream.WBStreamCookieAllowlist)
 	bearer, err := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)

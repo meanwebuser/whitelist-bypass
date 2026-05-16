@@ -55,6 +55,7 @@ export function registerIpcHandlers(tabManager: TabManager): void {
           mode: tabConfig.mode,
           peerId: tabConfig.peerId,
           platform: tabConfig.platform || Platform.VK,
+          joinTarget: tabConfig.joinTarget,
         });
         console.log('[BOT] Created tab:', tabId, 'mode:', tabConfig.mode, 'platform:', tabConfig.platform);
       },

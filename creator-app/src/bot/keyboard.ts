@@ -27,18 +27,36 @@ export function createMainKeyboard() {
     buttons: [
       [
         { action: { type: 'text', label: '🟦 VK', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'headless' }) } },
-        { action: { type: 'text', label: 'DC (legacy)', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'dc' }) } },
-        { action: { type: 'text', label: 'Video (legacy)', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'video' }) } },
-      ],
-      [
         { action: { type: 'text', label: '🟥 Telemost', payload: JSON.stringify({ cmd: BotCommand.TM, mode: 'headless' }) } },
-        { action: { type: 'text', label: 'Video (legacy)', payload: JSON.stringify({ cmd: BotCommand.TM, mode: 'video' }) } },
       ],
       [
         { action: { type: 'text', label: '🟪 WBStream', payload: JSON.stringify({ cmd: BotCommand.WB, mode: 'headless' }) } },
+        { action: { type: 'text', label: '🟩 DION', payload: JSON.stringify({ cmd: BotCommand.Dion, mode: 'headless' }) } },
+      ],
+      [
+        { action: { type: 'text', label: '🔗 Join by link', payload: JSON.stringify({ cmd: BotCommand.JoinPrompt }) } },
       ],
       [
         { action: { type: 'text', label: '📋 Active Tabs', payload: JSON.stringify({ cmd: BotCommand.List }) } },
+      ],
+      [
+        { action: { type: 'text', label: 'ℹ️ Buttons below: old webview mode', payload: JSON.stringify({ cmd: BotCommand.Noop }) } },
+      ],
+      [
+        { action: { type: 'text', label: '🟦 DC (legacy)', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'dc' }) } },
+        { action: { type: 'text', label: '🟦 Video (legacy)', payload: JSON.stringify({ cmd: BotCommand.VK, mode: 'video' }) } },
+        { action: { type: 'text', label: '🟥 Video (legacy)', payload: JSON.stringify({ cmd: BotCommand.TM, mode: 'video' }) } },
+      ],
+    ],
+  };
+}
+
+export function createWaitingKeyboard() {
+  return {
+    one_time: false,
+    buttons: [
+      [
+        { action: { type: 'text', label: '◀️ Back', payload: JSON.stringify({ cmd: BotCommand.Menu }) } },
       ],
     ],
   };

@@ -315,6 +315,14 @@ export class TabManager {
     const refreshCookie = platform === Platform.WBStream ? 'wbx-refresh' : config.authCookie;
     const needsLogin = !cookies.some((c) => c.name === refreshCookie);
     if (needsLogin) {
+      if (tab.isBot) {
+        const reply = `Please log into ${config.platformName} in the creator app first, then try again.`;
+        this.sendLog(tabId, reply);
+        if (this._botManager && tab.peerId != null) {
+          await this._botManager.sendMessage(tab.peerId, reply);
+        }
+        return;
+      }
       this.sendLog(tabId, `No ${config.platformName} session found, opening login.`);
       if (this._mainWindow && !this._mainWindow.isDestroyed()) {
         this._mainWindow.webContents.send(IPC.LOGIN_REQUIRED, { tabId, url: config.loginUrl });
@@ -332,10 +340,10 @@ export class TabManager {
       cookies = await this.getCookiesForDomains(config.cookieDomains);
     }
     this.sendLog(tabId, `${config.platformName} cookies (${cookies.length}): ${cookies.map((c) => c.name).join(', ')}`);
-    this.killRelay(tabId, tab);
     const cookiesPath = path.join(app.getPath('userData'), `cookies-${platform}.json`);
     await fs.writeFile(cookiesPath, JSON.stringify(cookies));
     const spawnArgs = ['--resources', 'default', '--cookies', cookiesPath];
+    this.killRelay(tabId, tab);
     if (joinTarget) {
       const flag = this.joinFlagFor(platform);
       if (flag) spawnArgs.push(flag, joinTarget);

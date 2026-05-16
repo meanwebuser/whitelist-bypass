@@ -128,8 +128,6 @@ export function renderContent(tm: RendererTabManager): void {
   document.getElementById('relayLog')!.textContent = activeTab.relayLogs || '';
   document.getElementById('hookLog')!.textContent = activeTab.hookLogs || '';
   scrollLogs();
-
-  renderBotButton(tm);
 }
 
 export function renderBotButton(tm: RendererTabManager): void {

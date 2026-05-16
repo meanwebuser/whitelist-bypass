@@ -43,7 +43,7 @@ export class RendererTabManager {
     return tabId;
   }
 
-  switchToHeadless(platform: Platform): void {
+  switchToHeadless(platform: Platform, joinTarget?: string): void {
     if (!this.activeTabId) return;
     const tab = this.tabs[this.activeTabId];
     if (tab.wv) tab.wv.remove();
@@ -75,7 +75,11 @@ export class RendererTabManager {
     tab.relayLogs = '';
     tab.hookLogs = '';
     if (tab.isBot) {
-      this.startHeadlessCall({ mode: HeadlessMode.Create });
+      if (joinTarget) {
+        this.startHeadlessCall({ mode: HeadlessMode.Join, target: joinTarget });
+      } else {
+        this.startHeadlessCall({ mode: HeadlessMode.Create });
+      }
     }
     this.onRender();
   }
@@ -113,6 +117,7 @@ export class RendererTabManager {
         isBot: true,
         peerId: data.peerId,
         platform: data.platform,
+        joinedByLink: !!data.joinTarget,
       };
     }
     this.selectTab(data.tabId);
@@ -191,7 +196,8 @@ export class RendererTabManager {
     if (trimmed.includes(HeadlessLogMarker.JOIN_LINK) && tab.callInfo) {
       tab.callInfo.joinLink = trimmed.split(HeadlessLogMarker.JOIN_LINK)[1].trim();
       if (tab.isBot) {
-        window.bridge.sendBotCallLink(tabId, tab.callInfo.joinLink);
+        const reply = tab.joinedByLink ? 'Joined successfully' : tab.callInfo.joinLink;
+        window.bridge.sendBotCallLink(tabId, reply);
       }
       changed = true;
     }

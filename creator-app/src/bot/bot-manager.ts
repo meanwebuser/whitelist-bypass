@@ -4,6 +4,7 @@ import { VK_API_VERSION, VK_API_BASE_URL, BOT_POLL_RETRY_DELAY_MS, BOT_POLL_WAIT
 import {
   createMainKeyboard,
   createListKeyboard,
+  createWaitingKeyboard,
   findTabByShortId,
   generateShortId,
   padShortId,
@@ -52,6 +53,7 @@ export class BotManager {
   private key: string | null = null;
   private server: string | null = null;
   private running = false;
+  private awaitingJoinLink = new Set<number>();
   onError: ((msg: string) => void) | null = null;
 
   constructor(
@@ -171,15 +173,86 @@ export class BotManager {
       if (payload.cmd === BotCommand.VK) cmdPrefix = '/vk';
       else if (payload.cmd === BotCommand.TM) cmdPrefix = '/tm';
       else if (payload.cmd === BotCommand.WB) cmdPrefix = '/wb';
+      else if (payload.cmd === BotCommand.Dion) cmdPrefix = '/dion';
       if (cmdPrefix && payload.mode) {
         text = `${cmdPrefix} ${payload.mode}`;
       }
     }
 
+    const wasAwaiting = this.awaitingJoinLink.has(peerId);
+    const joinLink = this.detectJoinLink(text);
+    if (joinLink) {
+      this.awaitingJoinLink.delete(peerId);
+      console.log('[BOT] Detected join link for', joinLink.platform, ':', joinLink.target);
+      this.onCreateTab({
+        mode: this.headlessModeFor(joinLink.platform),
+        peerId,
+        platform: joinLink.platform,
+        joinTarget: joinLink.target,
+      });
+      await this.sendMessage(peerId, `Joining ${this.platformLabel(joinLink.platform)} call`, createMainKeyboard());
+      return;
+    }
+
+    if (wasAwaiting) {
+      await this.sendMessage(
+        peerId,
+        "Couldn't detect a VK / Telemost / WBStream / DION link in that message. Paste a join link or press Back.",
+        createWaitingKeyboard(),
+      );
+      return;
+    }
+
     await this.handleTextCommand(text, peerId);
   }
 
+  private detectJoinLink(text: string): { platform: Platform; target: string } | null {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('wbstream://') || lower.includes('stream.wb.ru')) {
+      return { platform: Platform.WBStream, target: trimmed };
+    }
+    if (lower.includes('telemost.yandex')) {
+      return { platform: Platform.Telemost, target: trimmed };
+    }
+    if (lower.startsWith('dion://') || lower.includes('dion.vc')) {
+      return { platform: Platform.Dion, target: trimmed };
+    }
+    if (lower.includes('vk.com/call/join')) {
+      return { platform: Platform.VK, target: trimmed };
+    }
+    return null;
+  }
+
+  private headlessModeFor(platform: Platform): TunnelMode {
+    switch (platform) {
+      case Platform.Telemost: return TunnelMode.HeadlessTelemost;
+      case Platform.WBStream: return TunnelMode.HeadlessWBStream;
+      case Platform.Dion: return TunnelMode.HeadlessDion;
+      default: return TunnelMode.HeadlessVK;
+    }
+  }
+
+  private platformLabel(platform: Platform): string {
+    switch (platform) {
+      case Platform.Telemost: return 'Telemost';
+      case Platform.WBStream: return 'WB Stream';
+      case Platform.Dion: return 'DION';
+      default: return 'VK';
+    }
+  }
+
   private async handlePayloadCommand(payload: ButtonPayload, peerId: number): Promise<boolean> {
+    if (payload.cmd === BotCommand.Noop) {
+      return true;
+    }
+    if (payload.cmd === BotCommand.JoinPrompt) {
+      this.awaitingJoinLink.add(peerId);
+      await this.sendMessage(peerId, 'Paste a join link', createWaitingKeyboard());
+      return true;
+    }
+    this.awaitingJoinLink.delete(peerId);
     if (payload.cmd === BotCommand.List) {
       await this.showList(peerId);
       return true;
@@ -203,6 +276,7 @@ export class BotManager {
 
   private parseTunnelMode(text: string, platform: Platform): TunnelMode {
     if (platform === Platform.WBStream) return TunnelMode.HeadlessWBStream;
+    if (platform === Platform.Dion) return TunnelMode.HeadlessDion;
     if (text.includes('headless')) {
       return platform === Platform.VK ? TunnelMode.HeadlessVK : TunnelMode.HeadlessTelemost;
     }
@@ -215,6 +289,7 @@ export class BotManager {
       case TunnelMode.HeadlessVK:
       case TunnelMode.HeadlessTelemost:
       case TunnelMode.HeadlessWBStream:
+      case TunnelMode.HeadlessDion:
         return 'Headless';
       case TunnelMode.PionVideo:
         return 'Video';
@@ -239,6 +314,11 @@ export class BotManager {
       console.log('[BOT] Creating WB Stream tab with mode:', mode);
       this.onCreateTab({ mode, peerId, platform: Platform.WBStream });
       await this.sendMessage(peerId, `Creating WB Stream room (${this.tunnelModeLabel(mode)})`, createMainKeyboard());
+    } else if (text.startsWith('/dion')) {
+      const mode = this.parseTunnelMode(text, Platform.Dion);
+      console.log('[BOT] Creating DION tab with mode:', mode);
+      this.onCreateTab({ mode, peerId, platform: Platform.Dion });
+      await this.sendMessage(peerId, `Creating DION room (${this.tunnelModeLabel(mode)})`, createMainKeyboard());
     } else if (text === '/list') {
       await this.showList(peerId);
     } else if (text.startsWith('/close ')) {

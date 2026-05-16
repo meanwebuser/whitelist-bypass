@@ -31,9 +31,12 @@ export enum BotCommand {
   VK = 'vk',
   TM = 'tm',
   WB = 'wb',
+  Dion = 'dion',
+  JoinPrompt = 'join-prompt',
   List = 'list',
   Menu = 'menu',
   Close = 'close',
+  Noop = 'noop',
 }
 
 export enum LogPanel {
@@ -66,6 +69,7 @@ export interface TabConfig {
   mode: TunnelMode;
   peerId: number;
   platform: Platform;
+  joinTarget?: string;
 }
 
 export interface TabListEntry {
@@ -116,6 +120,7 @@ export interface RendererTab {
   callInfo?: CallInfo;
   tunnelConnected?: boolean;
   loginWebview?: Webview;
+  joinedByLink?: boolean;
 }
 
 export interface BotTabData {
@@ -123,6 +128,7 @@ export interface BotTabData {
   mode: TunnelMode;
   peerId: number;
   platform: Platform;
+  joinTarget?: string;
 }
 
 export interface RelayLogData {
