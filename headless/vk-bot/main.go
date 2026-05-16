@@ -63,13 +63,16 @@ type bot struct {
 	binsDir     string
 	vkCookies   string
 	tmCookies   string
+	wbCookies   string
+	dionCookies string
 	sessionsDir string
 	resources   string
 
 	server, key, ts string
 
-	mu       sync.Mutex
-	sessions map[string]*session
+	mu           sync.Mutex
+	sessions     map[string]*session
+	awaitingJoin map[int64]bool
 }
 
 func (b *bot) api(method string, params url.Values) (json.RawMessage, error) {
@@ -187,9 +190,19 @@ func (b *bot) handleMessage(peerID, fromID int64, text, payload string) {
 			ID  string `json:"id"`
 		}
 		if err := json.Unmarshal([]byte(payload), &p); err == nil && p.Cmd != "" {
+			if p.Cmd == "join-prompt" {
+				b.mu.Lock()
+				b.awaitingJoin[peerID] = true
+				b.mu.Unlock()
+				b.sendMessage(peerID, "Paste a join link", waitingKeyboard())
+				return
+			}
+			b.mu.Lock()
+			delete(b.awaitingJoin, peerID)
+			b.mu.Unlock()
 			switch p.Cmd {
-			case "vk", "tm", "wb":
-				b.handleSpawn(peerID, p.Cmd)
+			case "vk", "tm", "wb", "dion":
+				b.handleSpawn(peerID, p.Cmd, "")
 				return
 			case "list":
 				b.handleList(peerID)
@@ -206,21 +219,57 @@ func (b *bot) handleMessage(peerID, fromID int64, text, payload string) {
 		}
 	}
 
+	b.mu.Lock()
+	wasAwaiting := b.awaitingJoin[peerID]
+	b.mu.Unlock()
+	if platform, target, ok := detectJoinLink(text); ok {
+		b.mu.Lock()
+		delete(b.awaitingJoin, peerID)
+		b.mu.Unlock()
+		b.handleSpawn(peerID, platform, target)
+		return
+	}
+	if wasAwaiting {
+		b.sendMessage(peerID, "Couldn't detect a VK / Telemost / WBStream / DION link. Paste a join link or press Back.", waitingKeyboard())
+		return
+	}
+
 	switch {
 	case text == "/start" || text == "start":
 		b.showMenu(peerID)
 	case strings.HasPrefix(text, "/vk"):
-		b.handleSpawn(peerID, "vk")
+		b.handleSpawn(peerID, "vk", "")
 	case strings.HasPrefix(text, "/tm"):
-		b.handleSpawn(peerID, "tm")
+		b.handleSpawn(peerID, "tm", "")
 	case strings.HasPrefix(text, "/wb"):
-		b.handleSpawn(peerID, "wb")
+		b.handleSpawn(peerID, "wb", "")
+	case strings.HasPrefix(text, "/dion"):
+		b.handleSpawn(peerID, "dion", "")
 	case text == "/list":
 		b.handleList(peerID)
 	case strings.HasPrefix(text, "/close "):
 		id := strings.TrimSpace(strings.TrimPrefix(text, "/close "))
 		b.handleClose(peerID, id)
 	}
+}
+
+func detectJoinLink(text string) (platform, target string, ok bool) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return "", "", false
+	}
+	lower := strings.ToLower(trimmed)
+	switch {
+	case strings.HasPrefix(lower, "wbstream://"), strings.Contains(lower, "stream.wb.ru"):
+		return "wb", trimmed, true
+	case strings.Contains(lower, "telemost.yandex"):
+		return "tm", trimmed, true
+	case strings.HasPrefix(lower, "dion://"), strings.Contains(lower, "dion.vc"):
+		return "dion", trimmed, true
+	case strings.Contains(lower, "vk.com/call/join"):
+		return "vk", trimmed, true
+	}
+	return "", "", false
 }
 
 func (b *bot) showMenu(peerID int64) {
@@ -232,30 +281,43 @@ func formatSession(s *session) string {
 	return fmt.Sprintf("[%s] %s up %s\n%s", s.id, s.platform, uptime, s.link)
 }
 
-func (b *bot) handleSpawn(peerID int64, platform string) {
-	b.sendMessage(peerID, fmt.Sprintf("Starting %s...", platform), "")
-	sess, err := b.spawn(platform)
+func (b *bot) handleSpawn(peerID int64, platform, joinTarget string) {
+	if joinTarget != "" {
+		b.sendMessage(peerID, fmt.Sprintf("Joining %s...", platform), "")
+	} else {
+		b.sendMessage(peerID, fmt.Sprintf("Starting %s...", platform), "")
+	}
+	sess, err := b.spawn(platform, joinTarget)
 	if err != nil {
 		b.sendMessage(peerID, fmt.Sprintf("%s failed: %v", platform, err), mainMenuKeyboard())
 		return
 	}
-	b.sendMessage(peerID, sess.link, mainMenuKeyboard())
+	reply := sess.link
+	if joinTarget != "" {
+		reply = "Joined successfully"
+	}
+	b.sendMessage(peerID, reply, mainMenuKeyboard())
 }
 
-func (b *bot) spawn(platform string) (*session, error) {
-	var binName, cookies string
-	var needsCookies bool
+func (b *bot) spawn(platform, joinTarget string) (*session, error) {
+	var binName, cookies, joinFlag string
 	switch platform {
 	case "vk":
 		binName = "headless-vk-creator"
 		cookies = b.vkCookies
-		needsCookies = true
+		joinFlag = "--vk-link"
 	case "tm":
 		binName = "headless-telemost-creator"
 		cookies = b.tmCookies
-		needsCookies = true
+		joinFlag = "--tm-link"
 	case "wb":
 		binName = "headless-wbstream-creator"
+		cookies = b.wbCookies
+		joinFlag = "--room"
+	case "dion":
+		binName = "headless-dion-creator"
+		cookies = b.dionCookies
+		joinFlag = "--room"
 	default:
 		return nil, fmt.Errorf("unknown platform: %s", platform)
 	}
@@ -263,7 +325,7 @@ func (b *bot) spawn(platform string) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	if needsCookies && cookies == "" {
+	if cookies == "" {
 		return nil, fmt.Errorf("cookies required for %s", platform)
 	}
 
@@ -289,9 +351,9 @@ func (b *bot) spawn(platform string) (*session, error) {
 		logF = f
 	}
 
-	args := []string{"--write-file", linkFile.Name(), "--resources", b.resources}
-	if needsCookies {
-		args = append(args, "--cookies", cookies)
+	args := []string{"--write-file", linkFile.Name(), "--resources", b.resources, "--cookies", cookies}
+	if joinTarget != "" {
+		args = append(args, joinFlag, joinTarget)
 	}
 	cmd := exec.Command(bin, args...)
 	if logF != nil {
@@ -410,6 +472,8 @@ func main() {
 	binsDir := flag.String("bins-dir", "", "directory containing headless-*-creator binaries (required)")
 	vkCookies := flag.String("vk-cookies", "", "path to VK cookies JSON")
 	tmCookies := flag.String("tm-cookies", "", "path to Yandex cookies JSON for Telemost")
+	wbCookies := flag.String("wb-cookies", "", "path to WB Stream cookies JSON")
+	dionCookies := flag.String("dion-cookies", "", "path to DION cookies JSON")
 	sessionsDir := flag.String("sessions-dir", "", "directory for per-session creator logs (optional)")
 	resources := flag.String("resources", "default", "resource mode forwarded to spawned creators: default, moderate, unlimited")
 	flag.Parse()
@@ -433,11 +497,18 @@ func main() {
 	}
 
 	b := &bot{
-		token: *token, groupID: *groupID, userIDs: allowedUsers,
-		binsDir: *binsDir, vkCookies: *vkCookies, tmCookies: *tmCookies,
-		sessionsDir: *sessionsDir,
-		resources:   *resources,
-		sessions:    map[string]*session{},
+		token:        *token,
+		groupID:      *groupID,
+		userIDs:      allowedUsers,
+		binsDir:      *binsDir,
+		vkCookies:    *vkCookies,
+		tmCookies:    *tmCookies,
+		wbCookies:    *wbCookies,
+		dionCookies:  *dionCookies,
+		sessionsDir:  *sessionsDir,
+		resources:    *resources,
+		sessions:     map[string]*session{},
+		awaitingJoin: map[int64]bool{},
 	}
 
 	sig := make(chan os.Signal, 1)

@@ -10,6 +10,8 @@ services:
       # don't use, or remove the corresponding line.
       - ./cookies-vk.json:/data/cookies-vk.json:ro
       - ./cookies-telemost.json:/data/cookies-telemost.json:ro
+      - ./cookies-wbstream.json:/data/cookies-wbstream.json:ro
+      - ./cookies-dion.json:/data/cookies-dion.json:ro
       # Per-session creator logs persist here.
       - bot-sessions:/data/sessions
 
