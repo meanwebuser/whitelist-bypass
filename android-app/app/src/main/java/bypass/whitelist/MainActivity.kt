@@ -5,10 +5,12 @@ import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -42,6 +44,9 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
     private lateinit var logCtrl: LogViewController
     private lateinit var statusCtrl: StatusBarController
     private lateinit var logContainer: View
+    private lateinit var joinFragmentContainer: View
+
+    private var defaultLogHeightPx: Int = 0
 
     private var previousUrl = ""
 
@@ -68,6 +73,10 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
 
         urlInput = findViewById(R.id.urlInput)
         logContainer = findViewById(R.id.logContainer)
+        joinFragmentContainer = findViewById(R.id.joinFragmentContainer)
+        defaultLogHeightPx = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP, 120f, resources.displayMetrics
+        ).toInt()
 
         logCtrl = LogViewController(this, findViewById(R.id.logView), logWriter)
         logCtrl.reset()
@@ -130,6 +139,26 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
         logContainer.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
+    private fun setLogFullscreen(fullscreen: Boolean) {
+        val logLp = logContainer.layoutParams as LinearLayout.LayoutParams
+        val joinLp = joinFragmentContainer.layoutParams as LinearLayout.LayoutParams
+        if (fullscreen) {
+            logLp.height = 0
+            logLp.weight = 1f
+            joinLp.height = 0
+            joinLp.weight = 0f
+            logContainer.visibility = View.VISIBLE
+        } else {
+            logLp.height = defaultLogHeightPx
+            logLp.weight = 0f
+            joinLp.height = 0
+            joinLp.weight = 1f
+            logContainer.visibility = if (Prefs.showLogs) View.VISIBLE else View.GONE
+        }
+        logContainer.layoutParams = logLp
+        joinFragmentContainer.layoutParams = joinLp
+    }
+
     override fun onShareLogs() {
         logCtrl.shareLogs()
     }
@@ -189,7 +218,8 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
             Prefs.lastUrl = url
         }
 
-        val fragment = if (Prefs.headless || platform == CallPlatform.WBSTREAM || platform == CallPlatform.DION) {
+        val headlessMode = Prefs.headless || platform == CallPlatform.WBSTREAM || platform == CallPlatform.DION
+        val fragment = if (headlessMode) {
             when (platform) {
                 CallPlatform.VK -> HeadlessVkFragment.newInstance(url)
                 CallPlatform.TELEMOST -> HeadlessTelemostFragment.newInstance(url)
@@ -199,6 +229,7 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
         } else {
             JsHookJoinFragment.newInstance(url)
         }
+        setLogFullscreen(headlessMode)
 
         supportFragmentManager.beginTransaction()
             .replace(R.id.joinFragmentContainer, fragment)
@@ -213,6 +244,7 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
 
     private fun resetState() {
         removeJoinFragment()
+        setLogFullscreen(false)
         logCtrl.reset()
         statusCtrl.setConnected(false)
         statusCtrl.setIdle()

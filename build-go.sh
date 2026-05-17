@@ -42,5 +42,8 @@ go -C "$ROOT/headless/telemost" build -trimpath -ldflags="-s -w" -o headless-tel
 echo "Building headless-wbstream-creator..."
 go -C "$ROOT/headless/wbstream" build -trimpath -ldflags="-s -w" -o headless-wbstream-creator .
 
+echo "Building headless-dion-creator..."
+go -C "$ROOT/headless/dion" build -trimpath -ldflags="-s -w" -o headless-dion-creator .
+
 echo "Done."
-ls -lh "$ROOT/relay/relay" "$ROOT/headless/vk/headless-vk-creator" "$ROOT/headless/telemost/headless-telemost-creator" "$ROOT/headless/wbstream/headless-wbstream-creator"
+ls -lh "$ROOT/relay/relay" "$ROOT/headless/vk/headless-vk-creator" "$ROOT/headless/telemost/headless-telemost-creator" "$ROOT/headless/wbstream/headless-wbstream-creator" "$ROOT/headless/dion/headless-dion-creator"

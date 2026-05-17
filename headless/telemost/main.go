@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -19,92 +18,54 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 	"whitelist-bypass/relay/common"
+	tmapi "whitelist-bypass/relay/telemost"
 	"whitelist-bypass/relay/tunnel"
 )
 
 const (
-	tmAPIBase    = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
-	tmOrigin     = "https://telemost.yandex.ru"
+	tmAPIBase    = tmapi.APIBase
+	tmOrigin     = tmapi.Origin
 	tmPingPeriod = 5 * time.Second
 )
 
-var capabilitiesOffer = map[string][]string{
-	"offerAnswerMode":              {"SEPARATE"},
-	"initialSubscriberOffer":       {"ON_HELLO"},
-	"slotsMode":                    {"FROM_CONTROLLER"},
-	"simulcastMode":                {"DISABLED", "STATIC"},
-	"selfVadStatus":                {"FROM_SERVER", "FROM_CLIENT"},
-	"dataChannelSharing":           {"TO_RTP"},
-	"videoEncoderConfig":           {"NO_CONFIG", "ONLY_INIT_CONFIG", "RUNTIME_CONFIG"},
-	"dataChannelVideoCodec":        {"VP8", "UNIQUE_CODEC_FROM_TRACK_DESCRIPTION"},
-	"bandwidthLimitationReason":    {"BANDWIDTH_REASON_DISABLED", "BANDWIDTH_REASON_ENABLED"},
-	"sdkDefaultDeviceManagement":   {"SDK_DEFAULT_DEVICE_MANAGEMENT_DISABLED", "SDK_DEFAULT_DEVICE_MANAGEMENT_ENABLED"},
-	"joinOrderLayout":              {"JOIN_ORDER_LAYOUT_DISABLED", "JOIN_ORDER_LAYOUT_ENABLED"},
-	"pinLayout":                    {"PIN_LAYOUT_DISABLED"},
-	"sendSelfViewVideoSlot":        {"SEND_SELF_VIEW_VIDEO_SLOT_DISABLED", "SEND_SELF_VIEW_VIDEO_SLOT_ENABLED"},
-	"serverLayoutTransition":       {"SERVER_LAYOUT_TRANSITION_DISABLED"},
-	"sdkPublisherOptimizeBitrate":  {"SDK_PUBLISHER_OPTIMIZE_BITRATE_DISABLED", "SDK_PUBLISHER_OPTIMIZE_BITRATE_FULL", "SDK_PUBLISHER_OPTIMIZE_BITRATE_ONLY_SELF"},
-	"sdkNetworkLostDetection":      {"SDK_NETWORK_LOST_DETECTION_DISABLED"},
-	"sdkNetworkPathMonitor":        {"SDK_NETWORK_PATH_MONITOR_DISABLED"},
-	"publisherVp9":                 {"PUBLISH_VP9_DISABLED", "PUBLISH_VP9_ENABLED"},
-	"svcMode":                      {"SVC_MODE_DISABLED", "SVC_MODE_L3T3", "SVC_MODE_L3T3_KEY"},
-	"subscriberOfferAsyncAck":      {"SUBSCRIBER_OFFER_ASYNC_ACK_DISABLED", "SUBSCRIBER_OFFER_ASYNC_ACK_ENABLED"},
-	"androidBluetoothRoutingFix":   {"ANDROID_BLUETOOTH_ROUTING_FIX_DISABLED"},
-	"fixedIceCandidatesPoolSize":   {"FIXED_ICE_CANDIDATES_POOL_SIZE_DISABLED"},
-	"sdkAndroidTelecomIntegration": {"SDK_ANDROID_TELECOM_INTEGRATION_DISABLED"},
-	"setActiveCodecsMode":          {"SET_ACTIVE_CODECS_MODE_DISABLED", "SET_ACTIVE_CODECS_MODE_VIDEO_ONLY"},
-	"subscriberDtlsPassiveMode":    {"SUBSCRIBER_DTLS_PASSIVE_MODE_DISABLED", "SUBSCRIBER_DTLS_PASSIVE_MODE_ENABLED"},
-}
+var clientInstanceID = uuid.New().String()
+
 
 type ConnInfo struct {
-	ConferenceURI  string
-	RoomID         string
-	PeerID         string
-	Credentials    string
-	MediaServerURL string
-	ServiceName    string
-	ICEServers     []webrtc.ICEServer
+	ConferenceURI       string
+	RoomID              string
+	PeerID              string
+	Credentials         string
+	MediaServerURL      string
+	ServiceName         string
+	ICEServers          []webrtc.ICEServer
+	StateCheckIntervalS int
 }
 
 type Bridge struct {
-	mu        sync.Mutex
-	ws        *websocket.Conn
-	relay     *SFURelay
-	connInfo  *ConnInfo
-	config    TMConfig
-	cookieStr string
-	pubSeq    int
-	subSeq    int
-	peers     map[string]string
-	readBuf   int
+	mu           sync.Mutex
+	ws           *websocket.Conn
+	relay        *SFURelay
+	connInfo     *ConnInfo
+	config       TMConfig
+	cookieStr    string
+	pubSeq       int
+	subSeq       int
+	peers        map[string]string
+	readBuf      int
+	activeBridge *tunnel.RelayBridge
+	selfName     string
+
+	setSlotsKey     int
+	initBundleSent  bool
+	pendingKicks    map[string]chan struct{}
+	boundPeers      map[string]bool
+	unboundPeers    map[string]bool
 }
 
 func tmRequest(method, path string, body interface{}, cookieStr string, cfg TMConfig) ([]byte, int, error) {
-	var bodyReader io.Reader
-	if body != nil {
-		data, _ := json.Marshal(body)
-		bodyReader = strings.NewReader(string(data))
-	}
-	req, err := http.NewRequest(method, tmAPIBase+path, bodyReader)
-	if err != nil {
-		return nil, 0, err
-	}
-	req.Header.Set("User-Agent", common.UserAgent)
-	req.Header.Set("Origin", tmOrigin)
-	req.Header.Set("Referer", tmOrigin+"/")
-	req.Header.Set("Cookie", cookieStr)
-	req.Header.Set("Client-Instance-Id", uuid.New().String())
-	req.Header.Set("X-Telemost-Client-Version", cfg.AppVersion)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	return data, resp.StatusCode, err
+	c := tmapi.Client{Cookie: cookieStr, AppVersion: cfg.AppVersion, InstanceID: clientInstanceID}
+	return c.Do(method, path, body)
 }
 
 func parseICEServersJSON(raw json.RawMessage) []webrtc.ICEServer {
@@ -141,9 +102,10 @@ func getConnection(cookieStr, confURL string, cfg TMConfig) (*ConnInfo, error) {
 		RoomID       string `json:"room_id"`
 		Credentials  string `json:"credentials"`
 		ClientConfig struct {
-			MediaServerURL string          `json:"media_server_url"`
-			ServiceName    string          `json:"service_name"`
-			ICEServers     json.RawMessage `json:"ice_servers"`
+			MediaServerURL         string          `json:"media_server_url"`
+			ServiceName            string          `json:"service_name"`
+			ICEServers             json.RawMessage `json:"ice_servers"`
+			StateCheckIntervalSecs int             `json:"state_check_interval_seconds"`
 		} `json:"client_configuration"`
 	}
 	json.Unmarshal(r, &conn)
@@ -151,12 +113,13 @@ func getConnection(cookieStr, confURL string, cfg TMConfig) (*ConnInfo, error) {
 		return nil, fmt.Errorf("empty media_server_url: %s", string(r))
 	}
 	return &ConnInfo{
-		RoomID:         conn.RoomID,
-		PeerID:         conn.PeerID,
-		Credentials:    conn.Credentials,
-		MediaServerURL: conn.ClientConfig.MediaServerURL,
-		ServiceName:    conn.ClientConfig.ServiceName,
-		ICEServers:     parseICEServersJSON(conn.ClientConfig.ICEServers),
+		RoomID:              conn.RoomID,
+		PeerID:              conn.PeerID,
+		Credentials:         conn.Credentials,
+		MediaServerURL:      conn.ClientConfig.MediaServerURL,
+		ServiceName:         conn.ClientConfig.ServiceName,
+		ICEServers:          parseICEServersJSON(conn.ClientConfig.ICEServers),
+		StateCheckIntervalS: conn.ClientConfig.StateCheckIntervalSecs,
 	}, nil
 }
 
@@ -226,6 +189,9 @@ func (b *Bridge) ack(uid string) {
 }
 
 func (b *Bridge) sendHello() {
+	b.mu.Lock()
+	b.selfName = "Headless"
+	b.mu.Unlock()
 	b.wsSend(map[string]interface{}{
 		"uid": uuid.New().String(),
 		"hello": map[string]interface{}{
@@ -234,7 +200,7 @@ func (b *Bridge) sendHello() {
 			"sendAudio": false, "sendVideo": true, "sendSharing": false,
 			"participantId": b.connInfo.PeerID, "roomId": b.connInfo.RoomID,
 			"serviceName": b.connInfo.ServiceName, "credentials": b.connInfo.Credentials,
-			"capabilitiesOffer": capabilitiesOffer,
+			"capabilitiesOffer": tmapi.CapabilitiesOffer,
 			"sdkInfo":           map[string]interface{}{"implementation": "browser", "version": b.config.SDKVersion, "userAgent": common.UserAgent, "hwConcurrency": 8},
 			"sdkInitializationId": uuid.New().String(),
 			"disablePublisher": false, "disableSubscriber": false, "disableSubscriberAudio": false,
@@ -286,15 +252,47 @@ func (b *Bridge) sendICE(cand *webrtc.ICECandidate, target string, pcSeq int) {
 }
 
 func (b *Bridge) requestVideoSlots() {
-	log.Println("[tm-ws] -> setSlots")
-	b.wsSend(map[string]interface{}{
-		"uid": uuid.New().String(),
-		"setSlots": map[string]interface{}{
-			"slots": []map[string]interface{}{{"width": 320, "height": 240}},
-			"audioSlotsCount": 1, "key": 1,
-			"nLastConfig": map[string]interface{}{"nCount": 1, "showInSubgrid": false},
-		},
-	})
+	b.setSlotsKey++
+	log.Printf("[tm-ws] -> setSlots key=%d", b.setSlotsKey)
+	b.wsSend(tmapi.SetSlotsMessage(b.setSlotsKey))
+}
+
+func (b *Bridge) forceReconnect(reason string) {
+	oldPeerID := b.connInfo.PeerID
+	log.Printf("[tm-ws] forcing reconnect: %s", reason)
+	if oldPeerID != "" {
+		log.Printf("[tm-ws] kicking self pid=%s to leave call cleanly", oldPeerID)
+		if err := b.kickPeer(oldPeerID); err != nil {
+			log.Printf("[tm-ws] self-kick failed: %v", err)
+		}
+	}
+	clientInstanceID = uuid.New().String()
+	log.Printf("[tm-ws] new instance-id=%s", clientInstanceID)
+	b.mu.Lock()
+	ws := b.ws
+	b.mu.Unlock()
+	if ws != nil {
+		ws.Close()
+	}
+}
+
+func (b *Bridge) sendInitBundle() {
+	if b.initBundleSent {
+		return
+	}
+	b.initBundleSent = true
+	log.Printf("[tm-ws] -> sdkCodecsInfo + updatePublisherTrackDescription")
+	b.wsSend(tmapi.SdkCodecsInfoMessage())
+	b.wsSend(tmapi.UpdatePublisherTrackDescriptionMessage(b.relay.pubPC, "Microphone", "MacBook Pro Camera (0000:0001)"))
+	b.sendStartupSlotsRamp()
+}
+
+func (b *Bridge) sendStartupSlotsRamp() {
+	for i := 0; i < 4; i++ {
+		b.setSlotsKey++
+		log.Printf("[tm-ws] -> setSlots key=%d (startup %d/4)", b.setSlotsKey, i+1)
+		b.wsSend(tmapi.StartupSetSlotsMessage(i, b.setSlotsKey))
+	}
 }
 
 func (b *Bridge) handleMessage(raw []byte) {
@@ -310,6 +308,8 @@ func (b *Bridge) handleMessage(raw []byte) {
 			b.parseICEServers(shMap)
 		}
 		b.ack(uid)
+		log.Println("[tm-ws] -> setSlotsOffset")
+		b.wsSend(tmapi.SetSlotsOffsetMessage(0))
 		b.initRelay()
 		return
 	}
@@ -320,7 +320,9 @@ func (b *Bridge) handleMessage(raw []byte) {
 		log.Printf("[tm-ws] <- publisherSdpAnswer %d bytes", len(sdp))
 		if err := b.relay.SetPubAnswer(sdp); err != nil {
 			log.Printf("[tm-ws]    error: %v", err)
+			return
 		}
+		b.sendInitBundle()
 		return
 	}
 
@@ -342,7 +344,6 @@ func (b *Bridge) handleMessage(raw []byte) {
 			"subscriberSdpAnswer": map[string]interface{}{"sdp": answer.SDP, "pcSeq": b.subSeq},
 		})
 		b.sendPubOffer()
-		b.requestVideoSlots()
 		return
 	}
 
@@ -375,24 +376,23 @@ func (b *Bridge) handleMessage(raw []byte) {
 		return
 	}
 
+	if ud, ok := msg["updateDescription"]; ok {
+		log.Printf("[tm-ws] <- updateDescription %s", tmapi.BriefJSON(ud))
+		udMap, _ := ud.(map[string]interface{})
+		descs, _ := udMap["description"].([]interface{})
+		b.applyDescriptionSnapshot(descs)
+		b.ack(uid)
+		return
+	}
+
 	if ud, ok := msg["upsertDescription"]; ok {
 		udMap, _ := ud.(map[string]interface{})
 		descs, _ := udMap["description"].([]interface{})
 		for _, d := range descs {
 			dm, _ := d.(map[string]interface{})
-			pid, _ := dm["id"].(string)
-			if pid == "" || pid == b.connInfo.PeerID {
-				continue
-			}
-			name := ""
-			if meta, ok := dm["meta"].(map[string]interface{}); ok {
-				name, _ = meta["name"].(string)
-			}
-			b.mu.Lock()
-			b.peers[pid] = name
-			b.mu.Unlock()
-			log.Printf("[tm-ws] Participant joined: %s (%s) total=%d", name, pid, len(b.peers))
+			b.applyDescriptionEntry(dm)
 		}
+		b.kickStaleSelves()
 		b.ack(uid)
 		return
 	}
@@ -406,8 +406,15 @@ func (b *Bridge) handleMessage(raw []byte) {
 			name := b.peers[pid]
 			delete(b.peers, pid)
 			remaining := len(b.peers)
+			ch, hadPendingKick := b.pendingKicks[pid]
+			if hadPendingKick {
+				delete(b.pendingKicks, pid)
+			}
 			b.mu.Unlock()
 			log.Printf("[tm-ws] Participant left: %s (%s) total=%d", name, pid, remaining)
+			if hadPendingKick {
+				close(ch)
+			}
 			if remaining == 0 {
 				go b.pollAndAdmit()
 			}
@@ -416,16 +423,87 @@ func (b *Bridge) handleMessage(raw []byte) {
 		return
 	}
 
-	if _, ok := msg["notification"]; ok {
+	if n, ok := msg["notification"]; ok {
+		log.Printf("[tm-ws] <- notification %s", tmapi.BriefJSON(n))
 		b.ack(uid)
 		go b.pollAndAdmit()
 		return
 	}
 
-	if _, ok := msg["participantsChanged"]; ok {
+	if pc, ok := msg["participantsChanged"]; ok {
+		log.Printf("[tm-ws] <- participantsChanged %s", tmapi.BriefJSON(pc))
 		b.ack(uid)
 		go b.pollAndAdmit()
 		return
+	}
+
+	if sc, ok := msg["slotsConfig"]; ok {
+		log.Printf("[tm-ws] <- slotsConfig %s", tmapi.BriefJSON(sc))
+		needRebind := false
+		presentPids := make(map[string]bool)
+		for _, ev := range tmapi.SlotsConfigBindings(sc) {
+			fullPid := ev.ParticipantID
+			if fullPid != "" {
+				presentPids[fullPid] = true
+			}
+			pid := fullPid
+			if len(pid) > 8 {
+				pid = pid[:8]
+			}
+			if ev.Reason == "NO_LIMITATION" && ev.Mid != "" {
+				log.Printf("[bind] BOUND slot=%d pid=%s mid=%s", ev.Slot, pid, ev.Mid)
+				b.mu.Lock()
+				if b.boundPeers == nil {
+					b.boundPeers = make(map[string]bool)
+				}
+				b.boundPeers[fullPid] = true
+				delete(b.unboundPeers, fullPid)
+				b.mu.Unlock()
+			} else if fullPid != "" {
+				b.mu.Lock()
+				wasBound := b.boundPeers[fullPid]
+				if wasBound {
+					if b.unboundPeers == nil {
+						b.unboundPeers = make(map[string]bool)
+					}
+					b.unboundPeers[fullPid] = true
+					delete(b.boundPeers, fullPid)
+				}
+				b.mu.Unlock()
+				if wasBound {
+					log.Printf("[bind] KILL slot=%d pid=%s reason=%s - rebinding", ev.Slot, pid, ev.Reason)
+					needRebind = true
+				} else {
+					log.Printf("[bind] UNBOUND slot=%d pid=%s reason=%s mid=%q", ev.Slot, pid, ev.Reason, ev.Mid)
+				}
+			}
+		}
+		b.mu.Lock()
+		for boundPid := range b.boundPeers {
+			if !presentPids[boundPid] {
+				short := boundPid
+				if len(short) > 8 {
+					short = short[:8]
+				}
+				log.Printf("[bind] VANISHED pid=%s - rebinding", short)
+				delete(b.boundPeers, boundPid)
+				needRebind = true
+			}
+		}
+		b.mu.Unlock()
+		if needRebind {
+			go b.forceReconnect("slot binding killed")
+		}
+		b.ack(uid)
+		return
+	}
+
+	for k, v := range msg {
+		if k == "uid" || k == "ack" {
+			continue
+		}
+		log.Printf("[tm-ws] <- %s (unhandled) %s", k, tmapi.BriefJSON(v))
+		break
 	}
 
 	if uid != "" {
@@ -464,11 +542,93 @@ func (b *Bridge) parseICEServers(sh map[string]interface{}) {
 	log.Printf("[tm-ws] %d ICE servers", len(iceServers))
 }
 
-func (b *Bridge) kickPeer(peerID string) {
+func (b *Bridge) requestStates() error {
+	c := tmapi.Client{Cookie: b.cookieStr, AppVersion: b.config.AppVersion, InstanceID: clientInstanceID}
+	return c.RequestStates(b.connInfo.ConferenceURI, b.connInfo.PeerID)
+}
+
+func (b *Bridge) applyDescriptionEntry(dm map[string]interface{}) {
+	pid, _ := dm["id"].(string)
+	if pid == "" {
+		return
+	}
+	name := ""
+	if meta, ok := dm["meta"].(map[string]interface{}); ok {
+		name, _ = meta["name"].(string)
+	}
+	if pid == b.connInfo.PeerID {
+		b.mu.Lock()
+		if name != "" {
+			b.selfName = name
+		}
+		b.mu.Unlock()
+		return
+	}
+	_, disconnected := dm["disconnectedAt"]
+	b.mu.Lock()
+	_, wasKnown := b.peers[pid]
+	if disconnected {
+		delete(b.peers, pid)
+	} else {
+		b.peers[pid] = name
+	}
+	total := len(b.peers)
+	b.mu.Unlock()
+	switch {
+	case disconnected && wasKnown:
+		log.Printf("[tm-ws] Participant left: %s (%s) total=%d", name, pid, total)
+	case disconnected:
+		log.Printf("[tm-ws] Ghost participant: %s (%s) - kicking", name, pid)
+		go b.kickPeer(pid)
+	case !wasKnown:
+		log.Printf("[tm-ws] Participant joined: %s (%s) total=%d", name, pid, total)
+	}
+}
+
+func (b *Bridge) applyDescriptionSnapshot(descs []interface{}) {
+	b.mu.Lock()
+	b.peers = make(map[string]string)
+	b.mu.Unlock()
+	for _, d := range descs {
+		dm, _ := d.(map[string]interface{})
+		b.applyDescriptionEntry(dm)
+	}
+	b.kickStaleSelves()
+}
+
+func (b *Bridge) kickStaleSelves() {
+	b.mu.Lock()
+	selfName := b.selfName
+	stale := make([]string, 0)
+	if selfName != "" {
+		for pid, name := range b.peers {
+			if name == selfName {
+				stale = append(stale, pid)
+			}
+		}
+	}
+	b.mu.Unlock()
+	for _, pid := range stale {
+		log.Printf("[tm-ws] Kicking stale self %s (name=%q)", pid, selfName)
+		b.kickPeer(pid)
+		b.mu.Lock()
+		delete(b.peers, pid)
+		b.mu.Unlock()
+	}
+}
+
+func (b *Bridge) kickPeer(peerID string) error {
 	confURL := url.QueryEscape(b.connInfo.ConferenceURI)
 	log.Printf("[tm-ws] Kicking %s", peerID)
-	tmRequest("POST", "/conferences/"+confURL+"/commands/kick?peer_id="+url.QueryEscape(peerID)+"&with_ban=false",
+	body, status, err := tmRequest("POST", "/conferences/"+confURL+"/commands/kick?peer_id="+url.QueryEscape(peerID)+"&with_ban=false",
 		nil, b.cookieStr, b.config)
+	if err != nil {
+		return err
+	}
+	if status >= 400 {
+		return fmt.Errorf("kick %s status %d: %s", peerID, status, string(body))
+	}
+	return nil
 }
 
 func (b *Bridge) pollAndAdmit() {
@@ -491,25 +651,39 @@ func (b *Bridge) pollAndAdmit() {
 	}
 
 	b.mu.Lock()
-	toKick := make(map[string]string)
+	if b.pendingKicks == nil {
+		b.pendingKicks = make(map[string]chan struct{})
+	}
+	toKick := make(map[string]string, len(b.peers))
+	waits := make(map[string]<-chan struct{}, len(b.peers))
 	for pid, name := range b.peers {
 		toKick[pid] = name
+		ch := make(chan struct{})
+		b.pendingKicks[pid] = ch
+		waits[pid] = ch
 	}
 	b.mu.Unlock()
 
-	if len(toKick) > 0 {
-		for pid, name := range toKick {
-			log.Printf("[tm-ws] Kicking %s (%s) for new peer", name, pid)
-			b.kickPeer(pid)
+	for pid, name := range toKick {
+		log.Printf("[tm-ws] Kicking %s (%s) for one-to-one", name, pid)
+		if err := b.kickPeer(pid); err != nil {
+			log.Printf("[tm-ws] kick failed: %v", err)
+			b.mu.Lock()
+			delete(b.pendingKicks, pid)
+			b.mu.Unlock()
+			return
 		}
-		return
 	}
 
-	for _, p := range resp.Peers {
-		log.Printf("[tm-ws] Admitting %s (%s)", p.State.DisplayName, p.PeerID)
-		tmRequest("PUT", "/conferences/"+confURL+"/commands/admit?peer_id="+url.QueryEscape(p.PeerID),
-			nil, b.cookieStr, b.config)
+	for pid, ch := range waits {
+		<-ch
+		log.Printf("[tm-ws] kick confirmed for %s", pid)
 	}
+
+	p := resp.Peers[0]
+	log.Printf("[tm-ws] Admitting %s (%s)", p.State.DisplayName, p.PeerID)
+	tmRequest("PUT", "/conferences/"+confURL+"/commands/admit?peer_id="+url.QueryEscape(p.PeerID),
+		nil, b.cookieStr, b.config)
 }
 
 func (b *Bridge) initRelay() {
@@ -518,6 +692,7 @@ func (b *Bridge) initRelay() {
 	}
 	b.pubSeq = 1
 	b.subSeq = 0
+	b.initBundleSent = false
 
 	relay := NewSFURelay()
 	relay.readBufSize = b.readBuf
@@ -527,9 +702,21 @@ func (b *Bridge) initRelay() {
 	}
 	relay.SetObfuscator(obf)
 	log.Printf("[relay] obfuscator localEpoch=0x%08x", obf.LocalEpoch())
+	relay.OnPubReady = func() {
+		log.Printf("[relay] pub PC connected")
+	}
 	relay.OnConnected = func(tun *tunnel.VP8DataTunnel) {
-		tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
+		if b.activeBridge != nil {
+			b.activeBridge.Reset()
+		}
+		b.activeBridge = tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
 		fmt.Print("\n  TUNNEL CONNECTED\n")
+	}
+	relay.OnPeerRestart = func() {
+		if b.activeBridge != nil {
+			log.Printf("[relay] new peer detected, resetting relay bridge")
+			b.activeBridge.Reset()
+		}
 	}
 	relay.OnPubICE = func(cand *webrtc.ICECandidate) {
 		if cand == nil {
@@ -573,6 +760,21 @@ func (b *Bridge) run() {
 		log.Println("[tm-ws] Connected")
 
 		b.sendHello()
+		go b.pollAndAdmit()
+
+		stopWaitingRoomPoll := make(chan struct{})
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stopWaitingRoomPoll:
+					return
+				case <-ticker.C:
+					b.pollAndAdmit()
+				}
+			}
+		}()
 
 		stopPing := make(chan struct{})
 		go func() {
@@ -588,6 +790,29 @@ func (b *Bridge) run() {
 			}
 		}()
 
+		stopStateKeepalive := make(chan struct{})
+		go func() {
+			interval := b.connInfo.StateCheckIntervalS
+			if interval <= 0 {
+				interval = 30
+			}
+			if err := b.requestStates(); err != nil {
+				log.Printf("[tm-state] initial request-states: %v", err)
+			}
+			ticker := time.NewTicker(time.Duration(interval) * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stopStateKeepalive:
+					return
+				case <-ticker.C:
+					if err := b.requestStates(); err != nil {
+						log.Printf("[tm-state] request-states: %v", err)
+					}
+				}
+			}
+		}()
+
 		for {
 			_, raw, err := ws.ReadMessage()
 			if err != nil {
@@ -598,6 +823,8 @@ func (b *Bridge) run() {
 		}
 
 		close(stopPing)
+		close(stopStateKeepalive)
+		close(stopWaitingRoomPoll)
 		b.mu.Lock()
 		b.ws = nil
 		b.mu.Unlock()
@@ -615,6 +842,7 @@ func (b *Bridge) run() {
 		b.connInfo.Credentials = newConn.Credentials
 		b.connInfo.MediaServerURL = newConn.MediaServerURL
 		b.connInfo.ICEServers = newConn.ICEServers
+		b.connInfo.StateCheckIntervalS = newConn.StateCheckIntervalS
 	}
 }
 

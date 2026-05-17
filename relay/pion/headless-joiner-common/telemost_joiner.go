@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -17,12 +16,13 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 	"whitelist-bypass/relay/common"
+	tmapi "whitelist-bypass/relay/telemost"
 	"whitelist-bypass/relay/tunnel"
 )
 
 const (
-	TmAPIBase    = "https://cloud-api.yandex.ru/telemost_front/v2/telemost"
-	TmOrigin     = "https://telemost.yandex.ru"
+	TmAPIBase    = tmapi.APIBase
+	TmOrigin     = tmapi.Origin
 	TmPingPeriod = 5 * time.Second
 )
 
@@ -66,12 +66,22 @@ type TelemostHeadlessJoiner struct {
 	httpClient *http.Client
 	instanceID string
 
-	peerID      string
-	roomID      string
-	credentials string
-	serviceName string
-	mediaURL    string
-	iceServers  []webrtc.ICEServer
+	peerID              string
+	roomID              string
+	credentials         string
+	serviceName         string
+	mediaURL            string
+	iceServers          []webrtc.ICEServer
+	stateCheckIntervalS int
+
+	closeMu sync.Mutex
+	closed  bool
+
+	setSlotsKey     int
+	initBundleSent  bool
+	boundPeers      map[string]bool
+	unboundPeers    map[string]bool
+	boundMu         sync.Mutex
 }
 
 func NewTelemostHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc, status StatusEmitter, pcConfig PeerConnectionConfigurer, addTracks AddTunnelTracksFunc, readTrackFn ReadTrackFunc) *TelemostHeadlessJoiner {
@@ -116,16 +126,47 @@ func (j *TelemostHeadlessJoiner) RunWithParams(jsonParams string) {
 		j.joinLink, j.displayName, params.VP8FPS, params.VP8Batch, obf.LocalEpoch())
 	j.Status.EmitStatus(common.StatusConnecting)
 
-	if err := j.getConnection(); err != nil {
-		j.logFn("telemost-joiner: ERROR: %v", err)
-		j.Status.EmitStatusError(err.Error())
-		return
+	for {
+		if err := j.getConnection(); err != nil {
+			j.logFn("telemost-joiner: ERROR: %v", err)
+			j.Status.EmitStatusError(err.Error())
+			return
+		}
+		j.connectAndRun()
+		if j.isClosed() {
+			return
+		}
+		j.logFn("telemost-joiner: reconnecting in 3s...")
+		j.resetSessionState()
+		time.Sleep(3 * time.Second)
+		if j.isClosed() {
+			return
+		}
+		j.Status.EmitStatus(common.StatusConnecting)
 	}
+}
 
-	j.connectAndRun()
+func (j *TelemostHeadlessJoiner) resetSessionState() {
+	j.wsMu.Lock()
+	j.ws = nil
+	j.wsMu.Unlock()
+	j.subPC = nil
+	j.subSeq = 0
+	j.subRemoteSet = false
+	j.subPending = nil
+	j.pubPC = nil
+	j.pubSeq = 0
+	j.pubRemoteSet = false
+	j.pubPending = nil
+	j.sampleTrack = nil
+	j.vp8tunnel = nil
+	j.initBundleSent = false
 }
 
 func (j *TelemostHeadlessJoiner) Close() {
+	j.closeMu.Lock()
+	j.closed = true
+	j.closeMu.Unlock()
 	j.wsMu.Lock()
 	ws := j.ws
 	j.ws = nil
@@ -142,6 +183,12 @@ func (j *TelemostHeadlessJoiner) Close() {
 	if j.pubPC != nil {
 		j.pubPC.Close()
 	}
+}
+
+func (j *TelemostHeadlessJoiner) isClosed() bool {
+	j.closeMu.Lock()
+	defer j.closeMu.Unlock()
+	return j.closed
 }
 
 func (j *TelemostHeadlessJoiner) makeHTTPClient() *http.Client {
@@ -161,25 +208,19 @@ func (j *TelemostHeadlessJoiner) makeHTTPClient() *http.Client {
 	}
 }
 
-func (j *TelemostHeadlessJoiner) tmRequest(method, path string) ([]byte, int, error) {
+func (j *TelemostHeadlessJoiner) apiClient() *tmapi.Client {
 	if j.httpClient == nil {
 		j.httpClient = j.makeHTTPClient()
 	}
-	req, err := http.NewRequest(method, TmAPIBase+path, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	req.Header.Set("User-Agent", common.UserAgent)
-	req.Header.Set("Origin", TmOrigin)
-	req.Header.Set("Referer", TmOrigin+"/")
-	req.Header.Set("Client-Instance-Id", j.instanceID)
-	resp, err := j.httpClient.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	return data, resp.StatusCode, err
+	return &tmapi.Client{HTTP: j.httpClient, InstanceID: j.instanceID}
+}
+
+func (j *TelemostHeadlessJoiner) tmRequest(method, path string) ([]byte, int, error) {
+	return j.apiClient().Do(method, path, nil)
+}
+
+func (j *TelemostHeadlessJoiner) requestStates() error {
+	return j.apiClient().RequestStates(j.joinLink, j.peerID)
 }
 
 func (j *TelemostHeadlessJoiner) getConnection() error {
@@ -213,21 +254,32 @@ func (j *TelemostHeadlessJoiner) getConnection() error {
 		if interval <= 0 {
 			interval = 3000
 		}
-		j.logFn("telemost-joiner: in waiting room, polling every %dms...", interval)
+		checkPath := "/conferences/" + confURL + "/waiting-rooms/check-access"
+		j.logFn("telemost-joiner: in waiting room, polling check-access every %dms...", interval)
 		for {
 			time.Sleep(time.Duration(interval) * time.Millisecond)
-			responseBody, status, err = j.tmRequest("GET", connPath)
-			if err != nil {
-				return fmt.Errorf("waiting room poll: %w", err)
+			checkBody, checkStatus, checkErr := j.tmRequest("GET", checkPath)
+			if checkErr != nil {
+				return fmt.Errorf("waiting room check-access: %w", checkErr)
 			}
-			if status != 200 {
-				return fmt.Errorf("waiting room poll: status %d", status)
+			if checkStatus != 200 {
+				return fmt.Errorf("waiting room check-access: status %d", checkStatus)
 			}
-			json.Unmarshal(responseBody, &initial)
-			if initial.ConnectionType != "WAITING_ROOM" {
+			var check struct {
+				Admitted bool `json:"admitted"`
+			}
+			json.Unmarshal(checkBody, &check)
+			if check.Admitted {
 				j.logFn("telemost-joiner: admitted!")
 				break
 			}
+		}
+		responseBody, status, err = j.tmRequest("GET", connPath)
+		if err != nil {
+			return fmt.Errorf("post-admit connection: %w", err)
+		}
+		if status != 200 {
+			return fmt.Errorf("post-admit connection: status %d: %s", status, string(responseBody))
 		}
 	}
 
@@ -236,9 +288,10 @@ func (j *TelemostHeadlessJoiner) getConnection() error {
 		RoomID       string `json:"room_id"`
 		Credentials  string `json:"credentials"`
 		ClientConfig struct {
-			MediaServerURL string          `json:"media_server_url"`
-			ServiceName    string          `json:"service_name"`
-			ICEServers     json.RawMessage `json:"ice_servers"`
+			MediaServerURL         string          `json:"media_server_url"`
+			ServiceName            string          `json:"service_name"`
+			ICEServers             json.RawMessage `json:"ice_servers"`
+			StateCheckIntervalSecs int             `json:"state_check_interval_seconds"`
 		} `json:"client_configuration"`
 	}
 	json.Unmarshal(responseBody, &conn)
@@ -251,6 +304,7 @@ func (j *TelemostHeadlessJoiner) getConnection() error {
 	j.credentials = conn.Credentials
 	j.mediaURL = conn.ClientConfig.MediaServerURL
 	j.serviceName = conn.ClientConfig.ServiceName
+	j.stateCheckIntervalS = conn.ClientConfig.StateCheckIntervalSecs
 
 	var rawIce []struct {
 		URLs       []string `json:"urls"`
@@ -300,29 +354,7 @@ func (j *TelemostHeadlessJoiner) sendHello() {
 			"sendAudio": false, "sendVideo": true, "sendSharing": false,
 			"participantId": j.peerID, "roomId": j.roomID,
 			"serviceName": j.serviceName, "credentials": j.credentials,
-			"capabilitiesOffer": map[string][]string{
-				"offerAnswerMode":              {"SEPARATE"},
-				"initialSubscriberOffer":       {"ON_HELLO"},
-				"slotsMode":                    {"FROM_CONTROLLER"},
-				"simulcastMode":                {"DISABLED", "STATIC"},
-				"selfVadStatus":                {"FROM_SERVER", "FROM_CLIENT"},
-				"dataChannelSharing":           {"TO_RTP"},
-				"videoEncoderConfig":           {"NO_CONFIG", "ONLY_INIT_CONFIG", "RUNTIME_CONFIG"},
-				"dataChannelVideoCodec":        {"VP8", "UNIQUE_CODEC_FROM_TRACK_DESCRIPTION"},
-				"bandwidthLimitationReason":    {"BANDWIDTH_REASON_DISABLED", "BANDWIDTH_REASON_ENABLED"},
-				"sdkDefaultDeviceManagement":   {"SDK_DEFAULT_DEVICE_MANAGEMENT_DISABLED", "SDK_DEFAULT_DEVICE_MANAGEMENT_ENABLED"},
-				"joinOrderLayout":              {"JOIN_ORDER_LAYOUT_DISABLED", "JOIN_ORDER_LAYOUT_ENABLED"},
-				"pinLayout":                    {"PIN_LAYOUT_DISABLED"},
-				"sendSelfViewVideoSlot":        {"SEND_SELF_VIEW_VIDEO_SLOT_DISABLED", "SEND_SELF_VIEW_VIDEO_SLOT_ENABLED"},
-				"serverLayoutTransition":       {"SERVER_LAYOUT_TRANSITION_DISABLED"},
-				"sdkPublisherOptimizeBitrate":  {"SDK_PUBLISHER_OPTIMIZE_BITRATE_DISABLED", "SDK_PUBLISHER_OPTIMIZE_BITRATE_FULL", "SDK_PUBLISHER_OPTIMIZE_BITRATE_ONLY_SELF"},
-				"sdkNetworkLostDetection":      {"SDK_NETWORK_LOST_DETECTION_DISABLED"},
-				"sdkNetworkPathMonitor":        {"SDK_NETWORK_PATH_MONITOR_DISABLED"},
-				"publisherVp9":                 {"PUBLISH_VP9_DISABLED", "PUBLISH_VP9_ENABLED"},
-				"svcMode":                      {"SVC_MODE_DISABLED", "SVC_MODE_L3T3", "SVC_MODE_L3T3_KEY"},
-				"subscriberOfferAsyncAck":      {"SUBSCRIBER_OFFER_ASYNC_ACK_DISABLED", "SUBSCRIBER_OFFER_ASYNC_ACK_ENABLED"},
-				"subscriberDtlsPassiveMode":    {"SUBSCRIBER_DTLS_PASSIVE_MODE_DISABLED", "SUBSCRIBER_DTLS_PASSIVE_MODE_ENABLED"},
-			},
+			"capabilitiesOffer": tmapi.CapabilitiesOffer,
 			"sdkInfo":             map[string]interface{}{"implementation": "browser", "version": "5.27.0", "userAgent": common.UserAgent, "hwConcurrency": 8},
 			"sdkInitializationId": uuid.New().String(),
 			"disablePublisher": false, "disableSubscriber": false, "disableSubscriberAudio": false,
@@ -350,7 +382,11 @@ func (j *TelemostHeadlessJoiner) initPC() {
 	if j.PCConfig != nil {
 		j.PCConfig.ConfigureSettingEngine(&settingEngine)
 	}
-	api := webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine))
+	api, err := tmapi.NewAPI(&settingEngine)
+	if err != nil {
+		j.logFn("telemost-joiner: ERROR: create webrtc API: %v", err)
+		return
+	}
 
 	subPC, err := api.NewPeerConnection(config)
 	if err != nil {
@@ -426,7 +462,11 @@ func (j *TelemostHeadlessJoiner) sendPubOffer() {
 		j.logFn("telemost-joiner: pub offer failed: %v", err)
 		return
 	}
-	j.pubPC.SetLocalDescription(offer)
+	if err := j.pubPC.SetLocalDescription(offer); err != nil {
+		j.logFn("telemost-joiner: set pub local desc: %v", err)
+		return
+	}
+	offer.SDP = tmapi.MungeSDPAddVideoContent(offer.SDP)
 
 	audioMid, videoMid := TmParseMids(offer.SDP)
 	j.logFn("telemost-joiner: -> publisherSdpOffer pcSeq=%d audioMid=%s videoMid=%s", j.pubSeq, audioMid, videoMid)
@@ -464,18 +504,53 @@ func (j *TelemostHeadlessJoiner) handlePubAnswer(sdp string) {
 		j.pubPC.AddICECandidate(candidate)
 	}
 	j.pubPending = nil
+	j.sendInitBundle()
+}
+
+func (j *TelemostHeadlessJoiner) sendInitBundle() {
+	if j.initBundleSent {
+		return
+	}
+	j.initBundleSent = true
+	j.logFn("telemost-joiner: -> sdkCodecsInfo + updatePublisherTrackDescription")
+	j.wsSend(tmapi.SdkCodecsInfoMessage())
+	j.wsSend(tmapi.UpdatePublisherTrackDescriptionMessage(j.pubPC, "Microphone", "MacBook Pro Camera (0000:0001)"))
+	j.sendStartupSlotsRamp()
 }
 
 func (j *TelemostHeadlessJoiner) requestVideoSlots() {
-	j.logFn("telemost-joiner: -> setSlots")
-	j.wsSend(map[string]interface{}{
-		"uid": uuid.New().String(),
-		"setSlots": map[string]interface{}{
-			"slots":           []map[string]interface{}{{"width": 320, "height": 240}},
-			"audioSlotsCount": 1, "key": 1,
-			"nLastConfig": map[string]interface{}{"nCount": 1, "showInSubgrid": false},
-		},
-	})
+	j.setSlotsKey++
+	j.logFn("telemost-joiner: -> setSlots key=%d", j.setSlotsKey)
+	j.wsSend(tmapi.SetSlotsMessage(j.setSlotsKey))
+}
+
+func (j *TelemostHeadlessJoiner) forceReconnect(reason string) {
+	oldPeerID := j.peerID
+	j.logFn("telemost-joiner: forcing reconnect: %s", reason)
+	if oldPeerID != "" {
+		j.logFn("telemost-joiner: kicking self pid=%s to leave call cleanly", oldPeerID)
+		confURL := url.QueryEscape(j.joinLink)
+		_, status, err := j.tmRequest("POST", "/conferences/"+confURL+"/commands/kick?peer_id="+url.QueryEscape(oldPeerID)+"&with_ban=false")
+		if err != nil || status >= 400 {
+			j.logFn("telemost-joiner: self-kick failed: status=%d err=%v", status, err)
+		}
+	}
+	j.instanceID = uuid.New().String()
+	j.logFn("telemost-joiner: new instance-id=%s", j.instanceID)
+	j.wsMu.Lock()
+	ws := j.ws
+	j.wsMu.Unlock()
+	if ws != nil {
+		ws.Close()
+	}
+}
+
+func (j *TelemostHeadlessJoiner) sendStartupSlotsRamp() {
+	for i := 0; i < 4; i++ {
+		j.setSlotsKey++
+		j.logFn("telemost-joiner: -> setSlots key=%d (startup %d/4)", j.setSlotsKey, i+1)
+		j.wsSend(tmapi.StartupSetSlotsMessage(i, j.setSlotsKey))
+	}
 }
 
 func (j *TelemostHeadlessJoiner) handleSubOffer(sdp string, pcSeq int) {
@@ -518,7 +593,6 @@ func (j *TelemostHeadlessJoiner) handleSubOffer(sdp string, pcSeq int) {
 	})
 
 	j.sendPubOffer()
-	j.requestVideoSlots()
 }
 
 func (j *TelemostHeadlessJoiner) handleMessage(raw []byte) {
@@ -621,10 +695,85 @@ func (j *TelemostHeadlessJoiner) handleMessage(raw []byte) {
 		return
 	}
 
+	if ud, ok := msg["updateDescription"]; ok {
+		j.logFn("telemost-joiner: <- updateDescription %s", tmapi.BriefJSON(ud))
+		j.ack(uid)
+		return
+	}
+
 	if _, ok := msg["removeDescription"]; ok {
 		j.logFn("telemost-joiner: participant left")
 		j.ack(uid)
 		return
+	}
+
+	if sc, ok := msg["slotsConfig"]; ok {
+		j.logFn("telemost-joiner: <- slotsConfig %s", tmapi.BriefJSON(sc))
+		needRebind := false
+		presentPids := make(map[string]bool)
+		for _, ev := range tmapi.SlotsConfigBindings(sc) {
+			fullPid := ev.ParticipantID
+			if fullPid != "" {
+				presentPids[fullPid] = true
+			}
+			pid := fullPid
+			if len(pid) > 8 {
+				pid = pid[:8]
+			}
+			if ev.Reason == "NO_LIMITATION" && ev.Mid != "" {
+				j.logFn("telemost-joiner: [bind] BOUND slot=%d pid=%s mid=%s", ev.Slot, pid, ev.Mid)
+				j.boundMu.Lock()
+				if j.boundPeers == nil {
+					j.boundPeers = make(map[string]bool)
+				}
+				j.boundPeers[fullPid] = true
+				delete(j.unboundPeers, fullPid)
+				j.boundMu.Unlock()
+			} else if fullPid != "" {
+				j.boundMu.Lock()
+				wasBound := j.boundPeers[fullPid]
+				if wasBound {
+					if j.unboundPeers == nil {
+						j.unboundPeers = make(map[string]bool)
+					}
+					j.unboundPeers[fullPid] = true
+					delete(j.boundPeers, fullPid)
+				}
+				j.boundMu.Unlock()
+				if wasBound {
+					j.logFn("telemost-joiner: [bind] KILL slot=%d pid=%s reason=%s - rebinding", ev.Slot, pid, ev.Reason)
+					needRebind = true
+				} else {
+					j.logFn("telemost-joiner: [bind] UNBOUND slot=%d pid=%s reason=%s mid=%q", ev.Slot, pid, ev.Reason, ev.Mid)
+				}
+			}
+		}
+		j.boundMu.Lock()
+		for boundPid := range j.boundPeers {
+			if !presentPids[boundPid] {
+				short := boundPid
+				if len(short) > 8 {
+					short = short[:8]
+				}
+				j.logFn("telemost-joiner: [bind] VANISHED pid=%s - rebinding", short)
+				delete(j.boundPeers, boundPid)
+				needRebind = true
+			}
+		}
+		j.boundMu.Unlock()
+		if needRebind {
+			go j.forceReconnect("slot binding killed")
+		}
+		j.ack(uid)
+		return
+	}
+
+	for k, v := range msg {
+		if k == "uid" || k == "ack" {
+			continue
+		}
+		j.logFn("telemost-joiner: <- %s (unhandled) %s", k, tmapi.BriefJSON(v))
+		break
 	}
 
 	if uid != "" {
@@ -745,6 +894,29 @@ func (j *TelemostHeadlessJoiner) connectAndRun() {
 		}
 	}()
 
+	stopStateKeepalive := make(chan struct{})
+	go func() {
+		interval := j.stateCheckIntervalS
+		if interval <= 0 {
+			interval = 30
+		}
+		if err := j.requestStates(); err != nil {
+			j.logFn("telemost-joiner: initial request-states: %v", err)
+		}
+		ticker := time.NewTicker(time.Duration(interval) * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopStateKeepalive:
+				return
+			case <-ticker.C:
+				if err := j.requestStates(); err != nil {
+					j.logFn("telemost-joiner: request-states: %v", err)
+				}
+			}
+		}
+	}()
+
 	for {
 		_, raw, err := ws.ReadMessage()
 		if err != nil {
@@ -755,6 +927,7 @@ func (j *TelemostHeadlessJoiner) connectAndRun() {
 	}
 
 	close(stopPing)
+	close(stopStateKeepalive)
 	if j.vp8tunnel != nil {
 		j.vp8tunnel.Stop()
 	}
@@ -765,5 +938,7 @@ func (j *TelemostHeadlessJoiner) connectAndRun() {
 		j.pubPC.Close()
 	}
 	j.logFn("telemost-joiner: disconnected")
-	j.Status.EmitStatus(common.StatusTunnelLost)
+	if j.isClosed() {
+		j.Status.EmitStatus(common.StatusTunnelLost)
+	}
 }
