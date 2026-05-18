@@ -229,7 +229,7 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
         } else {
             JsHookJoinFragment.newInstance(url)
         }
-        setLogFullscreen(headlessMode)
+        setLogFullscreen(headlessMode && platform != CallPlatform.VK)
 
         supportFragmentManager.beginTransaction()
             .replace(R.id.joinFragmentContainer, fragment)
