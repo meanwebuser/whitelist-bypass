@@ -200,7 +200,7 @@ class MainActivity : AppCompatActivity(), SettingsDialogFragment.Listener, JoinF
         if (url.isEmpty()) return
 
         val platform = CallPlatform.fromUrl(url)
-        if (Prefs.tunnelMode == TunnelMode.DC && (platform == CallPlatform.TELEMOST || platform == CallPlatform.DION || platform == CallPlatform.WBSTREAM)) {
+        if (Prefs.tunnelMode == TunnelMode.DC && (platform == CallPlatform.TELEMOST || platform == CallPlatform.DION)) {
             Prefs.tunnelMode = TunnelMode.VIDEO
             statusCtrl.tunnelMode = TunnelMode.VIDEO
             Toast.makeText(this, R.string.dc_mode_not_supported, Toast.LENGTH_SHORT).show()

@@ -21,8 +21,9 @@ func main() {
 	socksUser := flag.String("socks-user", "", "SOCKS5 username (optional)")
 	socksPass := flag.String("socks-pass", "", "SOCKS5 password (optional)")
 	resources := flag.String("resources", "default", "resource mode: moderate, default, unlimited")
-	vp8FPS := flag.Int("vp8-fps", 24, "VP8 frame rate")
-	vp8Batch := flag.Int("vp8-batch", 30, "VP8 batch multiplier")
+	tunnelMode := flag.String("tunnel-mode", "video", "tunnel mode: video, dc")
+	vp8FPS := flag.Int("vp8-fps", 24, "VP8 frame rate (video mode only)")
+	vp8Batch := flag.Int("vp8-batch", 30, "VP8 batch multiplier (video mode only)")
 	flag.Parse()
 
 	if *roomFlag == "" {
@@ -50,7 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("[auth] %v", err)
 	}
-	log.Printf("[auth] room=%s server=%s", id, serverURL)
+	log.Printf("[auth] room=%s server=%s mode=%s", id, serverURL, *tunnelMode)
 
 	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(id))
 	if err != nil {
@@ -62,13 +63,18 @@ func main() {
 		RoomToken:   roomToken,
 		ServerURL:   serverURL,
 		DisplayName: *displayName,
+		TunnelMode:  *tunnelMode,
 		Obfuscator:  obf,
 		LogFn:       log.Printf,
 		VP8FPS:      *vp8FPS,
 		VP8Batch:    *vp8Batch,
 	})
 	sess.OnConnected = func(tun tunnel.DataTunnel) {
-		bridge := tunnel.NewRelayBridgeWithAuth(tun, "joiner", common.VP8BufSize, log.Printf, *socksUser, *socksPass)
+		readBuf := common.VP8BufSize
+		if _, ok := tun.(*tunnel.DCTunnel); ok {
+			readBuf = common.DCBufSize
+		}
+		bridge := tunnel.NewRelayBridgeWithAuth(tun, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
 		bridge.MarkReady()
 		addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
 		go func() {
@@ -76,7 +82,7 @@ func main() {
 				log.Printf("socks listen: %v", err)
 			}
 		}()
-		fmt.Printf("\n  TUNNEL CONNECTED\n  socks5 -> %s\n\n", addr)
+		fmt.Printf("\n  TUNNEL CONNECTED mode=%s\n  socks5 -> %s\n\n", *tunnelMode, addr)
 	}
 
 	if err := sess.Start(); err != nil {

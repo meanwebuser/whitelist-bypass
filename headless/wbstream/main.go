@@ -106,8 +106,14 @@ func main() {
 			if activeBridge != nil {
 				activeBridge.Reset()
 			}
-			activeBridge = tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
-			fmt.Printf("\n  TUNNEL CONNECTED\n")
+			bridgeReadBuf := common.VP8BufSize
+			mode := "video"
+			if _, ok := tun.(*tunnel.DCTunnel); ok {
+				bridgeReadBuf = readBuf
+				mode = "dc"
+			}
+			activeBridge = tunnel.NewRelayBridge(tun, "creator", bridgeReadBuf, log.Printf)
+			fmt.Printf("\n  TUNNEL CONNECTED mode=%s\n", mode)
 		}
 		sess.OnPeerRestart = func() {
 			if activeBridge != nil {

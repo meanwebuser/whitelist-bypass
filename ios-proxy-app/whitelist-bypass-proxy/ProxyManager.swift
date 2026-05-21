@@ -286,7 +286,7 @@ class ProxyManager: ObservableObject {
         detectedPlatform = CallPlatform.detect(url: callUrl)
         appendLog("Platform: \(detectedPlatform.rawValue)")
 
-        if tunnelMode == .dc && (detectedPlatform == .telemost || detectedPlatform == .dion || detectedPlatform == .wbstream) {
+        if tunnelMode == .dc && (detectedPlatform == .telemost || detectedPlatform == .dion) {
             tunnelMode = .video
             showToast(NSLocalizedString("dc_mode_not_supported", comment: ""))
         }
@@ -317,6 +317,7 @@ class ProxyManager: ObservableObject {
             let joinParams: [String: Any] = [
                 "roomId": CallPlatform.extractRoomId(url: callUrl),
                 "displayName": displayName,
+                "tunnelMode": tunnelMode.rawValue,
                 "vp8Fps": vp8Fps,
                 "vp8Batch": vp8Batch,
             ]

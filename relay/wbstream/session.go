@@ -22,6 +22,7 @@ type peerEntry struct {
 	identity  string
 	firstSeen time.Time
 	state     int32
+	promoted  bool
 }
 
 const (
@@ -96,8 +97,7 @@ func (s *Session) Start() error {
 	})
 	s.lk.OnReady = s.onLKReady
 	s.lk.OnTrack = s.onRemoteTrack
-	// DC tunnel disabled: WB Stream DC mode is dead.
-	// s.lk.OnDataChannel = s.onRemoteDataChannel
+	s.lk.OnDataChannel = s.onRemoteDataChannel
 	s.lk.OnPubConnected = s.startTunnel
 	if s.cfg.AccessToken != "" && s.cfg.RoomID != "" {
 		s.lk.OnParticipantUpdate = s.onParticipantUpdate
@@ -151,25 +151,24 @@ func (s *Session) onLKReady() {
 		return
 	}
 
-	// DC tunnel disabled: WB Stream DC mode is dead.
-	// ordered := true
-	// dc, err := pubPC.CreateDataChannel("_reliable", &webrtc.DataChannelInit{
-	// 	Ordered: &ordered,
-	// })
-	// if err != nil {
-	// 	s.cfg.LogFn("[lk] create reliable DC: %v", err)
-	// 	return
-	// }
-	// s.mu.Lock()
-	// s.pubReliableDC = dc
-	// s.mu.Unlock()
-	// dc.OnOpen(func() {
-	// 	s.cfg.LogFn("[lk] reliable DC open")
-	// 	s.mu.Lock()
-	// 	s.pubReliableDCReady = true
-	// 	s.mu.Unlock()
-	// 	s.maybeStartDCTunnel()
-	// })
+	ordered := true
+	dc, err := pubPC.CreateDataChannel("_reliable", &webrtc.DataChannelInit{
+		Ordered: &ordered,
+	})
+	if err != nil {
+		s.cfg.LogFn("[lk] create reliable DC: %v", err)
+		return
+	}
+	s.mu.Lock()
+	s.pubReliableDC = dc
+	s.mu.Unlock()
+	dc.OnOpen(func() {
+		s.cfg.LogFn("[lk] reliable DC open")
+		s.mu.Lock()
+		s.pubReliableDCReady = true
+		s.mu.Unlock()
+		s.maybeStartDCTunnel()
+	})
 
 	if err := s.lk.SendAddTrack(track.ID(), "videochannel",
 		livekit.TrackTypeVideo, livekit.TrackSourceCamera, 1280, 720); err != nil {
@@ -204,15 +203,13 @@ func (s *Session) startTunnel() {
 	s.mu.Unlock()
 	s.cfg.LogFn("[lk] vp8 tunnel writer started")
 
-	// DC tunnel disabled: only video mode is supported.
-	s.fireOnConnected(s.vp8tun)
-	// if s.cfg.TunnelMode == TunnelModeVideo {
-	// 	s.fireOnConnected(s.vp8tun)
-	// 	return
-	// }
-	// if s.cfg.TunnelMode == "" {
-	// 	s.vp8tun.SetOnData(func(payload []byte) { s.activate(s.vp8tun, payload) })
-	// }
+	if s.cfg.TunnelMode == TunnelModeVideo {
+		s.fireOnConnected(s.vp8tun)
+		return
+	}
+	if s.cfg.TunnelMode == "" {
+		s.vp8tun.SetOnData(func(payload []byte) { s.activate(s.vp8tun, payload) })
+	}
 }
 
 func (s *Session) maybeStartDCTunnel() {
@@ -428,6 +425,8 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 		s.peersBySID = make(map[string]peerEntry)
 	}
 	newcomerSIDs := make(map[string]bool)
+	var toPromote []peerEntry
+	canPromote := s.cfg.AccessToken != "" && s.cfg.RoomID != ""
 	for _, p := range updates {
 		if p.SID == "" || p.SID == selfSID {
 			continue
@@ -445,6 +444,10 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 			entry.identity = p.Identity
 		}
 		entry.state = p.State
+		if canPromote && !entry.promoted && entry.state == livekit.ParticipantStateActive && entry.identity != "" {
+			entry.promoted = true
+			toPromote = append(toPromote, entry)
+		}
 		s.peersBySID[p.SID] = entry
 	}
 
@@ -457,6 +460,11 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 		}
 	}
 	s.mu.Unlock()
+
+	for _, e := range toPromote {
+		go s.promotePeer(e.sid, e.identity)
+	}
+
 	if len(stale) == 0 {
 		return
 	}
@@ -474,6 +482,20 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 		delete(s.peersBySID, e.sid)
 		s.mu.Unlock()
 	}
+}
+
+func (s *Session) promotePeer(sid, identity string) {
+	if err := SetParticipantPermissions(http.DefaultClient, s.cfg.AccessToken, s.cfg.RoomID, identity, ModeratorPermissions); err != nil {
+		s.cfg.LogFn("[wb] promote failed identity=%s: %v", identity, err)
+		s.mu.Lock()
+		if entry, ok := s.peersBySID[sid]; ok {
+			entry.promoted = false
+			s.peersBySID[sid] = entry
+		}
+		s.mu.Unlock()
+		return
+	}
+	s.cfg.LogFn("[wb] promoted to moderator identity=%s sid=%s", identity, sid)
 }
 
 func (s *Session) Close() {
