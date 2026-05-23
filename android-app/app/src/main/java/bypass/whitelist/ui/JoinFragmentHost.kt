@@ -7,4 +7,6 @@ interface JoinFragmentHost {
     fun onJoinStatus(status: VpnStatus)
     fun onJoinStatusText(text: String)
     fun requestVpn()
+    fun setJoinUiVisible(visible: Boolean)
+    fun onJoinCancel()
 }

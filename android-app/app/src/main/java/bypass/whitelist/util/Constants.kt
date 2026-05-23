@@ -36,15 +36,20 @@ enum class DnsMode(val label: String) {
     CUSTOM("Custom"),
 }
 
+enum class ThemeMode(val label: String) {
+    SYSTEM("System"),
+    LIGHT("Light"),
+    DARK("Dark"),
+}
+
 object PrefsKeys {
     const val CONNECT_ON_START = "connect_on_start"
-    const val URL = "url"
     const val TUNNEL_MODE = "tunnel_mode"
     const val SHOW_LOGS = "show_logs"
     const val SPLIT_TUNNELING_MODE = "split_tunneling_mode"
     const val SPLIT_TUNNELING_PACKAGES = "split_tunneling_packages"
-    const val AUTOCLICK_ENABLED = "autoclick_enabled"
-    const val AUTOCLICK_NAME = "autoclick_name"
+    const val AUTOFILL_ENABLED = "autofill_enabled"
+    const val AUTOFILL_NAME = "autofill_name"
     const val HEADLESS = "headless"
     const val SOCKS_PORT = "socks_port"
     const val SOCKS_AUTH_MODE = "socks_auth_mode"
@@ -56,6 +61,9 @@ object PrefsKeys {
     const val DNS_SECONDARY = "dns_secondary"
     const val VP8_FPS = "vp8_fps"
     const val VP8_BATCH = "vp8_batch"
+    const val SAVED_DESTINATIONS = "saved_destinations"
+    const val ACTIVE_DESTINATION_ID = "active_destination_id"
+    const val THEME_MODE = "theme_mode"
 }
 
 object VP8Defaults {

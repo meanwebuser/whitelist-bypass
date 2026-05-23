@@ -1,32 +1,13 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">WhitelistBypass</string>
-    <string name="status_idle">Idle</string>
-    <string name="status_format">%1$s | %2$s</string>
-    <string name="btn_go">GO</string>
-    <string name="btn_disconnect">Disconnect</string>
     <string name="share_logs">Share logs</string>
-    <string name="copy_logs">Copy logs</string>
     <string name="copy_logs_toast">Logs copied to clipboard</string>
-    <string name="menu_reconnect_on_start">Reconnect on app start</string>
-    <string name="menu_show_logs">Show logs</string>
-    <string name="menu_share_logs">Share logs</string>
-    <string name="menu_reset">Reset</string>
-    <string name="menu_tunnel">Tunnel: %1$s</string>
-    <string name="menu_split_tunneling">Split tunneling (%1$s)</string>
-    <string name="menu_split_tunneling_manage">Manage split tunneling apps</string>
-    <string name="menu_autoclick_settings">Autoclick settings</string>
-    <string name="autoclick_settings_title">Autoclick settings</string>
-    <string name="autoclick_checkbox">Autoclick</string>
-    <string name="autoclick_name_input_hint">Autofill name</string>
-    <string name="autoclick_generate_random">Random</string>
-    <string name="split_tunneling_mode_prompt">Split tunneling mode</string>
-    <string name="split_tunneling_apps_prompt">Select apps</string>
+    <string name="autofill_settings_title">Autofill settings</string>
+    <string name="autofill_name_input_hint">Autofill name</string>
+    <string name="autofill_generate_random">Random</string>
     <string name="split_tunneling_show_system_apps">Show system apps</string>
     <string name="split_tunneling_mode_changed">Reconnect for changes to take effect</string>
     <string name="split_tunneling_search_apps_hint">Search</string>
-    <string name="hint_call_link">Paste call link</string>
-    <string name="cd_clear">Clear</string>
-    <string name="cd_settings">Settings</string>
     <string name="expand_webview">Expand WebView</string>
     <string name="collapse_webview">Collapse WebView</string>
     <string name="vpn_starting">Starting…</string>
@@ -38,36 +19,146 @@
     <string name="vpn_tunnel_lost">Tunnel lost, reconnecting…</string>
     <string name="vpn_call_disconnected">Call disconnected</string>
     <string name="vpn_call_failed">Call failed</string>
-    <string name="vpn_port_busy">Port %1$d busy</string>
+    <string name="vpn_port_busy" tools:ignore="PluralsCandidate">Port %1$d busy</string>
     <string name="action_required_captcha">Action required (captcha)</string>
-    <string name="menu_headless">Headless</string>
-    <string name="menu_proxy_settings">Proxy settings</string>
+    <string name="captcha_pill_label">Captcha required / id.vk.com</string>
+    <string name="jshook_pill_label">Live / interactive page</string>
     <string name="proxy_settings_title">Proxy</string>
-    <string name="proxy_port_label">SOCKS5 port</string>
-    <string name="proxy_auth_mode_label">Authentication</string>
     <string name="proxy_auth_auto">Auto</string>
     <string name="proxy_auth_manual">Manual</string>
     <string name="proxy_username_hint">Username</string>
     <string name="proxy_password_hint">Password</string>
-    <string name="proxy_copy">Copy proxy URL</string>
-    <string name="proxy_copied">Copied to clipboard</string>
-    <string name="proxy_only_label">Proxy only (no VPN)</string>
-    <string name="menu_dns_settings">DNS settings</string>
     <string name="dns_settings_title">DNS</string>
-    <string name="dns_mode_label">DNS mode</string>
-    <string name="dns_mode_system">System</string>
-    <string name="dns_mode_custom">Custom</string>
     <string name="dns_primary_hint">Primary DNS</string>
     <string name="dns_secondary_hint">Secondary DNS</string>
-    <string name="menu_vp8_pacing">VP8 pacing</string>
     <string name="vp8_pacing_title">VP8 pacing</string>
     <string name="vp8_fps_label">FPS</string>
-    <string name="vp8_fps_hint">e.g. 24</string>
     <string name="vp8_batch_label">Batch</string>
-    <string name="vp8_batch_hint">e.g. 1, 8, 30</string>
     <string name="notification_vpn_title">VPN active</string>
     <string name="notification_proxy_title">Proxy active</string>
     <string name="notification_disconnect">Disconnect</string>
-    <string name="settings_close">Close</string>
     <string name="dc_mode_not_supported">DC mode not supported - falling back to video</string>
+
+    <string name="nav_main">Main</string>
+    <string name="nav_settings">Settings</string>
+    <string name="nav_activity">Logs</string>
+
+    <string name="main_sub_no_configs">No calls saved</string>
+    <plurals name="main_sub_count">
+        <item quantity="one">1 call saved</item>
+        <item quantity="other">%d calls saved</item>
+    </plurals>
+    <string name="main_sub_live">Live</string>
+
+    <string name="empty_calls_title">Add your first call</string>
+    <string name="empty_calls_sub">Paste a call link to save it</string>
+
+    <string name="hero_connect">Connect</string>
+    <string name="hero_cancel">Cancel</string>
+    <string name="hero_disconnect">Disconnect</string>
+
+    <string name="status_headline_disconnected">Disconnected</string>
+    <string name="status_detail_no_calls">Add a call to get started</string>
+    <string name="status_detail_pick_call">Pick a call and tap connect</string>
+    <string name="status_headline_connecting">Connecting</string>
+    <string name="status_headline_connected">Connected</string>
+
+    <string name="stat_uptime">Uptime</string>
+    <string name="stat_mode">Mode</string>
+
+    <string name="ping_run">Ping through tunnel</string>
+    <string name="ping_running">Pinging&#8230;</string>
+    <string name="ping_ok">%1$s reached via tunnel</string>
+    <string name="ping_fail">%1$s not reachable via tunnel</string>
+    <string name="ping_timeout">timeout</string>
+    <string name="ping_ms">%1$d ms</string>
+
+    <string name="picker_add_title">Add new call</string>
+
+    <string name="sheet_new_title">New call</string>
+    <string name="sheet_new_sub">Save a call link to your list. Platform is detected automatically.</string>
+    <string name="sheet_field_name">Name</string>
+    <string name="sheet_field_link">Call link</string>
+    <string name="sheet_field_name_hint">e.g. Standup VK</string>
+    <string name="sheet_field_link_hint">https://&#8230;</string>
+    <string name="sheet_save">Save call</string>
+    <string name="sheet_save_short">Save</string>
+    <string name="sheet_cancel">Cancel</string>
+
+    <string name="paste_from_clipboard">Paste from clipboard</string>
+    <string name="clipboard_empty">Clipboard is empty</string>
+
+
+    <string name="settings_row_tunnel_mode">Tunnel mode</string>
+    <string name="settings_row_vp8">VP8 pacing</string>
+    <string name="settings_row_vp8_sub" tools:ignore="PluralsCandidate">%1$d fps / %2$d batch</string>
+    <string name="settings_row_autofill">Autofill</string>
+    <string name="settings_row_autofill_off">Off</string>
+    <string name="settings_row_split">Split tunneling</string>
+    <string name="settings_row_proxy">Proxy</string>
+    <string name="settings_row_proxy_sub">SOCKS5 port %1$d</string>
+    <string name="settings_row_dns">DNS</string>
+    <string name="settings_row_headless">Headless mode</string>
+    <string name="settings_row_headless_sub">Skip the visible browser join</string>
+    <string name="settings_row_reconnect">Reconnect on app start</string>
+    <string name="settings_row_reconnect_sub">Restore the last session automatically</string>
+
+    <string name="settings_toast_destinations_cleared">All calls removed</string>
+    <string name="settings_toast_reset_done">Settings reset</string>
+
+    <string name="destination_menu_rename">Rename</string>
+    <string name="destination_menu_delete">Delete</string>
+    <string name="destination_rename_title">Rename call</string>
+    <string name="destination_delete_title">Delete call</string>
+    <string name="destination_delete_confirm">Remove \"%1$s\"?</string>
+
+    <string name="back">Back</string>
+    <string name="split_tunneling_title">Split tunneling</string>
+    <string name="split_tunneling_mode_off">Off</string>
+    <string name="split_tunneling_mode_bypass">Bypass</string>
+    <string name="split_tunneling_mode_bypass_sub">Selected apps go around the tunnel</string>
+    <string name="split_tunneling_mode_only">Only</string>
+    <string name="split_tunneling_mode_only_sub">Only selected apps go through the tunnel</string>
+    <string name="split_tunneling_apps_section">Apps</string>
+    <string name="split_tunneling_summary_off">Off</string>
+    <plurals name="split_tunneling_summary_count">
+        <item quantity="one">%1$s, %2$d app</item>
+        <item quantity="other">%1$s, %2$d apps</item>
+    </plurals>
+
+    <string name="settings_section_tunnel">Tunnel</string>
+    <string name="settings_section_network">Network</string>
+    <string name="settings_section_behavior">Behavior</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_row_theme">Theme</string>
+    <string name="settings_row_theme_sub">Light, dark, or follow system</string>
+    <string name="settings_section_danger">Danger zone</string>
+    <string name="settings_forget_all_destinations">Forget all calls</string>
+    <string name="settings_forget_all_destinations_sub">Removes saved call links. Settings stay.</string>
+    <string name="settings_reset_all">Reset all settings</string>
+    <string name="settings_reset_all_sub">Return every option to its default value</string>
+    <string name="confirm_reset">Reset</string>
+    <string name="confirm_forget">Forget</string>
+    <string name="confirm_delete">Delete</string>
+    <string name="autofill_settings_sub">When the join page asks for a display name, the app fills it in for you.</string>
+    <string name="autofill_enable_title">Enable autofill</string>
+    <string name="autofill_enable_sub">Click join button + fill name automatically</string>
+    <string name="autofill_name_field_label">Display name</string>
+    <string name="vp8_pacing_sub">Tune the data-channel video framing. Lower fps + bigger batch reduces overhead, but may stutter.</string>
+    <string name="dns_sub">Pick a DNS resolver used inside the tunnel.</string>
+    <string name="dns_primary_label">Primary</string>
+    <string name="dns_secondary_label">Secondary</string>
+    <string name="proxy_sub">Local SOCKS5 endpoint exposed to apps routed through the tunnel.</string>
+    <string name="proxy_port_field_label">SOCKS5 port</string>
+    <string name="proxy_auth_field_label">Authentication</string>
+    <string name="proxy_user_field_label">User</string>
+    <string name="proxy_pass_field_label">Pass</string>
+    <string name="proxy_only_title">Proxy only</string>
+    <string name="proxy_only_sub">Skip the VPN, expose SOCKS5 only</string>
+    <string name="proxy_auth_auto_sub">Generated user / pass</string>
+    <string name="proxy_auth_manual_sub">Use the user / pass below</string>
+
+    <string name="activity_empty">No events yet</string>
+    <string name="activity_copy">Copy raw</string>
+    <string name="activity_share">Share file</string>
 </resources>

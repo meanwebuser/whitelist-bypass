@@ -3,6 +3,7 @@ package bypass.whitelist.util
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import bypass.whitelist.tunnel.CallConfig
 import bypass.whitelist.tunnel.SplitTunnelingMode
 import bypass.whitelist.tunnel.TunnelMode
 
@@ -17,10 +18,6 @@ object Prefs {
     var connectOnStart: Boolean
         get() = prefs.getBoolean(PrefsKeys.CONNECT_ON_START, false)
         set(value) = prefs.edit { putBoolean(PrefsKeys.CONNECT_ON_START, value) }
-
-    var lastUrl: String
-        get() = prefs.getString(PrefsKeys.URL, "")!!
-        set(value) = prefs.edit { putString(PrefsKeys.URL, value) }
 
     var tunnelMode: TunnelMode
         get() {
@@ -52,13 +49,13 @@ object Prefs {
         get() = prefs.getStringSet(PrefsKeys.SPLIT_TUNNELING_PACKAGES, emptySet()) ?: emptySet()
         set(value) = prefs.edit { putStringSet(PrefsKeys.SPLIT_TUNNELING_PACKAGES, value) }
 
-    var autoclickEnabled: Boolean
-        get() = prefs.getBoolean(PrefsKeys.AUTOCLICK_ENABLED, true)
-        set(value) = prefs.edit { putBoolean(PrefsKeys.AUTOCLICK_ENABLED, value) }
+    var autofillEnabled: Boolean
+        get() = prefs.getBoolean(PrefsKeys.AUTOFILL_ENABLED, true)
+        set(value) = prefs.edit { putBoolean(PrefsKeys.AUTOFILL_ENABLED, value) }
 
-    var autoclickName: String
-        get() = prefs.getString(PrefsKeys.AUTOCLICK_NAME, "Hello")!!
-        set(value) = prefs.edit { putString(PrefsKeys.AUTOCLICK_NAME, value) }
+    var autofillName: String
+        get() = prefs.getString(PrefsKeys.AUTOFILL_NAME, "Hello")!!
+        set(value) = prefs.edit { putString(PrefsKeys.AUTOFILL_NAME, value) }
 
     var headless: Boolean
         get() = prefs.getBoolean(PrefsKeys.HEADLESS, true)
@@ -117,4 +114,57 @@ object Prefs {
     var vp8Batch: Int
         get() = prefs.getInt(PrefsKeys.VP8_BATCH, VP8Defaults.BATCH)
         set(value) = prefs.edit { putInt(PrefsKeys.VP8_BATCH, value) }
+
+    var savedDestinations: List<CallConfig>
+        get() = CallConfig.listFromJson(prefs.getString(PrefsKeys.SAVED_DESTINATIONS, "") ?: "")
+        set(value) = prefs.edit { putString(PrefsKeys.SAVED_DESTINATIONS, CallConfig.listToJson(value)) }
+
+    var activeDestinationId: String
+        get() = prefs.getString(PrefsKeys.ACTIVE_DESTINATION_ID, "") ?: ""
+        set(value) = prefs.edit { putString(PrefsKeys.ACTIVE_DESTINATION_ID, value) }
+
+    var themeMode: ThemeMode
+        get() {
+            val name = prefs.getString(PrefsKeys.THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
+            return try { ThemeMode.valueOf(name) } catch (_: IllegalArgumentException) { ThemeMode.SYSTEM }
+        }
+        set(value) = prefs.edit { putString(PrefsKeys.THEME_MODE, value.name) }
+
+    val activeDestination: CallConfig?
+        get() {
+            val id = activeDestinationId
+            if (id.isEmpty()) return null
+            return savedDestinations.firstOrNull { it.id == id }
+        }
+
+    fun addDestination(config: CallConfig) {
+        val list = savedDestinations.toMutableList()
+        list.removeAll { it.id == config.id }
+        list.add(0, config)
+        savedDestinations = list
+        activeDestinationId = config.id
+    }
+
+    fun removeDestination(id: String) {
+        val list = savedDestinations.filter { it.id != id }
+        savedDestinations = list
+        if (activeDestinationId == id) {
+            activeDestinationId = list.firstOrNull()?.id ?: ""
+        }
+    }
+
+    fun renameDestination(id: String, newName: String) {
+        val list = savedDestinations.map { if (it.id == id) it.copy(name = newName) else it }
+        savedDestinations = list
+    }
+
+    fun resetAllSettings() {
+        val keepDestinations = prefs.getString(PrefsKeys.SAVED_DESTINATIONS, null)
+        val keepActiveId = prefs.getString(PrefsKeys.ACTIVE_DESTINATION_ID, null)
+        prefs.edit {
+            clear()
+            if (keepDestinations != null) putString(PrefsKeys.SAVED_DESTINATIONS, keepDestinations)
+            if (keepActiveId != null) putString(PrefsKeys.ACTIVE_DESTINATION_ID, keepActiveId)
+        }
+    }
 }

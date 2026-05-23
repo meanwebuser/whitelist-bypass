@@ -25,8 +25,8 @@ import bypass.whitelist.tunnel.RelayController
 import bypass.whitelist.tunnel.TunnelMode
 import bypass.whitelist.tunnel.VpnStatus
 import bypass.whitelist.util.BLANK_URL
-import bypass.whitelist.util.Ports
 import bypass.whitelist.util.DESKTOP_USER_AGENT
+import bypass.whitelist.util.Ports
 import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.maskUrl
 import java.net.HttpURLConnection
@@ -60,7 +60,7 @@ class JsHookJoinFragment : Fragment() {
         HookKey(true, CallPlatform.TELEMOST) to lazy { loadAsset("video-telemost.js") },
     )
 
-    private val autoclickers = mapOf(
+    private val autofillers = mapOf(
         CallPlatform.VK to lazy { loadAsset("autoclick-vk.js") },
         CallPlatform.TELEMOST to lazy { loadAsset("autoclick-telemost.js") },
     )
@@ -82,6 +82,9 @@ class JsHookJoinFragment : Fragment() {
         toggleButton = view.findViewById(R.id.toggleWebViewButton)
         toggleArrow = view.findViewById(R.id.toggleWebViewArrow)
         toggleLabel = view.findViewById(R.id.toggleWebViewLabel)
+        view.findViewById<android.widget.ImageButton>(R.id.webviewBackButton).setOnClickListener {
+            host?.onJoinCancel()
+        }
 
         relay = RelayController(
             nativeLibDir = requireContext().applicationInfo.nativeLibraryDir,
@@ -165,10 +168,10 @@ class JsHookJoinFragment : Fragment() {
                     view.evaluateJavascript("window.WS_PORT=${androidbind.Androidbind.activeWsPort()}", null)
                     view.evaluateJavascript("window.PION_PORT=${Ports.PION_SIGNALING}", null)
                     view.evaluateJavascript(hookForPlatform(platform), null)
-                    if (Prefs.autoclickEnabled) {
-                        host?.appendLog("Injecting autoclick for ${maskUrl(url)}")
-                        view.evaluateJavascript("window.autofillName='${Prefs.autoclickName}'", null)
-                        view.evaluateJavascript(autoclickers[platform]!!.value, null)
+                    if (Prefs.autofillEnabled) {
+                        host?.appendLog("Injecting autofill for ${maskUrl(url)}")
+                        view.evaluateJavascript("window.autofillName='${Prefs.autofillName}'", null)
+                        view.evaluateJavascript(autofillers[platform]!!.value, null)
                     }
                 }
             }

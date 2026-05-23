@@ -8,4 +8,11 @@ enum class TunnelMode(val label: String, val relayArg: String, val isPion: Boole
         if (!isPion) return "dc-joiner"
         return "${platform.id}-$relayArg-joiner"
     }
+
+    fun effectiveFor(platform: CallPlatform): TunnelMode {
+        if (this == DC && (platform == CallPlatform.TELEMOST || platform == CallPlatform.DION)) {
+            return VIDEO
+        }
+        return this
+    }
 }

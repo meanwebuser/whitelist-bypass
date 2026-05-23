@@ -7,12 +7,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ImageButton
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import bypass.whitelist.R
-import bypass.whitelist.util.BLANK_URL
 import bypass.whitelist.tunnel.HeadlessRelayController
 import bypass.whitelist.tunnel.VpnStatus
+import bypass.whitelist.util.BLANK_URL
 import bypass.whitelist.util.Prefs
 
 class HeadlessVkFragment : Fragment() {
@@ -31,12 +32,16 @@ class HeadlessVkFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         webView = view.findViewById(R.id.captchaWebView)
+        view.findViewById<ImageButton>(R.id.captchaBackButton).setOnClickListener {
+            host?.onJoinCancel()
+        }
         val url = requireArguments().getString(ARG_URL, "")
-        val displayName = Prefs.autoclickName
+        val displayName = Prefs.autofillName
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.webViewClient = WebViewClient()
+        webView.setBackgroundColor(android.graphics.Color.WHITE)
         webView.isVisible = false
 
         relay = HeadlessRelayController(
@@ -55,6 +60,7 @@ class HeadlessVkFragment : Fragment() {
                         webView.stopLoading()
                         webView.loadUrl(BLANK_URL)
                         webView.isVisible = false
+                        host?.setJoinUiVisible(false)
                         host?.requestVpn()
                     }
                 }
@@ -62,6 +68,7 @@ class HeadlessVkFragment : Fragment() {
             onCaptchaUrl = { captchaUrl ->
                 Log.d("HEADLESS-VK", "captcha URL: $captchaUrl")
                 activity?.runOnUiThread {
+                    host?.setJoinUiVisible(true)
                     webView.isVisible = true
                     webView.loadUrl(captchaUrl)
                 }
