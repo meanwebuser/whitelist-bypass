@@ -103,13 +103,7 @@ func main() {
 		startVideo(*mode, c, joinerCallback)
 	case "vk-headless-joiner":
 		c := android.NewVKHeadlessJoiner(log.Printf)
-		c.OnConnected = func(tun tunnel.DataTunnel) {
-			readBuf := common.VP8BufSize
-			if _, ok := tun.(*tunnel.DCTunnel); ok {
-				readBuf = common.DCBufSize
-			}
-			startJoinerBridge(tun, readBuf)
-		}
+		c.OnConnected = newPersistentJoinerBridge()
 		c.Run()
 	case "vk-video-creator":
 		c := pion.NewVKClient(log.Printf)

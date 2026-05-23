@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -17,6 +20,23 @@ import (
 	"whitelist-bypass/relay/common"
 	"whitelist-bypass/relay/tunnel"
 )
+
+const (
+	vkReconnectInitialDelay = time.Second
+	vkReconnectMaxDelay     = 16 * time.Second
+)
+
+type vkAuthRottenError struct {
+	Code string
+	Msg  string
+}
+
+func (e *vkAuthRottenError) Error() string {
+	if e.Msg != "" {
+		return fmt.Sprintf("auth rotten: %s %s", e.Code, e.Msg)
+	}
+	return fmt.Sprintf("auth rotten: %s", e.Code)
+}
 
 type VKHeadlessAuthParams struct {
 	SessionKey      string `json:"sessionKey"`
@@ -75,6 +95,10 @@ type VKHeadlessJoiner struct {
 	vp8Batch    int
 	remoteSet   bool
 	pendingICE  []webrtc.ICECandidateInit
+
+	reconnectAttempt atomic.Int32
+	stopCh           chan struct{}
+	stopOnce         sync.Once
 }
 
 func NewVKHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc, status StatusEmitter, pcConfig PeerConnectionConfigurer, addTracks AddTunnelTracksFunc, readTrackFn ReadTrackFunc) *VKHeadlessJoiner {
@@ -85,6 +109,7 @@ func NewVKHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc, stat
 		PCConfig:    pcConfig,
 		AddTracks:   addTracks,
 		ReadTrackFn: readTrackFn,
+		stopCh:      make(chan struct{}),
 	}
 }
 
@@ -109,17 +134,104 @@ func (h *VKHeadlessJoiner) RunWithParams(jsonParams string) {
 	h.logFn("headless: obf key-source=%q localEpoch=0x%08x", params.JoinLink, obf.LocalEpoch())
 	h.logFn("headless:   appVersion=%s protocolVersion=%s vp8Fps=%d vp8Batch=%d",
 		params.AppVersion, params.ProtocolVersion, params.VP8FPS, params.VP8Batch)
-	h.Status.EmitStatus(common.StatusConnecting)
 
-	if err := h.joinCall(); err != nil {
-		h.logFn("headless: joinCall failed: %v", err)
+	h.Status.EmitStatus(common.StatusConnecting)
+	if err := h.runOnce(); err != nil {
+		h.logFn("headless: %v", err)
 		h.Status.EmitStatusError(err.Error())
 		return
 	}
+
+	for {
+		if h.isClosed() {
+			return
+		}
+		h.Status.EmitStatus(common.StatusTunnelLost)
+		if !h.waitBeforeRetry(int(h.reconnectAttempt.Load())) {
+			return
+		}
+		h.reconnectAttempt.Add(1)
+		if h.isClosed() {
+			return
+		}
+		h.logFn("headless: reconnect attempt #%d", h.reconnectAttempt.Load())
+		h.Status.EmitStatus(common.StatusReconnecting)
+		if err := h.runOnce(); err != nil {
+			var authRotten *vkAuthRottenError
+			if errors.As(err, &authRotten) {
+				h.logFn("headless: %v, surrendering", err)
+				h.Status.EmitStatusError("call failed: " + err.Error())
+				return
+			}
+			h.logFn("headless: %v, will retry", err)
+		}
+	}
+}
+
+func (h *VKHeadlessJoiner) runOnce() error {
+	h.resetSessionState()
+	if err := h.joinCall(); err != nil {
+		return err
+	}
 	h.connectSFU()
+	return nil
+}
+
+func (h *VKHeadlessJoiner) waitBeforeRetry(attempt int) bool {
+	delay := vkReconnectInitialDelay << attempt
+	if delay > vkReconnectMaxDelay || delay <= 0 {
+		delay = vkReconnectMaxDelay
+	}
+	h.logFn("headless: waiting %s before reconnect", delay)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return !h.isClosed()
+	case <-h.stopCh:
+		return false
+	}
+}
+
+func (h *VKHeadlessJoiner) isClosed() bool {
+	select {
+	case <-h.stopCh:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *VKHeadlessJoiner) resetSessionState() {
+	h.vkMu.Lock()
+	ws := h.vkWs
+	h.vkWs = nil
+	h.vkSeq = 0
+	h.vkMu.Unlock()
+	if ws != nil {
+		ws.Close()
+	}
+	if h.vp8tunnel != nil {
+		h.vp8tunnel.Stop()
+		h.vp8tunnel = nil
+	}
+	if h.dc != nil {
+		h.dc.Close()
+		h.dc = nil
+	}
+	if h.pc != nil {
+		h.pc.Close()
+		h.pc = nil
+	}
+	h.sampleTrack = nil
+	h.remoteSet = false
+	h.pendingICE = nil
+	h.remotePeerID = nil
+	h.joinResp = nil
 }
 
 func (h *VKHeadlessJoiner) Close() {
+	h.stopOnce.Do(func() { close(h.stopCh) })
 	StopCaptchaProxy()
 	h.vkMu.Lock()
 	ws := h.vkWs
@@ -184,18 +296,58 @@ func (h *VKHeadlessJoiner) joinCall() error {
 		return fmt.Errorf("joinConversationByLink: %w", err)
 	}
 	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read join response: %w", err)
+	}
 
 	var joinResp VKJoinResponse
-	if err := json.NewDecoder(resp.Body).Decode(&joinResp); err != nil {
-		return fmt.Errorf("decode join response: %w", err)
+	if jsonErr := json.Unmarshal(raw, &joinResp); jsonErr != nil {
+		return fmt.Errorf("decode join response: %w (body: %s)", jsonErr, truncateBody(raw))
 	}
 	if joinResp.Endpoint == "" {
-		return fmt.Errorf("empty endpoint in join response")
+		if rotten := detectVKAuthRotten(raw); rotten != nil {
+			return rotten
+		}
+		return fmt.Errorf("empty endpoint in join response: %s", truncateBody(raw))
 	}
 
 	h.joinResp = &joinResp
 	h.logFn("headless: joined, turn=%v", joinResp.TurnServer.URLs)
 	return nil
+}
+
+func detectVKAuthRotten(raw []byte) *vkAuthRottenError {
+	var generic map[string]interface{}
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return nil
+	}
+	errCode, _ := generic["error_code"].(string)
+	if errCode == "" {
+		if codeNum, ok := generic["error_code"].(float64); ok {
+			errCode = fmt.Sprintf("%.0f", codeNum)
+		}
+	}
+	if errCode == "" {
+		errCode, _ = generic["errorCode"].(string)
+	}
+	if errCode == "" {
+		return nil
+	}
+	switch errCode {
+	case "SESSION_EXPIRED", "AUTH_LOGIN", "SESSION_NOT_FOUND", "INVALID_SESSION_KEY":
+		errMsg, _ := generic["error_msg"].(string)
+		return &vkAuthRottenError{Code: errCode, Msg: errMsg}
+	}
+	return nil
+}
+
+func truncateBody(raw []byte) string {
+	const maxLen = 200
+	if len(raw) > maxLen {
+		return string(raw[:maxLen]) + "..."
+	}
+	return string(raw)
 }
 
 func (h *VKHeadlessJoiner) connectSFU() {
@@ -448,6 +600,7 @@ func (h *VKHeadlessJoiner) initPC() {
 		dc.OnOpen(func() {
 			h.logFn("headless: tunnel DC open")
 			if mode == "dc" {
+				h.reconnectAttempt.Store(0)
 				h.logFn("headless: === DC TUNNEL CONNECTED ===")
 				h.Status.EmitStatus(common.StatusTunnelConnected)
 				if h.OnConnected != nil {
@@ -468,14 +621,17 @@ func (h *VKHeadlessJoiner) initPC() {
 	})
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		h.logFn("headless: PC state: %s", state.String())
-		if state == webrtc.PeerConnectionStateFailed {
-			h.logFn("headless: ERROR: connection failed")
-			h.Status.EmitStatusError("connection failed")
-		} else if state == webrtc.PeerConnectionStateDisconnected {
-			h.logFn("headless: ERROR: connection lost")
-			h.Status.EmitStatus(common.StatusTunnelLost)
+		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected {
+			h.logFn("headless: PC %s, closing WS to trigger reconnect", state.String())
+			h.vkMu.Lock()
+			ws := h.vkWs
+			h.vkMu.Unlock()
+			if ws != nil {
+				ws.Close()
+			}
 		}
 		if mode == "video" && state == webrtc.PeerConnectionStateConnected && h.vp8tunnel == nil {
+			h.reconnectAttempt.Store(0)
 			h.logFn("headless: === TUNNEL CONNECTED ===")
 			h.Status.EmitStatus(common.StatusTunnelConnected)
 			h.vp8tunnel = tunnel.NewVP8DataTunnel(h.sampleTrack, h.obf, h.logFn)
