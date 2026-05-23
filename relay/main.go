@@ -88,8 +88,27 @@ func main() {
 		startVideo(*mode, c, creatorCallback)
 	case "telemost-headless-joiner":
 		c := android.NewTelemostHeadlessJoiner(log.Printf)
+		var (
+			persistentBridge   *tunnel.RelayBridge
+			persistentBridgeMu sync.Mutex
+		)
 		c.OnConnected = func(tun tunnel.DataTunnel) {
-			startJoinerBridge(tun, common.VP8BufSize)
+			persistentBridgeMu.Lock()
+			defer persistentBridgeMu.Unlock()
+			if persistentBridge == nil {
+				persistentBridge = tunnel.NewRelayBridgeWithAuth(tun, "joiner", common.VP8BufSize, log.Printf, *socksUser, *socksPass)
+				persistentBridge.SetPersistentListener(true)
+				persistentBridge.MarkReady()
+				addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
+				go func() {
+					if err := persistentBridge.ListenSOCKS(addr); err != nil {
+						log.Printf("relay: SOCKS listen failed: %v", err)
+					}
+				}()
+				return
+			}
+			persistentBridge.SwapTunnel(tun)
+			log.Printf("relay: tunnel swapped after reconnect")
 		}
 		c.Run()
 	case "telemost-video-joiner":

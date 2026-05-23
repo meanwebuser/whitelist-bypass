@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,9 +22,11 @@ import (
 )
 
 const (
-	TmAPIBase    = tmapi.APIBase
-	TmOrigin     = tmapi.Origin
-	TmPingPeriod = 5 * time.Second
+	TmAPIBase                     = tmapi.APIBase
+	TmOrigin                      = tmapi.Origin
+	TmPingPeriod                  = 5 * time.Second
+	telemostReconnectInitialDelay = time.Second
+	telemostReconnectMaxDelay     = 16 * time.Second
 )
 
 type TelemostHeadlessJoiner struct {
@@ -77,6 +80,10 @@ type TelemostHeadlessJoiner struct {
 	closeMu sync.Mutex
 	closed  bool
 
+	stopCh           chan struct{}
+	stopOnce         sync.Once
+	reconnectAttempt atomic.Int32
+
 	setSlotsKey     int
 	initBundleSent  bool
 	boundPeers      map[string]bool
@@ -93,6 +100,7 @@ func NewTelemostHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc
 		AddTracks:   addTracks,
 		ReadTrackFn: readTrackFn,
 		instanceID:  uuid.New().String(),
+		stopCh:      make(chan struct{}),
 	}
 }
 
@@ -124,25 +132,55 @@ func (j *TelemostHeadlessJoiner) RunWithParams(jsonParams string) {
 	j.vp8Batch = params.VP8Batch
 	j.logFn("telemost-joiner: link=%s name=%s vp8Fps=%d vp8Batch=%d localEpoch=0x%08x",
 		j.joinLink, j.displayName, params.VP8FPS, params.VP8Batch, obf.LocalEpoch())
+
 	j.Status.EmitStatus(common.StatusConnecting)
+	if err := j.runOnce(); err != nil {
+		j.Status.EmitStatusError(err.Error())
+		return
+	}
 
 	for {
-		if err := j.getConnection(); err != nil {
-			j.logFn("telemost-joiner: ERROR: %v", err)
-			j.Status.EmitStatusError(err.Error())
-			return
-		}
-		j.connectAndRun()
 		if j.isClosed() {
 			return
 		}
-		j.logFn("telemost-joiner: reconnecting in 3s...")
+		j.Status.EmitStatus(common.StatusTunnelLost)
 		j.resetSessionState()
-		time.Sleep(3 * time.Second)
+		if !j.waitBeforeRetry(int(j.reconnectAttempt.Load())) {
+			return
+		}
+		j.reconnectAttempt.Add(1)
 		if j.isClosed() {
 			return
 		}
-		j.Status.EmitStatus(common.StatusConnecting)
+		j.logFn("telemost-joiner: reconnect attempt #%d", j.reconnectAttempt.Load())
+		j.Status.EmitStatus(common.StatusReconnecting)
+		if err := j.runOnce(); err != nil {
+			j.logFn("telemost-joiner: %v, will retry", err)
+		}
+	}
+}
+
+func (j *TelemostHeadlessJoiner) runOnce() error {
+	if err := j.getConnection(); err != nil {
+		return err
+	}
+	j.connectAndRun()
+	return nil
+}
+
+func (j *TelemostHeadlessJoiner) waitBeforeRetry(attempt int) bool {
+	delay := telemostReconnectInitialDelay << attempt
+	if delay > telemostReconnectMaxDelay || delay <= 0 {
+		delay = telemostReconnectMaxDelay
+	}
+	j.logFn("telemost-joiner: waiting %s before reconnect", delay)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return !j.isClosed()
+	case <-j.stopCh:
+		return false
 	}
 }
 
@@ -161,12 +199,17 @@ func (j *TelemostHeadlessJoiner) resetSessionState() {
 	j.sampleTrack = nil
 	j.vp8tunnel = nil
 	j.initBundleSent = false
+	j.boundMu.Lock()
+	j.boundPeers = nil
+	j.unboundPeers = nil
+	j.boundMu.Unlock()
 }
 
 func (j *TelemostHeadlessJoiner) Close() {
 	j.closeMu.Lock()
 	j.closed = true
 	j.closeMu.Unlock()
+	j.stopOnce.Do(func() { close(j.stopCh) })
 	j.wsMu.Lock()
 	ws := j.ws
 	j.ws = nil
@@ -437,6 +480,7 @@ func (j *TelemostHeadlessJoiner) initPC() {
 	pubPC.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		j.logFn("telemost-joiner: pub PC state: %s", state.String())
 		if state == webrtc.PeerConnectionStateConnected && j.vp8tunnel == nil {
+			j.reconnectAttempt.Store(0)
 			j.logFn("telemost-joiner: === VP8 TUNNEL CONNECTED ===")
 			j.Status.EmitStatus(common.StatusTunnelConnected)
 			j.vp8tunnel = tunnel.NewVP8DataTunnel(j.sampleTrack, j.obf, j.logFn)
@@ -525,6 +569,7 @@ func (j *TelemostHeadlessJoiner) requestVideoSlots() {
 }
 
 func (j *TelemostHeadlessJoiner) forceReconnect(reason string) {
+	j.reconnectAttempt.Store(0)
 	oldPeerID := j.peerID
 	j.logFn("telemost-joiner: forcing reconnect: %s", reason)
 	if oldPeerID != "" {
@@ -938,7 +983,4 @@ func (j *TelemostHeadlessJoiner) connectAndRun() {
 		j.pubPC.Close()
 	}
 	j.logFn("telemost-joiner: disconnected")
-	if j.isClosed() {
-		j.Status.EmitStatus(common.StatusTunnelLost)
-	}
 }
