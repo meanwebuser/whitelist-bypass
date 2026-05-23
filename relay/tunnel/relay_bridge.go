@@ -20,6 +20,7 @@ type udpClient struct {
 }
 
 type RelayBridge struct {
+	tunnelMu   sync.RWMutex
 	tunnel     DataTunnel
 	conns      sync.Map
 	udpClients sync.Map
@@ -32,9 +33,10 @@ type RelayBridge struct {
 	socksUser  string
 	socksPass  string
 
-	listenerMu sync.Mutex
-	listener   net.Listener
-	closed     atomic.Bool
+	persistentListener atomic.Bool
+	listenerMu         sync.Mutex
+	listener           net.Listener
+	closed             atomic.Bool
 }
 
 func NewRelayBridgeWithAuth(tunnel DataTunnel, mode string, readBuf int, logFn func(string, ...any), socksUser, socksPass string) *RelayBridge {
@@ -53,8 +55,35 @@ func NewRelayBridge(tunnel DataTunnel, mode string, readBuf int, logFn func(stri
 		ready:   make(chan struct{}),
 	}
 	tunnel.SetOnData(rb.handleTunnelData)
-	tunnel.SetOnClose(rb.Close)
+	tunnel.SetOnClose(rb.handleTunnelClose)
 	return rb
+}
+
+func (rb *RelayBridge) SetPersistentListener(persistent bool) {
+	rb.persistentListener.Store(persistent)
+}
+
+func (rb *RelayBridge) SwapTunnel(newTunnel DataTunnel) {
+	rb.tunnelMu.Lock()
+	rb.tunnel = newTunnel
+	rb.tunnelMu.Unlock()
+	newTunnel.SetOnData(rb.handleTunnelData)
+	newTunnel.SetOnClose(rb.handleTunnelClose)
+	rb.closeAll()
+}
+
+func (rb *RelayBridge) currentTunnel() DataTunnel {
+	rb.tunnelMu.RLock()
+	defer rb.tunnelMu.RUnlock()
+	return rb.tunnel
+}
+
+func (rb *RelayBridge) handleTunnelClose() {
+	if rb.persistentListener.Load() {
+		rb.closeAll()
+		return
+	}
+	rb.Close()
 }
 
 func (rb *RelayBridge) closeAll() {
@@ -112,7 +141,7 @@ func (rb *RelayBridge) MarkReady() {
 
 func (rb *RelayBridge) send(connID uint32, msgType byte, payload []byte) {
 	frame := EncodeFrame(connID, msgType, payload)
-	rb.tunnel.SendData(frame)
+	rb.currentTunnel().SendData(frame)
 }
 
 func (rb *RelayBridge) handleTunnelData(data []byte) {
@@ -124,7 +153,7 @@ func (rb *RelayBridge) handleTunnelData(data []byte) {
 			}
 			if rb.mode == "creator" {
 				rb.logFn("relay: peer requested vp8 pacing fps=%d batch=%d", fps, batch)
-				rb.tunnel.Reconfigure(fps, batch)
+				rb.currentTunnel().Reconfigure(fps, batch)
 			}
 			return
 		}

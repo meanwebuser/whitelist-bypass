@@ -84,6 +84,7 @@ class HeadlessRelayController(
                         when {
                             status == "READY" -> onStatus(VpnStatus.STARTING)
                             status == "CONNECTING" -> onStatus(VpnStatus.CONNECTING)
+                            status == "RECONNECTING" -> onStatus(VpnStatus.CONNECTING)
                             status == "TUNNEL_CONNECTED" -> onStatus(VpnStatus.TUNNEL_ACTIVE)
                             status == "TUNNEL_LOST" -> onStatus(VpnStatus.TUNNEL_LOST)
                             status.startsWith("CAPTCHA:") -> {

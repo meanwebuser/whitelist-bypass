@@ -44,7 +44,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
             AddDestinationSheet.show(parentFragmentManager)
         }
         container.onHeroPressed = {
-            if (isHostConnected()) {
+            if (isHostConnected() || isHostConnecting()) {
                 host()?.onDisconnectPressed()
             } else {
                 val active = Prefs.activeDestination
@@ -180,6 +180,14 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
     private fun host(): Host? = activity as? Host
 
     private fun isHostConnected(): Boolean = host()?.isTunnelActive() ?: false
+
+    private fun isHostConnecting(): Boolean = when (hostStatus()) {
+        VpnStatus.CONNECTING,
+        VpnStatus.STARTING,
+        VpnStatus.CALL_CONNECTED,
+        VpnStatus.DATACHANNEL_OPEN -> true
+        else -> false
+    }
 
     private fun hostStatus(): VpnStatus? = host()?.currentStatus()
 

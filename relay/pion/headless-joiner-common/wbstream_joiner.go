@@ -14,6 +14,11 @@ import (
 	"whitelist-bypass/relay/wbstream"
 )
 
+const (
+	reconnectInitialDelay = time.Second
+	reconnectMaxDelay     = 16 * time.Second
+)
+
 type WBStreamHeadlessJoiner struct {
 	logFn       func(string, ...any)
 	OnConnected func(tunnel.DataTunnel)
@@ -21,9 +26,11 @@ type WBStreamHeadlessJoiner struct {
 	Status      StatusEmitter
 	PCConfig    PeerConnectionConfigurer
 
-	mu      sync.Mutex
-	session *wbstream.Session
-	closed  bool
+	mu       sync.Mutex
+	session  *wbstream.Session
+	closed   bool
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 func NewWBStreamHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc, status StatusEmitter, pcConfig PeerConnectionConfigurer) *WBStreamHeadlessJoiner {
@@ -32,6 +39,7 @@ func NewWBStreamHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc
 		ResolveFn: resolveFn,
 		Status:    status,
 		PCConfig:  pcConfig,
+		stopCh:    make(chan struct{}),
 	}
 }
 
@@ -59,23 +67,14 @@ func (j *WBStreamHeadlessJoiner) RunWithParams(jsonParams string) {
 
 	httpClient := j.makeHTTPClient()
 	j.logFn("wbstream-joiner: room=%s name=%s vp8Fps=%d vp8Batch=%d", params.RoomID, params.DisplayName, params.VP8FPS, params.VP8Batch)
-	j.Status.EmitStatus(common.StatusConnecting)
 
-	roomID, roomToken, _, serverURL, err := wbstream.AuthAndGetToken(httpClient, params.RoomID, params.DisplayName)
-	if err != nil {
-		j.logFn("wbstream-joiner: auth failed: %v", err)
-		j.Status.EmitStatusError("auth: " + err.Error())
-		return
-	}
-	j.logFn("wbstream-joiner: server=%s", serverURL)
-
-	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(roomID))
+	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(params.RoomID))
 	if err != nil {
 		j.logFn("wbstream-joiner: obfuscator init failed: %v", err)
 		j.Status.EmitStatusError("obfuscator init: " + err.Error())
 		return
 	}
-	j.logFn("wbstream-joiner: obf key-source=%q localEpoch=0x%08x", roomID, obf.LocalEpoch())
+	j.logFn("wbstream-joiner: obf key-source=%q localEpoch=0x%08x", params.RoomID, obf.LocalEpoch())
 
 	var settingEngine *webrtc.SettingEngine
 	if j.PCConfig != nil {
@@ -84,47 +83,126 @@ func (j *WBStreamHeadlessJoiner) RunWithParams(jsonParams string) {
 		settingEngine = &se
 	}
 
-	sess := wbstream.NewSession(wbstream.SessionConfig{
-		RoomToken:      roomToken,
-		ServerURL:      serverURL,
-		DisplayName:    params.DisplayName,
-		TunnelMode:     params.TunnelMode,
-		Obfuscator:     obf,
-		LogFn:          j.logFn,
-		SettingEngine:  settingEngine,
-		NetDialContext: j.makeDialContext(),
-		ResolveICEHost: j.ResolveFn,
-		VP8FPS:         params.VP8FPS,
-		VP8Batch:       params.VP8Batch,
-	})
-	sess.OnConnected = func(tun tunnel.DataTunnel) {
-		j.logFn("wbstream-joiner: === TUNNEL CONNECTED ===")
-		j.Status.EmitStatus(common.StatusTunnelConnected)
-		if j.OnConnected != nil {
-			j.OnConnected(tun)
+	attempt := 0
+	for {
+		if j.isClosed() {
+			return
 		}
-	}
+		if attempt == 0 {
+			j.Status.EmitStatus(common.StatusConnecting)
+		} else {
+			j.logFn("wbstream-joiner: reconnect attempt #%d", attempt)
+			j.Status.EmitStatus(common.StatusReconnecting)
+		}
 
-	j.mu.Lock()
-	j.session = sess
-	closed := j.closed
-	j.mu.Unlock()
-	if closed {
+		_, roomToken, _, serverURL, authErr := wbstream.AuthAndGetToken(httpClient, params.RoomID, params.DisplayName)
+		if authErr != nil {
+			j.logFn("wbstream-joiner: auth failed: %v", authErr)
+			if attempt == 0 {
+				j.Status.EmitStatusError("auth: " + authErr.Error())
+				return
+			}
+			if !j.waitBeforeRetry(attempt) {
+				return
+			}
+			attempt++
+			continue
+		}
+		j.logFn("wbstream-joiner: server=%s", serverURL)
+
+		sess := wbstream.NewSession(wbstream.SessionConfig{
+			RoomToken:      roomToken,
+			ServerURL:      serverURL,
+			DisplayName:    params.DisplayName,
+			TunnelMode:     params.TunnelMode,
+			Obfuscator:     obf,
+			LogFn:          j.logFn,
+			SettingEngine:  settingEngine,
+			NetDialContext: j.makeDialContext(),
+			ResolveICEHost: j.ResolveFn,
+			VP8FPS:         params.VP8FPS,
+			VP8Batch:       params.VP8Batch,
+		})
+		sess.OnConnected = func(tun tunnel.DataTunnel) {
+			j.logFn("wbstream-joiner: === TUNNEL CONNECTED ===")
+			j.Status.EmitStatus(common.StatusTunnelConnected)
+			if j.OnConnected != nil {
+				j.OnConnected(tun)
+			}
+		}
+
+		j.mu.Lock()
+		if j.closed {
+			j.mu.Unlock()
+			sess.Close()
+			return
+		}
+		j.session = sess
+		j.mu.Unlock()
+
+		startErr := sess.Start()
+		if startErr != nil {
+			j.logFn("wbstream-joiner: session start failed: %v", startErr)
+			j.clearSession(sess)
+			if attempt == 0 {
+				j.Status.EmitStatusError("session: " + startErr.Error())
+				return
+			}
+			if !j.waitBeforeRetry(attempt) {
+				return
+			}
+			attempt++
+			continue
+		}
+
+		<-sess.Done()
 		sess.Close()
-		return
+		j.clearSession(sess)
+		if j.isClosed() {
+			j.logFn("wbstream-joiner: stopped")
+			return
+		}
+		j.logFn("wbstream-joiner: session ended, reconnecting")
+		j.Status.EmitStatus(common.StatusTunnelLost)
+		if !j.waitBeforeRetry(attempt) {
+			return
+		}
+		attempt++
 	}
+}
 
-	if err := sess.Start(); err != nil {
-		j.logFn("wbstream-joiner: session start failed: %v", err)
-		j.Status.EmitStatusError("session: " + err.Error())
-		return
+func (j *WBStreamHeadlessJoiner) waitBeforeRetry(attempt int) bool {
+	delay := reconnectInitialDelay << attempt
+	if delay > reconnectMaxDelay || delay <= 0 {
+		delay = reconnectMaxDelay
 	}
-	<-sess.Done()
-	j.logFn("wbstream-joiner: session ended")
-	j.Status.EmitStatus(common.StatusTunnelLost)
+	j.logFn("wbstream-joiner: waiting %s before reconnect", delay)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return !j.isClosed()
+	case <-j.stopCh:
+		return false
+	}
+}
+
+func (j *WBStreamHeadlessJoiner) clearSession(sess *wbstream.Session) {
+	j.mu.Lock()
+	if j.session == sess {
+		j.session = nil
+	}
+	j.mu.Unlock()
+}
+
+func (j *WBStreamHeadlessJoiner) isClosed() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.closed
 }
 
 func (j *WBStreamHeadlessJoiner) Close() {
+	j.stopOnce.Do(func() { close(j.stopCh) })
 	j.mu.Lock()
 	j.closed = true
 	sess := j.session

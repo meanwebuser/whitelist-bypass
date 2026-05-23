@@ -123,6 +123,7 @@ struct StatusIndicator: View {
         case .idle: return .gray
         case .ready: return .gray
         case .connecting: return .yellow
+        case .reconnecting: return .yellow
         case .tunnelConnected: return .green
         case .tunnelLost: return .orange
         case .error: return .red

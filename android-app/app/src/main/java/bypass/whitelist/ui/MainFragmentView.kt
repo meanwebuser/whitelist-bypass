@@ -12,6 +12,7 @@ import bypass.whitelist.tunnel.CallConfig
 import bypass.whitelist.tunnel.VpnStatus
 import bypass.whitelist.util.Callback
 import bypass.whitelist.util.ParamCallback
+import bypass.whitelist.util.Prefs
 
 class MainFragmentView(private val root: View) {
 
@@ -183,7 +184,11 @@ class MainFragmentView(private val root: View) {
 
     fun bindStatus(status: VpnStatus) {
         val labelRes = status.labelRes
-        statusDetail.text = root.context.getString(labelRes)
+        statusDetail.text = if (status == VpnStatus.PORT_BUSY) {
+            root.context.getString(labelRes, Prefs.socksPort)
+        } else {
+            root.context.getString(labelRes)
+        }
     }
 
     fun bindStatusText(text: String) {

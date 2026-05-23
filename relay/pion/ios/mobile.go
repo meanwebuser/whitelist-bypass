@@ -30,6 +30,7 @@ var activeHeadless struct {
 	joiner   joinerHandle
 	callback HeadlessCallback
 	socksLn  net.Listener
+	bridge   *tunnel.RelayBridge
 	stopped  bool
 	platform string
 }
@@ -55,14 +56,31 @@ func makeOnConnected(socksPort int, socksUser, socksPass string, logFn func(stri
 			activeHeadless.Unlock()
 			return
 		}
+		existing := activeHeadless.bridge
 		activeHeadless.Unlock()
+
+		if existing != nil {
+			existing.SwapTunnel(tun)
+			logFn("ios: tunnel swapped after reconnect")
+			return
+		}
 
 		readBuf := common.VP8BufSize
 		if _, ok := tun.(*tunnel.DCTunnel); ok {
 			readBuf = common.DCBufSize
 		}
 		bridge := tunnel.NewRelayBridgeWithAuth(tun, "joiner", readBuf, logFn, socksUser, socksPass)
+		bridge.SetPersistentListener(true)
 		bridge.MarkReady()
+
+		activeHeadless.Lock()
+		if activeHeadless.stopped {
+			activeHeadless.Unlock()
+			bridge.Close()
+			return
+		}
+		activeHeadless.bridge = bridge
+		activeHeadless.Unlock()
 
 		socksAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
 		logFn("ios: SOCKS5 proxy starting on %s", socksAddr)
@@ -240,8 +258,10 @@ func StopHeadless() {
 	activeHeadless.stopped = true
 	currentJoiner := activeHeadless.joiner
 	socksLn := activeHeadless.socksLn
+	bridge := activeHeadless.bridge
 	activeHeadless.joiner = nil
 	activeHeadless.socksLn = nil
+	activeHeadless.bridge = nil
 	activeHeadless.callback = nil
 	activeHeadless.platform = ""
 	activeHeadless.Unlock()
@@ -249,6 +269,9 @@ func StopHeadless() {
 	joiner.StopCaptchaProxy()
 	if currentJoiner != nil {
 		currentJoiner.Close()
+	}
+	if bridge != nil {
+		bridge.Close()
 	}
 	if socksLn != nil {
 		socksLn.Close()

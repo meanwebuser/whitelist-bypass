@@ -5,6 +5,7 @@ import "fmt"
 const (
 	StatusReady            = "READY"
 	StatusConnecting       = "CONNECTING"
+	StatusReconnecting     = "RECONNECTING"
 	StatusTunnelConnected  = "TUNNEL_CONNECTED"
 	StatusTunnelLost       = "TUNNEL_LOST"
 	StatusError            = "ERROR"

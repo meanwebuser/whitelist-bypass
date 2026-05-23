@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"whitelist-bypass/relay/common"
 	"whitelist-bypass/relay/androidbind"
@@ -101,8 +102,31 @@ func main() {
 		startVideo(*mode, c, creatorCallback)
 	case "wbstream-headless-joiner":
 		c := android.NewWBStreamHeadlessJoiner(log.Printf)
+		var (
+			persistentBridge   *tunnel.RelayBridge
+			persistentBridgeMu sync.Mutex
+		)
 		c.OnConnected = func(tun tunnel.DataTunnel) {
-			startJoinerBridge(tun, common.VP8BufSize)
+			readBuf := common.VP8BufSize
+			if _, ok := tun.(*tunnel.DCTunnel); ok {
+				readBuf = common.DCBufSize
+			}
+			persistentBridgeMu.Lock()
+			defer persistentBridgeMu.Unlock()
+			if persistentBridge == nil {
+				persistentBridge = tunnel.NewRelayBridgeWithAuth(tun, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
+				persistentBridge.SetPersistentListener(true)
+				persistentBridge.MarkReady()
+				addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
+				go func() {
+					if err := persistentBridge.ListenSOCKS(addr); err != nil {
+						log.Printf("relay: SOCKS listen failed: %v", err)
+					}
+				}()
+				return
+			}
+			persistentBridge.SwapTunnel(tun)
+			log.Printf("relay: tunnel swapped after reconnect")
 		}
 		c.Run()
 	case "dion-headless-joiner":

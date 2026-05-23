@@ -8,6 +8,7 @@ enum ProxyStatus: String {
     case idle = "IDLE"
     case ready = "READY"
     case connecting = "CONNECTING"
+    case reconnecting = "RECONNECTING"
     case tunnelConnected = "TUNNEL_CONNECTED"
     case tunnelLost = "TUNNEL_LOST"
     case error = "ERROR"
@@ -17,6 +18,7 @@ enum ProxyStatus: String {
         case .idle: return NSLocalizedString("status_idle", comment: "")
         case .ready: return NSLocalizedString("status_ready", comment: "")
         case .connecting: return NSLocalizedString("status_connecting", comment: "")
+        case .reconnecting: return NSLocalizedString("status_connecting", comment: "")
         case .tunnelConnected: return NSLocalizedString("status_tunnel_active", comment: "")
         case .tunnelLost: return NSLocalizedString("status_tunnel_lost", comment: "")
         case .error: return NSLocalizedString("status_error", comment: "")

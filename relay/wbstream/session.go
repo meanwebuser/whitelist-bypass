@@ -65,6 +65,7 @@ type Session struct {
 	done         chan struct{}
 
 	peersBySID map[string]peerEntry // SID -> first-seen time + state
+	kickedSIDs map[string]bool      // SIDs we kicked; SFU may still echo them as Active until it processes the kick
 
 	OnConnected   func(tunnel.DataTunnel)
 	OnPeerRestart func()
@@ -121,9 +122,19 @@ func (s *Session) Start() error {
 		if err := s.lk.ReadLoop(); err != nil {
 			s.cfg.LogFn("[lk] read loop ended: %v", err)
 		}
+		s.stopTunnels()
 		close(s.done)
 	}()
 	return nil
+}
+
+func (s *Session) stopTunnels() {
+	s.mu.Lock()
+	vp8 := s.vp8tun
+	s.mu.Unlock()
+	if vp8 != nil {
+		vp8.Stop()
+	}
 }
 
 func (s *Session) onLKReady() {
@@ -425,7 +436,6 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 		s.peersBySID = make(map[string]peerEntry)
 	}
 	newcomerSIDs := make(map[string]bool)
-	var toPromote []peerEntry
 	canPromote := s.cfg.AccessToken != "" && s.cfg.RoomID != ""
 	for _, p := range updates {
 		if p.SID == "" || p.SID == selfSID {
@@ -433,6 +443,10 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 		}
 		if p.State == livekit.ParticipantStateDisconnected {
 			delete(s.peersBySID, p.SID)
+			delete(s.kickedSIDs, p.SID)
+			continue
+		}
+		if s.kickedSIDs[p.SID] {
 			continue
 		}
 		entry, ok := s.peersBySID[p.SID]
@@ -444,18 +458,30 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 			entry.identity = p.Identity
 		}
 		entry.state = p.State
-		if canPromote && !entry.promoted && entry.state == livekit.ParticipantStateActive && entry.identity != "" {
-			entry.promoted = true
-			toPromote = append(toPromote, entry)
-		}
 		s.peersBySID[p.SID] = entry
 	}
 
 	var stale []peerEntry
+	staleSIDs := make(map[string]bool)
 	if len(newcomerSIDs) > 0 {
 		for _, e := range s.peersBySID {
 			if e.state == livekit.ParticipantStateActive && !newcomerSIDs[e.sid] {
 				stale = append(stale, e)
+				staleSIDs[e.sid] = true
+			}
+		}
+	}
+
+	var toPromote []peerEntry
+	if canPromote {
+		for sid, entry := range s.peersBySID {
+			if staleSIDs[sid] {
+				continue
+			}
+			if !entry.promoted && entry.state == livekit.ParticipantStateActive && entry.identity != "" {
+				entry.promoted = true
+				s.peersBySID[sid] = entry
+				toPromote = append(toPromote, entry)
 			}
 		}
 	}
@@ -480,6 +506,10 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 		s.cfg.LogFn("[wb] kicked stale peer identity=%s sid=%s", e.identity, e.sid)
 		s.mu.Lock()
 		delete(s.peersBySID, e.sid)
+		if s.kickedSIDs == nil {
+			s.kickedSIDs = make(map[string]bool)
+		}
+		s.kickedSIDs[e.sid] = true
 		s.mu.Unlock()
 	}
 }
