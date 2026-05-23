@@ -63,6 +63,35 @@ func main() {
 		tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
 	}
 
+	newPersistentJoinerBridge := func() func(tunnel.DataTunnel) {
+		var (
+			bridge   *tunnel.RelayBridge
+			bridgeMu sync.Mutex
+		)
+		return func(tun tunnel.DataTunnel) {
+			readBuf := common.VP8BufSize
+			if _, ok := tun.(*tunnel.DCTunnel); ok {
+				readBuf = common.DCBufSize
+			}
+			bridgeMu.Lock()
+			defer bridgeMu.Unlock()
+			if bridge == nil {
+				bridge = tunnel.NewRelayBridgeWithAuth(tun, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
+				bridge.SetPersistentListener(true)
+				bridge.MarkReady()
+				addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
+				go func() {
+					if err := bridge.ListenSOCKS(addr); err != nil {
+						log.Printf("relay: SOCKS listen failed: %v", err)
+					}
+				}()
+				return
+			}
+			bridge.SwapTunnel(tun)
+			log.Printf("relay: tunnel swapped after reconnect")
+		}
+	}
+
 	switch *mode {
 	case "dc-joiner":
 		log.Fatal(androidbind.StartJoiner(*wsPort, *socksPort, *socksUser, *socksPass, cb))
@@ -88,28 +117,7 @@ func main() {
 		startVideo(*mode, c, creatorCallback)
 	case "telemost-headless-joiner":
 		c := android.NewTelemostHeadlessJoiner(log.Printf)
-		var (
-			persistentBridge   *tunnel.RelayBridge
-			persistentBridgeMu sync.Mutex
-		)
-		c.OnConnected = func(tun tunnel.DataTunnel) {
-			persistentBridgeMu.Lock()
-			defer persistentBridgeMu.Unlock()
-			if persistentBridge == nil {
-				persistentBridge = tunnel.NewRelayBridgeWithAuth(tun, "joiner", common.VP8BufSize, log.Printf, *socksUser, *socksPass)
-				persistentBridge.SetPersistentListener(true)
-				persistentBridge.MarkReady()
-				addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
-				go func() {
-					if err := persistentBridge.ListenSOCKS(addr); err != nil {
-						log.Printf("relay: SOCKS listen failed: %v", err)
-					}
-				}()
-				return
-			}
-			persistentBridge.SwapTunnel(tun)
-			log.Printf("relay: tunnel swapped after reconnect")
-		}
+		c.OnConnected = newPersistentJoinerBridge()
 		c.Run()
 	case "telemost-video-joiner":
 		c := pion.NewTelemostClient(log.Printf)
@@ -121,38 +129,11 @@ func main() {
 		startVideo(*mode, c, creatorCallback)
 	case "wbstream-headless-joiner":
 		c := android.NewWBStreamHeadlessJoiner(log.Printf)
-		var (
-			persistentBridge   *tunnel.RelayBridge
-			persistentBridgeMu sync.Mutex
-		)
-		c.OnConnected = func(tun tunnel.DataTunnel) {
-			readBuf := common.VP8BufSize
-			if _, ok := tun.(*tunnel.DCTunnel); ok {
-				readBuf = common.DCBufSize
-			}
-			persistentBridgeMu.Lock()
-			defer persistentBridgeMu.Unlock()
-			if persistentBridge == nil {
-				persistentBridge = tunnel.NewRelayBridgeWithAuth(tun, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
-				persistentBridge.SetPersistentListener(true)
-				persistentBridge.MarkReady()
-				addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
-				go func() {
-					if err := persistentBridge.ListenSOCKS(addr); err != nil {
-						log.Printf("relay: SOCKS listen failed: %v", err)
-					}
-				}()
-				return
-			}
-			persistentBridge.SwapTunnel(tun)
-			log.Printf("relay: tunnel swapped after reconnect")
-		}
+		c.OnConnected = newPersistentJoinerBridge()
 		c.Run()
 	case "dion-headless-joiner":
 		c := android.NewDionHeadlessJoiner(log.Printf)
-		c.OnConnected = func(tun tunnel.DataTunnel) {
-			startJoinerBridge(tun, common.VP8BufSize)
-		}
+		c.OnConnected = newPersistentJoinerBridge()
 		c.Run()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown mode: %s\n", *mode)

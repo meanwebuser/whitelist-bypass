@@ -3,15 +3,22 @@ package joiner
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/webrtc/v4"
 	"whitelist-bypass/relay/common"
 	"whitelist-bypass/relay/dion"
 	"whitelist-bypass/relay/tunnel"
+)
+
+const (
+	dionReconnectInitialDelay = time.Second
+	dionReconnectMaxDelay     = 16 * time.Second
 )
 
 type DionHeadlessJoiner struct {
@@ -21,9 +28,11 @@ type DionHeadlessJoiner struct {
 	Status      StatusEmitter
 	PCConfig    PeerConnectionConfigurer
 
-	mu     sync.Mutex
-	call   *dion.Call
-	closed bool
+	mu       sync.Mutex
+	call     *dion.Call
+	closed   bool
+	stopCh   chan struct{}
+	stopOnce sync.Once
 }
 
 func NewDionHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc, status StatusEmitter, pcConfig PeerConnectionConfigurer) *DionHeadlessJoiner {
@@ -32,6 +41,7 @@ func NewDionHeadlessJoiner(logFn func(string, ...any), resolveFn ResolveFunc, st
 		ResolveFn: resolveFn,
 		Status:    status,
 		PCConfig:  pcConfig,
+		stopCh:    make(chan struct{}),
 	}
 }
 
@@ -57,22 +67,6 @@ func (j *DionHeadlessJoiner) RunWithParams(jsonParams string) {
 
 	httpClient := j.makeHTTPClient()
 	j.logFn("dion-joiner: room=%s name=%s", slug, params.DisplayName)
-	j.Status.EmitStatus(common.StatusConnecting)
-
-	auth, event, err := dion.JoinAsGuest(httpClient, slug, params.DisplayName)
-	if err != nil {
-		j.logFn("dion-joiner: JoinAsGuest failed: %v", err)
-		j.Status.EmitStatusError("auth: " + err.Error())
-		return
-	}
-
-	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(event.Slug))
-	if err != nil {
-		j.logFn("dion-joiner: obfuscator init failed: %v", err)
-		j.Status.EmitStatusError("obfuscator init: " + err.Error())
-		return
-	}
-	j.logFn("dion-joiner: obf key-source=%q localEpoch=0x%08x", event.Slug, obf.LocalEpoch())
 
 	var settingEngine *webrtc.SettingEngine
 	if j.PCConfig != nil {
@@ -81,11 +75,52 @@ func (j *DionHeadlessJoiner) RunWithParams(jsonParams string) {
 		settingEngine = &se
 	}
 
+	var attempt atomic.Int32
+
+	j.Status.EmitStatus(common.StatusConnecting)
+	if err := j.runOnce(httpClient, slug, params.DisplayName, settingEngine, &attempt); err != nil {
+		j.Status.EmitStatusError(err.Error())
+		return
+	}
+
+	for {
+		if j.isClosed() {
+			j.logFn("dion-joiner: stopped")
+			return
+		}
+		j.Status.EmitStatus(common.StatusTunnelLost)
+		if !j.waitBeforeRetry(int(attempt.Load())) {
+			return
+		}
+		attempt.Add(1)
+		if j.isClosed() {
+			return
+		}
+		j.logFn("dion-joiner: reconnect attempt #%d", attempt.Load())
+		j.Status.EmitStatus(common.StatusReconnecting)
+		if err := j.runOnce(httpClient, slug, params.DisplayName, settingEngine, &attempt); err != nil {
+			j.logFn("dion-joiner: %v, will retry", err)
+		}
+	}
+}
+
+func (j *DionHeadlessJoiner) runOnce(httpClient *http.Client, slug, displayName string, settingEngine *webrtc.SettingEngine, attempt *atomic.Int32) error {
+	auth, event, err := dion.JoinAsGuest(httpClient, slug, displayName)
+	if err != nil {
+		return fmt.Errorf("auth: %w", err)
+	}
+
+	obf, err := tunnel.NewTunnelObfuscator(tunnel.DeriveSecretFromJoinLink(event.Slug))
+	if err != nil {
+		return fmt.Errorf("obfuscator init: %w", err)
+	}
+	j.logFn("dion-joiner: obf key-source=%q localEpoch=0x%08x", event.Slug, obf.LocalEpoch())
+
 	call := dion.NewCall(dion.CallConfig{
 		Auth:           auth,
 		Event:          event,
 		Obfuscator:     obf,
-		DisplayName:    params.DisplayName,
+		DisplayName:    displayName,
 		LogFn:          j.logFn,
 		SettingEngine:  settingEngine,
 		NetDialContext: j.makeDialContext(),
@@ -93,6 +128,7 @@ func (j *DionHeadlessJoiner) RunWithParams(jsonParams string) {
 		Role:           dion.RoleJoiner,
 	})
 	call.OnConnected = func(tun tunnel.DataTunnel) {
+		attempt.Store(0)
 		j.logFn("dion-joiner: === TUNNEL CONNECTED ===")
 		j.Status.EmitStatus(common.StatusTunnelConnected)
 		if j.OnConnected != nil {
@@ -101,22 +137,53 @@ func (j *DionHeadlessJoiner) RunWithParams(jsonParams string) {
 	}
 
 	j.mu.Lock()
-	j.call = call
-	closed := j.closed
-	j.mu.Unlock()
-	if closed {
+	if j.closed {
+		j.mu.Unlock()
 		call.Close()
-		return
+		return nil
 	}
+	j.call = call
+	j.mu.Unlock()
 
 	if err := call.Start(); err != nil {
-		j.logFn("dion-joiner: call start failed: %v", err)
-		j.Status.EmitStatusError("call: " + err.Error())
-		return
+		j.mu.Lock()
+		if j.call == call {
+			j.call = nil
+		}
+		j.mu.Unlock()
+		return fmt.Errorf("call: %w", err)
 	}
 	<-call.Done()
+	call.Close()
+	j.mu.Lock()
+	if j.call == call {
+		j.call = nil
+	}
+	j.mu.Unlock()
 	j.logFn("dion-joiner: call ended")
-	j.Status.EmitStatus(common.StatusTunnelLost)
+	return nil
+}
+
+func (j *DionHeadlessJoiner) waitBeforeRetry(attempt int) bool {
+	delay := dionReconnectInitialDelay << attempt
+	if delay > dionReconnectMaxDelay || delay <= 0 {
+		delay = dionReconnectMaxDelay
+	}
+	j.logFn("dion-joiner: waiting %s before reconnect", delay)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return !j.isClosed()
+	case <-j.stopCh:
+		return false
+	}
+}
+
+func (j *DionHeadlessJoiner) isClosed() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.closed
 }
 
 func (j *DionHeadlessJoiner) Close() {
@@ -125,6 +192,7 @@ func (j *DionHeadlessJoiner) Close() {
 	call := j.call
 	j.call = nil
 	j.mu.Unlock()
+	j.stopOnce.Do(func() { close(j.stopCh) })
 	if call != nil {
 		call.Close()
 	}

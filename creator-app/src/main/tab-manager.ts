@@ -330,6 +330,9 @@ export class TabManager {
       if (platform === Platform.WBStream) {
         this.sendLog(tabId, 'Waiting for x_wbaas_token, wbx-refresh, wbx-validation-key...');
         await this.waitForCookies(['x_wbaas_token', 'wbx-refresh', 'wbx-validation-key']);
+      } else if (platform === Platform.Dion) {
+        this.sendLog(tabId, 'Waiting for vc-refresh-token, vc-access-token...');
+        await this.waitForCookies(['vc-refresh-token', 'vc-access-token']);
       } else {
         await this.waitForLogin(config.cookieDomains, config.authCookie);
       }

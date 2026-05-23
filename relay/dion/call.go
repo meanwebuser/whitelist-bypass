@@ -63,6 +63,7 @@ type PeerEntry struct {
 	UserID    string
 	Name      string
 	CamState  bool
+	JoinedAt  time.Time
 }
 
 // Call drives one full DION room session: signaling, Pion peer, VP8 send
@@ -428,6 +429,7 @@ func (c *Call) handleSpeakerJoined(params SpeakerJoinedParams) {
 		UserID:    params.UserID,
 		Name:      params.Name,
 		CamState:  params.CamState,
+		JoinedAt:  time.Now(),
 	}
 	var toKick []string
 	if !wasKnown {
@@ -467,8 +469,24 @@ func (c *Call) handleSpeakerDisconnected(params SpeakerDisconnectedParams) {
 	delete(c.peersByID, params.SessionID)
 	delete(c.subscribed, params.SessionID)
 	c.releaseMidLocked(params.SessionID)
+	var freshestUnsubscribed string
+	var freshestAt time.Time
+	for sid, entry := range c.peersByID {
+		if c.subscribed[sid] {
+			continue
+		}
+		if entry.JoinedAt.After(freshestAt) {
+			freshestAt = entry.JoinedAt
+			freshestUnsubscribed = sid
+		}
+	}
+	hasFreeMid := len(c.freeMids) > 0
 	c.peersMu.Unlock()
 	c.cfg.LogFn("[call] speaker_disconnected session_id=%s", params.SessionID)
+	if freshestUnsubscribed != "" && hasFreeMid {
+		c.cfg.LogFn("[call] claiming freed mid for unsubscribed peer %s", freshestUnsubscribed)
+		c.subscribeIfNeeded(freshestUnsubscribed)
+	}
 }
 
 func (c *Call) handleSpeakerCamStateChanged(params SpeakerCamStateChangedParams) {
@@ -479,7 +497,7 @@ func (c *Call) handleSpeakerCamStateChanged(params SpeakerCamStateChangedParams)
 	if entry, ok := c.peersByID[params.SessionID]; ok {
 		entry.CamState = params.CamState
 	} else {
-		c.peersByID[params.SessionID] = &PeerEntry{SessionID: params.SessionID, CamState: params.CamState}
+		c.peersByID[params.SessionID] = &PeerEntry{SessionID: params.SessionID, CamState: params.CamState, JoinedAt: time.Now()}
 	}
 	c.peersMu.Unlock()
 	c.cfg.LogFn("[call] speaker_cam_state_changed session_id=%s cam=%v", params.SessionID, params.CamState)
@@ -499,6 +517,7 @@ func (c *Call) handleConfSpeakersState(response ConfSpeakersStateResponse) {
 			UserID:    entry.UserID,
 			Name:      entry.Name,
 			CamState:  entry.CamState,
+			JoinedAt:  time.Now(),
 		}
 		c.peersMu.Unlock()
 		if c.cfg.Role == RoleJoiner || entry.CamState {
