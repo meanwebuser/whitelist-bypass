@@ -370,6 +370,12 @@ class MainActivity :
         ProxyService.instance?.updateStatus(status)
         lastStatus = status
         runOnUiThread {
+            if (status == VpnStatus.CALL_FAILED) {
+                fullReset()
+                lastStatus = VpnStatus.CALL_FAILED
+                mainFragment()?.onStatusChanged(VpnStatus.CALL_FAILED)
+                return@runOnUiThread
+            }
             mainFragment()?.onStatusChanged(status)
             if (status == VpnStatus.TUNNEL_ACTIVE) {
                 connected = true
