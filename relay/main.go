@@ -63,7 +63,7 @@ func main() {
 		tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
 	}
 
-	newPersistentJoinerBridge := func() func(tunnel.DataTunnel) {
+	newPersistentJoinerBridge := func(onConfigAck func()) func(tunnel.DataTunnel) {
 		var (
 			bridge   *tunnel.RelayBridge
 			bridgeMu sync.Mutex
@@ -77,6 +77,9 @@ func main() {
 			defer bridgeMu.Unlock()
 			if bridge == nil {
 				bridge = tunnel.NewRelayBridgeWithAuth(tun, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
+				if onConfigAck != nil {
+					bridge.SetOnConfigAck(onConfigAck)
+				}
 				bridge.SetPersistentListener(true)
 				bridge.MarkReady()
 				addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
@@ -88,6 +91,9 @@ func main() {
 				return
 			}
 			bridge.SwapTunnel(tun)
+			if onConfigAck != nil {
+				bridge.SetOnConfigAck(onConfigAck)
+			}
 			log.Printf("relay: tunnel swapped after reconnect")
 		}
 	}
@@ -103,7 +109,7 @@ func main() {
 		startVideo(*mode, c, joinerCallback)
 	case "vk-headless-joiner":
 		c := android.NewVKHeadlessJoiner(log.Printf)
-		c.OnConnected = newPersistentJoinerBridge()
+		c.OnConnected = newPersistentJoinerBridge(nil)
 		c.Run()
 	case "vk-video-creator":
 		c := pion.NewVKClient(log.Printf)
@@ -111,7 +117,7 @@ func main() {
 		startVideo(*mode, c, creatorCallback)
 	case "telemost-headless-joiner":
 		c := android.NewTelemostHeadlessJoiner(log.Printf)
-		c.OnConnected = newPersistentJoinerBridge()
+		c.OnConnected = newPersistentJoinerBridge(nil)
 		c.Run()
 	case "telemost-video-joiner":
 		c := pion.NewTelemostClient(log.Printf)
@@ -123,11 +129,11 @@ func main() {
 		startVideo(*mode, c, creatorCallback)
 	case "wbstream-headless-joiner":
 		c := android.NewWBStreamHeadlessJoiner(log.Printf)
-		c.OnConnected = newPersistentJoinerBridge()
+		c.OnConnected = newPersistentJoinerBridge(c.MarkConfigAcked)
 		c.Run()
 	case "dion-headless-joiner":
 		c := android.NewDionHeadlessJoiner(log.Printf)
-		c.OnConnected = newPersistentJoinerBridge()
+		c.OnConnected = newPersistentJoinerBridge(nil)
 		c.Run()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown mode: %s\n", *mode)

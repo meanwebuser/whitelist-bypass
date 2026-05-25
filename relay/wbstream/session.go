@@ -45,19 +45,23 @@ type SessionConfig struct {
 	RoomID         string
 	AccessToken    string
 	ReadBuf        int
+	ScreenShare    bool // when true, publish a second VP8 track as ScreenShare and shard outbound across both
+	IsJoiner       bool // when true, run the configPingPong loop; only the joiner sends VP8 config to the peer
 }
+
 
 type Session struct {
 	cfg SessionConfig
 
-	lk          *livekit.Client
-	sampleTrack *webrtc.TrackLocalStaticSample
+	lk                 *livekit.Client
+	sampleTracks       []*webrtc.TrackLocalStaticSample
+	sampleTransceivers []*webrtc.RTPTransceiver
 
 	pubReliableDC      *webrtc.DataChannel
 	pubReliableDCReady bool
 	subReliableDC      *webrtc.DataChannel
 
-	vp8tun       *tunnel.VP8DataTunnel
+	vp8tun       *tunnel.MultiTrackTunnel
 	dctun        *tunnel.DCTunnel
 	mu           sync.Mutex
 	tunFired     bool
@@ -66,6 +70,9 @@ type Session struct {
 
 	peersBySID map[string]peerEntry // SID -> first-seen time + state
 	kickedSIDs map[string]bool      // SIDs we kicked; SFU may still echo them as Active until it processes the kick
+
+	configAcked     chan struct{}
+	configAckedOnce sync.Once
 
 	OnConnected   func(tunnel.DataTunnel)
 	OnPeerRestart func()
@@ -80,7 +87,18 @@ func NewSession(cfg SessionConfig) *Session {
 	if cfg.LogFn == nil {
 		cfg.LogFn = log.Printf
 	}
-	return &Session{cfg: cfg, done: make(chan struct{})}
+	return &Session{
+		cfg:         cfg,
+		done:        make(chan struct{}),
+		configAcked: make(chan struct{}),
+	}
+}
+
+func (s *Session) MarkConfigAcked() {
+	s.configAckedOnce.Do(func() {
+		s.cfg.LogFn("[lk] peer acked vp8 config")
+		close(s.configAcked)
+	})
 }
 
 func (s *Session) Done() <-chan struct{} { return s.done }
@@ -143,24 +161,45 @@ func (s *Session) onLKReady() {
 		return
 	}
 
-	trackID := "videochannel-" + uuid.New().String()
-	track, err := webrtc.NewTrackLocalStaticSample(
+	camID := "videochannel-" + uuid.New().String()
+	trackCam, err := webrtc.NewTrackLocalStaticSample(
 		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
-		trackID, "tunnel-video-"+uuid.New().String(),
+		camID, "tunnel-video-"+uuid.New().String(),
 	)
 	if err != nil {
-		s.cfg.LogFn("[lk] create local track: %v", err)
+		s.cfg.LogFn("[lk] create local cam track: %v", err)
 		return
 	}
-	s.mu.Lock()
-	s.sampleTrack = track
-	s.mu.Unlock()
+	tracks := []*webrtc.TrackLocalStaticSample{trackCam}
 
-	if _, err := pubPC.AddTransceiverFromTrack(track,
-		webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly}); err != nil {
-		s.cfg.LogFn("[lk] add transceiver: %v", err)
-		return
+	if s.cfg.ScreenShare {
+		screenID := "screenchannel-" + uuid.New().String()
+		trackScreen, err := webrtc.NewTrackLocalStaticSample(
+			webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
+			screenID, "tunnel-screen-"+uuid.New().String(),
+		)
+		if err != nil {
+			s.cfg.LogFn("[lk] create local screen track: %v", err)
+			return
+		}
+		tracks = append(tracks, trackScreen)
 	}
+
+	transceivers := make([]*webrtc.RTPTransceiver, 0, len(tracks))
+	for _, t := range tracks {
+		trx, err := pubPC.AddTransceiverFromTrack(t,
+			webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+		if err != nil {
+			s.cfg.LogFn("[lk] add transceiver: %v", err)
+			return
+		}
+		transceivers = append(transceivers, trx)
+	}
+
+	s.mu.Lock()
+	s.sampleTracks = tracks
+	s.sampleTransceivers = transceivers
+	s.mu.Unlock()
 
 	ordered := true
 	dc, err := pubPC.CreateDataChannel("_reliable", &webrtc.DataChannelInit{
@@ -181,10 +220,16 @@ func (s *Session) onLKReady() {
 		s.maybeStartDCTunnel()
 	})
 
-	if err := s.lk.SendAddTrack(track.ID(), "videochannel",
-		livekit.TrackTypeVideo, livekit.TrackSourceCamera, 1280, 720); err != nil {
-		s.cfg.LogFn("[lk] send add-track: %v", err)
-		return
+	for i, t := range tracks {
+		source := livekit.TrackSourceCamera
+		if i > 0 {
+			source = livekit.TrackSourceScreenShare
+		}
+		if err := s.lk.SendAddTrack(t.ID(), "videochannel",
+			livekit.TrackTypeVideo, source, 1280, 720); err != nil {
+			s.cfg.LogFn("[lk] send add-track: %v", err)
+			return
+		}
 	}
 
 	offer, err := pubPC.CreateOffer(nil)
@@ -205,21 +250,47 @@ func (s *Session) onLKReady() {
 
 func (s *Session) startTunnel() {
 	s.mu.Lock()
-	if s.vp8tun != nil || s.sampleTrack == nil {
+	if s.vp8tun != nil || len(s.sampleTracks) == 0 {
 		s.mu.Unlock()
 		return
 	}
-	s.vp8tun = tunnel.NewVP8DataTunnel(s.sampleTrack, s.cfg.Obfuscator, s.cfg.LogFn)
+	subs := make([]*tunnel.VP8DataTunnel, 0, len(s.sampleTracks))
+	for _, t := range s.sampleTracks {
+		subs = append(subs, tunnel.NewVP8DataTunnel(t, s.cfg.Obfuscator, s.cfg.LogFn))
+	}
+	s.vp8tun = tunnel.NewMultiTrackTunnel(subs)
 	s.vp8tun.Start(s.cfg.VP8FPS, s.cfg.VP8Batch)
+	tun := s.vp8tun
 	s.mu.Unlock()
-	s.cfg.LogFn("[lk] vp8 tunnel writer started")
+	s.cfg.LogFn("[lk] vp8 tunnel writer started tracks=%d", len(subs))
+	if s.cfg.IsJoiner {
+		go s.configPingPong(tun, len(subs))
+	}
 
 	if s.cfg.TunnelMode == TunnelModeVideo {
-		s.fireOnConnected(s.vp8tun)
+		s.fireOnConnected(tun)
 		return
 	}
 	if s.cfg.TunnelMode == "" {
-		s.vp8tun.SetOnData(func(payload []byte) { s.activate(s.vp8tun, payload) })
+		tun.SetOnData(func(payload []byte) { s.activate(tun, payload) })
+	}
+}
+
+func (s *Session) configPingPong(tun *tunnel.MultiTrackTunnel, trackCount int) {
+	frame := tunnel.EncodeVP8Config(s.cfg.VP8FPS, s.cfg.VP8Batch, trackCount)
+	tun.SendData(frame)
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.configAcked:
+			return
+		case <-s.done:
+			return
+		case <-ticker.C:
+			s.cfg.LogFn("[lk] resending vp8 config (no ack yet)")
+			tun.SendData(tunnel.EncodeVP8Config(s.cfg.VP8FPS, s.cfg.VP8Batch, trackCount))
+		}
 	}
 }
 
@@ -300,20 +371,134 @@ func (s *Session) activate(tun tunnel.DataTunnel, payload []byte) {
 	}
 	var fwd func([]byte)
 	switch v := tun.(type) {
-	case *tunnel.VP8DataTunnel:
-		fwd = v.OnData
 	case *tunnel.DCTunnel:
 		fwd = v.OnData()
+	case *tunnel.MultiTrackTunnel:
+		// MultiTrackTunnel does not expose a readable OnData hook; the trigger
+		// payload is dropped here. Next frame will arrive via the SetOnData
+		// callback OnConnected wires up.
 	}
 	if fwd != nil {
 		fwd(payload)
 	}
 }
 
-func (s *Session) currentVP8Tun() *tunnel.VP8DataTunnel {
+func (s *Session) currentVP8Tun() *tunnel.MultiTrackTunnel {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.vp8tun
+}
+
+func (s *Session) AdaptTrackCount(peerCount int) {
+	if peerCount < 1 {
+		return
+	}
+	pubPC := s.lk.PubPC()
+	if pubPC == nil {
+		return
+	}
+	s.mu.Lock()
+	current := len(s.sampleTracks)
+	s.mu.Unlock()
+	if peerCount == current {
+		s.cfg.LogFn("[lk] adapt-track-count: peer=%d current=%d, no change", peerCount, current)
+		return
+	}
+	if peerCount > current {
+		s.cfg.LogFn("[lk] adapt-track-count: scaling publisher tracks %d -> %d", current, peerCount)
+		for i := current; i < peerCount; i++ {
+			if !s.addPublisherTrack(pubPC, i) {
+				return
+			}
+		}
+	} else {
+		s.cfg.LogFn("[lk] adapt-track-count: shrinking publisher tracks %d -> %d", current, peerCount)
+		for i := current; i > peerCount; i-- {
+			if !s.removePublisherTrack() {
+				return
+			}
+		}
+	}
+	offer, err := pubPC.CreateOffer(nil)
+	if err != nil {
+		s.cfg.LogFn("[lk] adapt-track-count: create offer: %v", err)
+		return
+	}
+	if err := pubPC.SetLocalDescription(offer); err != nil {
+		s.cfg.LogFn("[lk] adapt-track-count: set local offer: %v", err)
+		return
+	}
+	if err := s.lk.SendOffer(offer.SDP); err != nil {
+		s.cfg.LogFn("[lk] adapt-track-count: send offer: %v", err)
+		return
+	}
+	s.cfg.LogFn("[lk] adapt-track-count: renegotiation offer sent (%d bytes)", len(offer.SDP))
+}
+
+// removePublisherTrack stops the trailing transceiver, drops its sub-tunnel
+// from the multi-track wrapper, and trims the bookkeeping slices. The SFU
+// sees the transceiver go inactive on the next renegotiation and stops
+// forwarding the track to subscribers. Slot 0 is preserved.
+func (s *Session) removePublisherTrack() bool {
+	s.mu.Lock()
+	if len(s.sampleTransceivers) <= 1 || len(s.sampleTracks) <= 1 {
+		s.mu.Unlock()
+		s.cfg.LogFn("[lk] adapt-track-count: refusing to remove cam slot")
+		return false
+	}
+	last := len(s.sampleTransceivers) - 1
+	trx := s.sampleTransceivers[last]
+	s.sampleTransceivers = s.sampleTransceivers[:last]
+	s.sampleTracks = s.sampleTracks[:last]
+	vp8 := s.vp8tun
+	s.mu.Unlock()
+	if vp8 != nil {
+		vp8.RemoveLastSubTunnel()
+	}
+	if err := trx.Stop(); err != nil {
+		s.cfg.LogFn("[lk] adapt-track-count: stop transceiver: %v", err)
+		return false
+	}
+	return true
+}
+
+func (s *Session) addPublisherTrack(pubPC *webrtc.PeerConnection, slot int) bool {
+	labelPrefix := "screenchannel-"
+	streamPrefix := "tunnel-screen-"
+	source := livekit.TrackSourceScreenShare
+	if slot == 0 {
+		labelPrefix = "videochannel-"
+		streamPrefix = "tunnel-video-"
+		source = livekit.TrackSourceCamera
+	}
+	track, err := webrtc.NewTrackLocalStaticSample(
+		webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000},
+		labelPrefix+uuid.New().String(), streamPrefix+uuid.New().String(),
+	)
+	if err != nil {
+		s.cfg.LogFn("[lk] adapt-track-count: new track slot=%d: %v", slot, err)
+		return false
+	}
+	trx, err := pubPC.AddTransceiverFromTrack(track,
+		webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
+	if err != nil {
+		s.cfg.LogFn("[lk] adapt-track-count: add transceiver slot=%d: %v", slot, err)
+		return false
+	}
+	if err := s.lk.SendAddTrack(track.ID(), "videochannel",
+		livekit.TrackTypeVideo, source, 1280, 720); err != nil {
+		s.cfg.LogFn("[lk] adapt-track-count: send add-track slot=%d: %v", slot, err)
+		return false
+	}
+	s.mu.Lock()
+	s.sampleTracks = append(s.sampleTracks, track)
+	s.sampleTransceivers = append(s.sampleTransceivers, trx)
+	vp8 := s.vp8tun
+	s.mu.Unlock()
+	if vp8 != nil {
+		vp8.AddSubTunnel(tunnel.NewVP8DataTunnel(track, s.cfg.Obfuscator, s.cfg.LogFn))
+	}
+	return true
 }
 
 func (s *Session) rearmAutoDetect() {

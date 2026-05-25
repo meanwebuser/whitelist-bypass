@@ -115,6 +115,10 @@ object Prefs {
         get() = prefs.getInt(PrefsKeys.VP8_BATCH, VP8Defaults.BATCH)
         set(value) = prefs.edit { putInt(PrefsKeys.VP8_BATCH, value) }
 
+    var dualTrack: Boolean
+        get() = prefs.getBoolean(PrefsKeys.DUAL_TRACK, false)
+        set(value) = prefs.edit { putBoolean(PrefsKeys.DUAL_TRACK, value) }
+
     var savedDestinations: List<CallConfig>
         get() = CallConfig.listFromJson(prefs.getString(PrefsKeys.SAVED_DESTINATIONS, "") ?: "")
         set(value) = prefs.edit { putString(PrefsKeys.SAVED_DESTINATIONS, CallConfig.listToJson(value)) }

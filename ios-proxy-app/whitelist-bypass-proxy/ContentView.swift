@@ -255,6 +255,14 @@ struct SettingsView: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                     }
+                    Toggle(isOn: $proxyManager.dualTrack) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(NSLocalizedString("vp8_dual_track_title", comment: ""))
+                            Text(NSLocalizedString("vp8_dual_track_sub", comment: ""))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
             }

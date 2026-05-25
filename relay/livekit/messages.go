@@ -226,7 +226,10 @@ func encTrickle(m trickleMsg) []byte {
 	return w.buf
 }
 
-const trackSourceCamera = 1
+const (
+	trackSourceCamera      = 1
+	trackSourceScreenShare = 3
+)
 
 func encVideoLayer(quality, width, height uint32) []byte {
 	w := pbWriter{}

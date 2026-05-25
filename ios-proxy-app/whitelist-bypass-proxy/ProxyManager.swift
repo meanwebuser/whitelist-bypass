@@ -176,6 +176,7 @@ class ProxyManager: ObservableObject {
     @Published var manualSocksPass: String = AppDefaults.socksPass { didSet { AppDefaults.socksPass = manualSocksPass } }
     @Published var vp8Fps: Int = AppDefaults.vp8Fps { didSet { AppDefaults.vp8Fps = vp8Fps } }
     @Published var vp8Batch: Int = AppDefaults.vp8Batch { didSet { AppDefaults.vp8Batch = vp8Batch } }
+    @Published var dualTrack: Bool = AppDefaults.dualTrack { didSet { AppDefaults.dualTrack = dualTrack } }
 
     private let autoSocksUser: String
     private let autoSocksPass: String
@@ -322,6 +323,7 @@ class ProxyManager: ObservableObject {
                 "tunnelMode": tunnelMode.rawValue,
                 "vp8Fps": vp8Fps,
                 "vp8Batch": vp8Batch,
+                "dualTrack": dualTrack,
             ]
             if let jsonData = try? JSONSerialization.data(withJSONObject: joinParams),
                let jsonString = String(data: jsonData, encoding: .utf8) {

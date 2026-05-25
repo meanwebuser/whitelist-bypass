@@ -82,6 +82,9 @@ func (h *VKHeadlessJoiner) runWithAuth(jsonParams string) {
 		JoinLink    string `json:"joinLink"`
 		DisplayName string `json:"displayName"`
 		TunnelMode  string `json:"tunnelMode"`
+		VP8FPS      int    `json:"vp8Fps"`
+		VP8Batch    int    `json:"vp8Batch"`
+		DualTrack   bool   `json:"dualTrack"`
 	}
 	if err := json.Unmarshal([]byte(jsonParams), &params); err != nil {
 		log.Printf("headless: failed to parse auth params: %v", err)
@@ -104,10 +107,13 @@ func (h *VKHeadlessJoiner) runWithAuth(jsonParams string) {
 	var authParams map[string]interface{}
 	if json.Unmarshal([]byte(authJSON), &authParams) == nil {
 		authParams["tunnelMode"] = params.TunnelMode
+		authParams["vp8Fps"] = params.VP8FPS
+		authParams["vp8Batch"] = params.VP8Batch
+		authParams["dualTrack"] = params.DualTrack
 		if patched, err := json.Marshal(authParams); err == nil {
 			authJSON = string(patched)
 		}
 	}
-	log.Printf("vk-auth: sending join params to relay (mode=%s)", params.TunnelMode)
+	log.Printf("vk-auth: sending join params to relay (mode=%s dualTrack=%v)", params.TunnelMode, params.DualTrack)
 	h.inner.RunWithParams(authJSON)
 }

@@ -636,7 +636,7 @@ func (h *VKHeadlessJoiner) initPC() {
 			h.Status.EmitStatus(common.StatusTunnelConnected)
 			h.vp8tunnel = tunnel.NewVP8DataTunnel(h.sampleTrack, h.obf, h.logFn)
 			h.vp8tunnel.Start(h.vp8FPS, h.vp8Batch)
-			h.vp8tunnel.SendData(tunnel.EncodeVP8Config(h.vp8tunnel.FPS(), h.vp8tunnel.Batch()))
+			h.vp8tunnel.SendData(tunnel.EncodeVP8Config(h.vp8tunnel.FPS(), h.vp8tunnel.Batch(), 1))
 			h.logFn("headless: pushed vp8 config to creator fps=%d batch=%d", h.vp8tunnel.FPS(), h.vp8tunnel.Batch())
 			if h.OnConnected != nil {
 				h.OnConnected(h.vp8tunnel)

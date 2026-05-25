@@ -26,10 +26,11 @@ const (
 	TargetPublisher  = signalTargetPublisher
 	TargetSubscriber = signalTargetSubscriber
 
-	TrackTypeAudio    = trackTypeAudio
-	TrackTypeVideo    = trackTypeVideo
-	TrackTypeData     = trackTypeData
-	TrackSourceCamera = trackSourceCamera
+	TrackTypeAudio         = trackTypeAudio
+	TrackTypeVideo         = trackTypeVideo
+	TrackTypeData          = trackTypeData
+	TrackSourceCamera      = trackSourceCamera
+	TrackSourceScreenShare = trackSourceScreenShare
 )
 
 type ICEServer = iceServer

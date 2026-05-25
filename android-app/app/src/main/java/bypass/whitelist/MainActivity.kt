@@ -506,17 +506,26 @@ class MainActivity :
     private fun fullReset() {
         connected = false
         lastStatus = null
-        closeActiveHeadlessController()
+        val controller = activeHeadlessController
+        activeHeadlessController = null
+        val vpn = TunnelVpnService.instance
+        val proxy = ProxyService.instance
         removeJoinFragment()
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
-        TunnelVpnService.instance?.stop()
-        ProxyService.instance?.stop()
+        thread(name = "full-reset-shutdown") {
+            controller?.close()
+            vpn?.stop()
+            proxy?.stop()
+        }
     }
 
     private fun closeActiveHeadlessController() {
-        activeHeadlessController?.close()
+        val controller = activeHeadlessController
         activeHeadlessController = null
+        if (controller != null) {
+            thread(name = "headless-shutdown") { controller.close() }
+        }
     }
 
     private fun removeJoinFragment() {

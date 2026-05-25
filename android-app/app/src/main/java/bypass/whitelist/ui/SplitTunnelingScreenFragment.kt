@@ -21,6 +21,7 @@ import bypass.whitelist.R
 import bypass.whitelist.tunnel.SplitTunnelingMode
 import bypass.whitelist.tunnel.TunnelVpnService
 import bypass.whitelist.util.Prefs
+import java.lang.ref.WeakReference
 
 class SplitTunnelingScreenFragment : Fragment() {
 
@@ -122,10 +123,13 @@ class SplitTunnelingScreenFragment : Fragment() {
         }
         loadingBar.visibility = View.VISIBLE
         appsListContainer.visibility = View.GONE
+        val ctx = context ?: return
+        val pm = ctx.packageManager
+        val ownPackage = ctx.packageName
+        val selectedSnapshot = packages.toSet()
+        val act = activity ?: return
+        val weakSelf = WeakReference(this)
         Thread {
-            val context = context ?: return@Thread
-            val pm = context.packageManager
-            val ownPackage = context.packageName
             val loaded = pm.getInstalledApplications(PackageManager.GET_META_DATA)
                 .filter { it.packageName != ownPackage }
                 .mapNotNull { info ->
@@ -134,29 +138,36 @@ class SplitTunnelingScreenFragment : Fragment() {
                     val label = info.loadLabel(pm).toString().takeIf { it.isNotBlank() } ?: pkg
                     SplitTunnelingAppItem(
                         pkg, label, pm.getApplicationIcon(pkg),
-                        packages.contains(pkg),
+                        selectedSnapshot.contains(pkg),
                         (info.flags and ApplicationInfo.FLAG_SYSTEM) == 0,
                     )
                 }
                 .distinctBy { it.packageName }
                 .sortedWith(compareByDescending<SplitTunnelingAppItem> { it.isSelected }.thenBy { it.label.lowercase() })
-            activity?.runOnUiThread {
-                if (!isAdded) return@runOnUiThread
-                allApps = loaded
-                loadingBar.visibility = View.GONE
-                appsListContainer.visibility = View.VISIBLE
-                val adapter = SplitTunnelingAdapter(layoutInflater, packages)
-                appsList.adapter = adapter
-                applyFilters()
-                systemAppsCheckbox.isChecked = includeSystemApps
-                systemAppsCheckbox.setOnCheckedChangeListener { _, checked ->
-                    includeSystemApps = checked
-                    applyFilters()
+            if (weakSelf.get() == null) return@Thread
+            act.runOnUiThread {
+                val self = weakSelf.get() ?: return@runOnUiThread
+                if (!self.isAdded) return@runOnUiThread
+                self.allApps = loaded
+                self.loadingBar.visibility = View.GONE
+                self.appsListContainer.visibility = View.VISIBLE
+                val adapter = SplitTunnelingAdapter(self.layoutInflater, self.packages)
+                self.appsList.adapter = adapter
+                self.applyFilters()
+                self.systemAppsCheckbox.isChecked = self.includeSystemApps
+                self.systemAppsCheckbox.setOnCheckedChangeListener { _, checked ->
+                    val s = weakSelf.get() ?: return@setOnCheckedChangeListener
+                    s.includeSystemApps = checked
+                    s.applyFilters()
                 }
-                searchInput.addTextChangedListener(object : TextWatcher {
+                self.searchInput.addTextChangedListener(object : TextWatcher {
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { applyFilters() }
-                    override fun afterTextChanged(s: Editable?) { updateSummary() }
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                        weakSelf.get()?.applyFilters()
+                    }
+                    override fun afterTextChanged(s: Editable?) {
+                        weakSelf.get()?.updateSummary()
+                    }
                 })
             }
         }.start()

@@ -24,6 +24,7 @@ func main() {
 	tunnelMode := flag.String("tunnel-mode", "video", "tunnel mode: video, dc")
 	vp8FPS := flag.Int("vp8-fps", 24, "VP8 frame rate (video mode only)")
 	vp8Batch := flag.Int("vp8-batch", 30, "VP8 batch multiplier (video mode only)")
+	dualTrack := flag.Bool("dual-track", false, "publish a second VP8 track as ScreenShare and shard outbound across both (video mode only)")
 	flag.Parse()
 
 	if *roomFlag == "" {
@@ -68,6 +69,8 @@ func main() {
 		LogFn:       log.Printf,
 		VP8FPS:      *vp8FPS,
 		VP8Batch:    *vp8Batch,
+		ScreenShare: *dualTrack,
+		IsJoiner:    true,
 	})
 	sess.OnConnected = func(tun tunnel.DataTunnel) {
 		readBuf := common.VP8BufSize
@@ -75,6 +78,7 @@ func main() {
 			readBuf = common.DCBufSize
 		}
 		bridge := tunnel.NewRelayBridgeWithAuth(tun, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
+		bridge.SetOnConfigAck(sess.MarkConfigAcked)
 		bridge.MarkReady()
 		addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
 		go func() {

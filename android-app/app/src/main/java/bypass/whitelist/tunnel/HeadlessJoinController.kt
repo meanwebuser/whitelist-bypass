@@ -40,6 +40,7 @@ class HeadlessJoinController(
         put("displayName", Prefs.autofillName)
         put("vp8Fps", Prefs.vp8Fps)
         put("vp8Batch", Prefs.vp8Batch)
+        put("dualTrack", Prefs.dualTrack)
         when (platform) {
             CallPlatform.TELEMOST -> put("joinLink", url)
             CallPlatform.WBSTREAM -> {

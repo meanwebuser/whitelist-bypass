@@ -11,6 +11,7 @@ const (
 	MsgUDP        byte = 0x06
 	MsgUDPReply   byte = 0x07
 	MsgConfig     byte = 0x08
+	MsgConfigAck  byte = 0x09
 )
 
 const ControlConnID uint32 = 0
@@ -22,12 +23,15 @@ type DataTunnel interface {
 	Reconfigure(fps, batch int)
 }
 
-func EncodeVP8Config(fps, batch int) []byte {
+func EncodeVP8Config(fps, batch, trackCount int) []byte {
 	if fps < 1 {
 		fps = 1
 	}
 	if batch < 1 {
 		batch = 1
+	}
+	if trackCount < 1 {
+		trackCount = 1
 	}
 	if fps > 0xFFFF {
 		fps = 0xFFFF
@@ -35,19 +39,27 @@ func EncodeVP8Config(fps, batch int) []byte {
 	if batch > 0xFFFF {
 		batch = 0xFFFF
 	}
-	var payload [4]byte
+	if trackCount > 0xFFFF {
+		trackCount = 0xFFFF
+	}
+	var payload [6]byte
 	binary.BigEndian.PutUint16(payload[0:2], uint16(fps))
 	binary.BigEndian.PutUint16(payload[2:4], uint16(batch))
+	binary.BigEndian.PutUint16(payload[4:6], uint16(trackCount))
 	return EncodeFrame(ControlConnID, MsgConfig, payload[:])
 }
 
-func DecodeVP8Config(payload []byte) (fps, batch int, ok bool) {
+func DecodeVP8Config(payload []byte) (fps, batch, trackCount int, ok bool) {
 	if len(payload) < 4 {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
 	fps = int(binary.BigEndian.Uint16(payload[0:2]))
 	batch = int(binary.BigEndian.Uint16(payload[2:4]))
-	return fps, batch, true
+	trackCount = 1
+	if len(payload) >= 6 {
+		trackCount = int(binary.BigEndian.Uint16(payload[4:6]))
+	}
+	return fps, batch, trackCount, true
 }
 
 func EncodeFrame(connID uint32, msgType byte, payload []byte) []byte {

@@ -43,6 +43,10 @@ class ProxyService : Service() {
 
     override fun onDestroy() {
         stop()
+        if (instance === this) {
+            instance = null
+        }
+        onDisconnect = null
         super.onDestroy()
     }
 

@@ -121,6 +121,7 @@ class HeadlessRelayController(
             put("tunnelMode", tunnelMode)
             put("vp8Fps", bypass.whitelist.util.Prefs.vp8Fps)
             put("vp8Batch", bypass.whitelist.util.Prefs.vp8Batch)
+            put("dualTrack", bypass.whitelist.util.Prefs.dualTrack)
         }
         writeStdin("AUTH:$json")
     }

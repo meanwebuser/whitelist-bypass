@@ -28,6 +28,8 @@ func NewWBStreamHeadlessJoiner(logFn func(string, ...any)) *WBStreamHeadlessJoin
 	return wrapper
 }
 
+func (j *WBStreamHeadlessJoiner) MarkConfigAcked() { j.inner.MarkConfigAcked() }
+
 func (j *WBStreamHeadlessJoiner) Run() {
 	j.inner.Status.EmitStatus(common.StatusReady)
 	for {

@@ -10,10 +10,10 @@ echo "Cleaning..."
 find app/build -name .DS_Store -delete 2>/dev/null || true # dont fail trying to clean last build!
 ./gradlew clean 2>&1 | tail -3
 
-echo "Building APK..."
-./gradlew assembleDebug 2>&1 | tail -5
+echo "Building release APK..."
+./gradlew assembleRelease 2>&1 | tail -5
 
-APK="app/build/outputs/apk/debug/app-debug.apk"
+APK="app/build/outputs/apk/release/app-release.apk"
 if [ -f "$APK" ]; then
     mkdir -p "$ROOT/prebuilts"
     cp "$APK" "$ROOT/prebuilts/whitelist-bypass.apk"

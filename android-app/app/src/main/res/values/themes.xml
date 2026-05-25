@@ -26,6 +26,7 @@
 
     <style name="ThemeOverlay.WhitelistBypass.BottomSheetDialog" parent="ThemeOverlay.Material3.BottomSheetDialog">
         <item name="bottomSheetStyle">@style/Widget.WhitelistBypass.BottomSheet</item>
+        <item name="android:windowAnimationStyle">@style/Animation.Design.BottomSheetDialog</item>
     </style>
 
     <style name="Widget.WhitelistBypass.BottomSheet" parent="Widget.Material3.BottomSheet.Modal">

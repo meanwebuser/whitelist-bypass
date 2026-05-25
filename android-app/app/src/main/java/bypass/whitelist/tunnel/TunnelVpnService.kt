@@ -50,6 +50,10 @@ class TunnelVpnService : VpnService() {
 
     override fun onDestroy() {
         stop()
+        if (instance === this) {
+            instance = null
+        }
+        onDisconnect = null
         super.onDestroy()
     }
 
@@ -72,7 +76,7 @@ class TunnelVpnService : VpnService() {
         vpnFd = null
         @Suppress("DEPRECATION")
         stopForeground(true)
-        stopSelf()
+        //stopSelf()
         onDisconnect?.invoke()
     }
 

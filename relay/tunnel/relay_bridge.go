@@ -37,6 +37,24 @@ type RelayBridge struct {
 	listenerMu         sync.Mutex
 	listener           net.Listener
 	closed             atomic.Bool
+
+	onPeerConfigMu sync.Mutex
+	onPeerConfig   func(fps, batch, trackCount int)
+
+	onConfigAckMu sync.Mutex
+	onConfigAck   func()
+}
+
+func (rb *RelayBridge) SetOnPeerConfig(fn func(fps, batch, trackCount int)) {
+	rb.onPeerConfigMu.Lock()
+	rb.onPeerConfig = fn
+	rb.onPeerConfigMu.Unlock()
+}
+
+func (rb *RelayBridge) SetOnConfigAck(fn func()) {
+	rb.onConfigAckMu.Lock()
+	rb.onConfigAck = fn
+	rb.onConfigAckMu.Unlock()
 }
 
 func NewRelayBridgeWithAuth(tunnel DataTunnel, mode string, readBuf int, logFn func(string, ...any), socksUser, socksPass string) *RelayBridge {
@@ -147,13 +165,31 @@ func (rb *RelayBridge) send(connID uint32, msgType byte, payload []byte) {
 func (rb *RelayBridge) handleTunnelData(data []byte) {
 	DecodeFrames(data, func(connID uint32, msgType byte, payload []byte) {
 		if connID == ControlConnID && msgType == MsgConfig {
-			fps, batch, ok := DecodeVP8Config(payload)
+			fps, batch, trackCount, ok := DecodeVP8Config(payload)
 			if !ok {
 				return
 			}
 			if rb.mode == "creator" {
-				rb.logFn("relay: peer requested vp8 pacing fps=%d batch=%d", fps, batch)
+				rb.logFn("relay: peer requested vp8 pacing fps=%d batch=%d trackCount=%d", fps, batch, trackCount)
 				rb.currentTunnel().Reconfigure(fps, batch)
+				rb.send(ControlConnID, MsgConfigAck, nil)
+				rb.onPeerConfigMu.Lock()
+				cb := rb.onPeerConfig
+				rb.onPeerConfigMu.Unlock()
+				if cb != nil {
+					cb(fps, batch, trackCount)
+				}
+			}
+			return
+		}
+		if connID == ControlConnID && msgType == MsgConfigAck {
+			if rb.mode == "joiner" {
+				rb.onConfigAckMu.Lock()
+				cb := rb.onConfigAck
+				rb.onConfigAckMu.Unlock()
+				if cb != nil {
+					cb()
+				}
 			}
 			return
 		}

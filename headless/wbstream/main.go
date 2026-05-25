@@ -113,6 +113,9 @@ func main() {
 				mode = "dc"
 			}
 			activeBridge = tunnel.NewRelayBridge(tun, "creator", bridgeReadBuf, log.Printf)
+			activeBridge.SetOnPeerConfig(func(fps, batch, trackCount int) {
+				sess.AdaptTrackCount(trackCount)
+			})
 			fmt.Printf("\n  TUNNEL CONNECTED mode=%s\n", mode)
 		}
 		sess.OnPeerRestart = func() {
