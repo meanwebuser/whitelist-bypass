@@ -61,6 +61,10 @@ object Prefs {
         get() = prefs.getBoolean(PrefsKeys.HEADLESS, true)
         set(value) = prefs.edit { putBoolean(PrefsKeys.HEADLESS, value) }
 
+    var socksHost: String
+        get() = prefs.getString(PrefsKeys.SOCKS_HOST, Net.LOCALHOST) ?: Net.LOCALHOST
+        set(value) = prefs.edit { putString(PrefsKeys.SOCKS_HOST, value) }
+
     var socksPort: Long
         get() = prefs.getLong(PrefsKeys.SOCKS_PORT, Ports.DEFAULT_SOCKS)
         set(value) = prefs.edit { putLong(PrefsKeys.SOCKS_PORT, value) }

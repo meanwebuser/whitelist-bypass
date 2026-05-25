@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.fragment.app.FragmentManager
 import bypass.whitelist.R
 import bypass.whitelist.util.Callback
+import bypass.whitelist.util.Net
 import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.SocksAuthMode
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
@@ -32,6 +33,7 @@ class ProxyActionSheet : BottomSheetDialogFragment() {
         selectedAuth = Prefs.socksAuthMode
         view.findViewById<View>(R.id.proxyPortCard).clipToOutline = true
         val portInput = view.findViewById<EditText>(R.id.proxyPortInput)
+        val hostInput = view.findViewById<EditText>(R.id.proxyHostInput)
         val authContainer = view.findViewById<LinearLayout>(R.id.proxyAuthContainer)
         val manualContainer = view.findViewById<LinearLayout>(R.id.proxyManualContainer)
         val userInput = view.findViewById<EditText>(R.id.proxyUserInput)
@@ -39,6 +41,7 @@ class ProxyActionSheet : BottomSheetDialogFragment() {
         val proxyOnly = view.findViewById<MaterialSwitch>(R.id.proxyOnlySwitch)
 
         portInput.setText(Prefs.socksPort.toString())
+        hostInput.setText(Prefs.socksHost)
         userInput.setText(Prefs.socksUser)
         passInput.setText(Prefs.socksPass)
         proxyOnly.isChecked = Prefs.proxyOnly
@@ -76,6 +79,7 @@ class ProxyActionSheet : BottomSheetDialogFragment() {
         view.findViewById<MaterialButton>(R.id.proxyCancelButton).setOnClickListener { dismiss() }
         view.findViewById<MaterialButton>(R.id.proxySaveButton).setOnClickListener {
             portInput.text.toString().toLongOrNull()?.takeIf { it in 1L..65535L }?.let { Prefs.socksPort = it }
+            Prefs.socksHost = hostInput.text.toString().trim().ifEmpty { Net.LOCALHOST }
             Prefs.socksAuthMode = selectedAuth
             if (selectedAuth == SocksAuthMode.MANUAL) {
                 Prefs.socksUser = userInput.text.toString().trim()

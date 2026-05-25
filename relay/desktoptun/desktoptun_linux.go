@@ -14,6 +14,8 @@ import (
 	"sync"
 
 	"github.com/xjasonlyu/tun2socks/v2/engine"
+
+	"whitelist-bypass/relay/common"
 )
 
 type Config struct {
@@ -53,7 +55,7 @@ func New(cfg Config) (*Tunnel, error) {
 		cfg.MTU = 1500
 	}
 	if cfg.SocksHost == "" {
-		cfg.SocksHost = "127.0.0.1"
+		cfg.SocksHost = common.SocksLocalhostIP
 	}
 	if cfg.SocksPort <= 0 {
 		return nil, errors.New("desktoptun: SocksPort required")

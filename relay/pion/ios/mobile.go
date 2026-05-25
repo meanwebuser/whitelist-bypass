@@ -82,7 +82,7 @@ func makeOnConnected(socksPort int, socksUser, socksPass string, logFn func(stri
 		activeHeadless.bridge = bridge
 		activeHeadless.Unlock()
 
-		socksAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
+		socksAddr := fmt.Sprintf("%s:%d", common.SocksLocalhostIP, socksPort)
 		logFn("ios: SOCKS5 proxy starting on %s", socksAddr)
 		go func() {
 			if err := bridge.ListenSOCKS(socksAddr); err != nil {

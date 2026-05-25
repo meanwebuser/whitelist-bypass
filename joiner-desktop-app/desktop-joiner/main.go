@@ -96,6 +96,7 @@ func main() {
 	platform := flag.String("platform", "", "wbstream | telemost | vk | dion (required)")
 	link := flag.String("link", "", "WB Stream room link, Telemost join URI, VK call link, or DION event link (required)")
 	displayName := flag.String("name", "Joiner", "display name in the room")
+	socksHost := flag.String("socks-host", common.SocksLocalhostIP, "SOCKS5 listen address (use 0.0.0.0 to expose on LAN; tun2socks always connects via loopback)")
 	socksPort := flag.Int("socks-port", 1080, "local SOCKS5 port")
 	socksUser := flag.String("socks-user", "", "optional SOCKS5 username")
 	socksPass := flag.String("socks-pass", "", "optional SOCKS5 password")
@@ -135,7 +136,7 @@ func main() {
 			TunnelPeer:  tunPeer,
 			MTU:         tunMTU,
 			DNSServers:  splitCSV(*dns),
-			SocksHost:   "127.0.0.1",
+			SocksHost:   common.SocksLocalhostIP,
 			SocksPort:   *socksPort,
 			SocksUser:   *socksUser,
 			SocksPass:   *socksPass,
@@ -242,7 +243,7 @@ func main() {
 		}
 		bridge := tunnel.NewRelayBridgeWithAuth(t, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
 		bridge.MarkReady()
-		addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
+		addr := fmt.Sprintf("%s:%d", *socksHost, *socksPort)
 		go func() {
 			if err := bridge.ListenSOCKS(addr); err != nil {
 				log.Printf("[socks] listen: %v", err)

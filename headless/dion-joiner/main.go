@@ -18,6 +18,7 @@ import (
 func main() {
 	roomFlag := flag.String("room", "", "event slug or https://dion.vc/event/<slug> (required)")
 	displayName := flag.String("name", "Joiner", "display name in the room")
+	socksHost := flag.String("socks-host", common.SocksLocalhostIP, "SOCKS5 listen address (use 0.0.0.0 to expose on LAN)")
 	socksPort := flag.Int("socks-port", 1080, "SOCKS5 listen port")
 	socksUser := flag.String("socks-user", "", "SOCKS5 username (optional)")
 	socksPass := flag.String("socks-pass", "", "SOCKS5 password (optional)")
@@ -77,7 +78,7 @@ func main() {
 			}
 			activeBridge = tunnel.NewRelayBridgeWithAuth(tun, "joiner", common.VP8BufSize, log.Printf, *socksUser, *socksPass)
 			activeBridge.MarkReady()
-			addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
+			addr := fmt.Sprintf("%s:%d", *socksHost, *socksPort)
 			go func() {
 				if err := activeBridge.ListenSOCKS(addr); err != nil {
 					log.Printf("socks listen: %v", err)

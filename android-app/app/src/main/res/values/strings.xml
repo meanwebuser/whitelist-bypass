@@ -153,6 +153,8 @@
     <string name="dns_secondary_label">Secondary</string>
     <string name="proxy_sub">Local SOCKS5 endpoint exposed to apps routed through the tunnel.</string>
     <string name="proxy_port_field_label">SOCKS5 port</string>
+    <string name="proxy_host_field_label">SOCKS5 host</string>
+    <string name="proxy_host_hint">127.0.0.1</string>
     <string name="proxy_auth_field_label">Authentication</string>
     <string name="proxy_user_field_label">User</string>
     <string name="proxy_pass_field_label">Pass</string>

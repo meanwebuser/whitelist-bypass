@@ -24,6 +24,7 @@ func (s stdLogger) OnLog(msg string) {
 func main() {
 	mode := flag.String("mode", "", "joiner or creator")
 	wsPort := flag.Int("ws-port", 9000, "WebSocket port for browser connection")
+	socksHost := flag.String("socks-host", common.SocksLocalhostIP, "SOCKS5 listen address (joiner mode; use 0.0.0.0 to expose on LAN)")
 	socksPort := flag.Int("socks-port", 1080, "SOCKS5 proxy port (joiner mode only)")
 	socksUser := flag.String("socks-user", "", "SOCKS5 proxy username")
 	socksPass := flag.String("socks-pass", "", "SOCKS5 proxy password")
@@ -52,7 +53,7 @@ func main() {
 	startJoinerBridge := func(tun tunnel.DataTunnel, readBuf int) {
 		rb := tunnel.NewRelayBridgeWithAuth(tun, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
 		rb.MarkReady()
-		go rb.ListenSOCKS(fmt.Sprintf("127.0.0.1:%d", *socksPort))
+		go rb.ListenSOCKS(fmt.Sprintf("%s:%d", *socksHost, *socksPort))
 	}
 
 	joinerCallback := func(tun tunnel.DataTunnel) {
@@ -82,7 +83,7 @@ func main() {
 				}
 				bridge.SetPersistentListener(true)
 				bridge.MarkReady()
-				addr := fmt.Sprintf("127.0.0.1:%d", *socksPort)
+				addr := fmt.Sprintf("%s:%d", *socksHost, *socksPort)
 				go func() {
 					if err := bridge.ListenSOCKS(addr); err != nil {
 						log.Printf("relay: SOCKS listen failed: %v", err)
@@ -100,7 +101,7 @@ func main() {
 
 	switch *mode {
 	case "dc-joiner":
-		log.Fatal(androidbind.StartJoiner(*wsPort, *socksPort, *socksUser, *socksPass, cb))
+		log.Fatal(androidbind.StartJoiner(*wsPort, *socksPort, *socksHost, *socksUser, *socksPass, cb))
 	case "dc-creator":
 		log.Fatal(startDCCreator(*wsPort))
 	case "vk-video-joiner":

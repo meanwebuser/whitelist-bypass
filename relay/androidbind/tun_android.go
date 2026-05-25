@@ -9,6 +9,8 @@ import (
 	"syscall"
 
 	"github.com/xjasonlyu/tun2socks/v2/engine"
+
+	"whitelist-bypass/relay/common"
 )
 
 var (
@@ -28,9 +30,9 @@ func StartTun2Socks(fd, mtu, socksPort int, socksUser, socksPass string) error {
 
 	var proxy string
 	if socksUser != "" {
-		proxy = fmt.Sprintf("socks5://%s:%s@127.0.0.1:%d", socksUser, socksPass, socksPort)
+		proxy = fmt.Sprintf("socks5://%s:%s@%s:%d", socksUser, socksPass, common.SocksLocalhostIP, socksPort)
 	} else {
-		proxy = fmt.Sprintf("socks5://127.0.0.1:%d", socksPort)
+		proxy = fmt.Sprintf("socks5://%s:%d", common.SocksLocalhostIP, socksPort)
 	}
 	logMsg("tun2socks: starting fd=%d (dup=%d) mtu=%d proxy=%s", fd, dupFd, mtu, proxy)
 	os.Setenv("TUN2SOCKS_LOG_LEVEL", "info")

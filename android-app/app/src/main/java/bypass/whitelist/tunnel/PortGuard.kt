@@ -2,6 +2,7 @@ package bypass.whitelist.tunnel
 
 import android.os.Process
 import android.util.Log
+import bypass.whitelist.util.Prefs
 import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -27,7 +28,7 @@ object PortGuard {
 
     private fun tryBind(port: Long): Boolean {
         return try {
-            ServerSocket(port.toInt(), 1, InetAddress.getByName("127.0.0.1")).use { true }
+            ServerSocket(port.toInt(), 1, InetAddress.getByName(Prefs.socksHost)).use { true }
         } catch (e: Exception) {
             false
         }

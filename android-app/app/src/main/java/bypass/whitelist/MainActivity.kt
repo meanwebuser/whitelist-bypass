@@ -29,6 +29,7 @@ import bypass.whitelist.ui.MainActivityHost
 import bypass.whitelist.ui.MainFragment
 import bypass.whitelist.ui.SettingsScreenFragment
 import bypass.whitelist.util.LogWriter
+import bypass.whitelist.util.Net
 import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.SocksAuth
 import bypass.whitelist.util.maskUrl
@@ -256,7 +257,7 @@ class MainActivity :
 
     private fun probeViaSocks5(host: String, port: Int): Boolean {
         Socket().use { socket ->
-            socket.connect(InetSocketAddress("127.0.0.1", Prefs.socksPort.toInt()), 5000)
+            socket.connect(InetSocketAddress(Net.LOCALHOST, Prefs.socksPort.toInt()), 5000)
             socket.soTimeout = 15000
             val output = socket.getOutputStream()
             val input = socket.getInputStream()

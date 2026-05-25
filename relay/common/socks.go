@@ -6,6 +6,8 @@ import (
 	"net"
 )
 
+const SocksLocalhostIP = "127.0.0.1"
+
 const (
 	Ver        = 0x05
 	CmdTCP     = 0x01

@@ -2,6 +2,10 @@ package bypass.whitelist.util
 
 import java.security.SecureRandom
 
+object Net {
+    const val LOCALHOST = "127.0.0.1"
+}
+
 object Ports {
     const val DEFAULT_SOCKS = 1080L
     const val DC_WS = 9000L
@@ -51,6 +55,7 @@ object PrefsKeys {
     const val AUTOFILL_ENABLED = "autofill_enabled"
     const val AUTOFILL_NAME = "autofill_name"
     const val HEADLESS = "headless"
+    const val SOCKS_HOST = "socks_host"
     const val SOCKS_PORT = "socks_port"
     const val SOCKS_AUTH_MODE = "socks_auth_mode"
     const val SOCKS_USER = "socks_user"

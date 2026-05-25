@@ -41,6 +41,17 @@
     <TextView
         style="@style/SheetFieldLabel"
         android:layout_marginTop="14dp"
+        android:text="@string/proxy_host_field_label" />
+
+    <EditText
+        android:id="@+id/proxyHostInput"
+        style="@style/SheetMonoInput"
+        android:hint="@string/proxy_host_hint"
+        android:inputType="text" />
+
+    <TextView
+        style="@style/SheetFieldLabel"
+        android:layout_marginTop="14dp"
         android:text="@string/proxy_auth_field_label" />
 
     <LinearLayout

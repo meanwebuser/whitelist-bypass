@@ -51,6 +51,7 @@ class HeadlessRelayController(
                     relayBin.absolutePath,
                     "--mode", relayMode,
                     "--ws-port", "${Ports.PION_SIGNALING}",
+                    "--socks-host", Prefs.socksHost,
                     "--socks-port", "${Prefs.socksPort}",
                     "--socks-user", SocksAuth.user,
                     "--socks-pass", SocksAuth.pass
@@ -63,7 +64,7 @@ class HeadlessRelayController(
                     pendingCommands.forEach { writeStdin(it) }
                     pendingCommands.clear()
                 }
-                onLog("Headless relay started (signaling :${Ports.PION_SIGNALING}, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@127.0.0.1:${Prefs.socksPort})")
+                onLog("Headless relay started (signaling :${Ports.PION_SIGNALING}, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort})")
 
                 proc.inputStream.bufferedReader().forEachLine { line ->
                     if (line.startsWith("RESOLVE:")) {

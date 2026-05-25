@@ -149,7 +149,7 @@ class TunnelVpnService : VpnService() {
         isRunning = true
         val fd = vpnFd!!.detachFd()
         vpnFd = null
-        Log.i(TAG, "VPN established, fd=$fd, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@127.0.0.1:${Prefs.socksPort}")
+        Log.i(TAG, "VPN established, fd=$fd, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort}")
         updateStatus(VpnStatus.TUNNEL_ACTIVE)
 
         tun2socksThread = Thread {

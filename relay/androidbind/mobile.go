@@ -144,7 +144,7 @@ func StopJoiner() {
 	logMsg("dc-joiner: stopped")
 }
 
-func StartJoiner(wsPort, socksPort int, socksUser, socksPass string, cb LogCallback) error {
+func StartJoiner(wsPort, socksPort int, socksHost, socksUser, socksPass string, cb LogCallback) error {
 	StopJoiner()
 	logCb = cb
 	j := &joinerRelay{
@@ -169,7 +169,10 @@ func StartJoiner(wsPort, socksPort int, socksUser, socksPass string, cb LogCallb
 		}
 	}()
 
-	socksAddr := fmt.Sprintf("127.0.0.1:%d", socksPort)
+	if socksHost == "" {
+		socksHost = common.SocksLocalhostIP
+	}
+	socksAddr := fmt.Sprintf("%s:%d", socksHost, socksPort)
 	socksLn, err := net.Listen("tcp", socksAddr)
 	if err != nil {
 		wsSrv.Close()
