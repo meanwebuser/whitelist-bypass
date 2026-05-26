@@ -87,17 +87,17 @@ class TunnelVpnService : VpnService() {
             } catch (e: Exception) {}
             
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                tun2socksThread = null
-                vpnFd = null
-                @Suppress("DEPRECATION")
-                stopForeground(true)
                 try {
+                    tun2socksThread = null
+                    vpnFd = null
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
                     onDisconnect?.invoke()
-                } catch (e: Exception) {
-                    Log.e(TAG, "onDisconnect error: ${e.message}")
+                    TunnelServiceState.requestTileRefresh(this@TunnelVpnService)
+                    stopSelf()
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Crash during VPN stop: ${t.message}", t)
                 }
-                TunnelServiceState.requestTileRefresh(this@TunnelVpnService)
-                stopSelf()
             }
         }.start()
     }

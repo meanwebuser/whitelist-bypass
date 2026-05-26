@@ -61,14 +61,18 @@ class ProxyService : Service() {
     fun stop() {
         if (!isRunning) return
         isRunning = false
-        @Suppress("DEPRECATION")
-        stopForeground(true)
-        stopSelf()
-        onDisconnect?.invoke()
-        startService(Intent(this, HeadlessSessionService::class.java).apply {
-            action = HeadlessSessionService.ACTION_DEPENDENT_STOPPED
-        })
-        TunnelServiceState.requestTileRefresh(this)
+        try {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+            stopSelf()
+            onDisconnect?.invoke()
+            startService(Intent(this, HeadlessSessionService::class.java).apply {
+                action = HeadlessSessionService.ACTION_DEPENDENT_STOPPED
+            })
+            TunnelServiceState.requestTileRefresh(this)
+        } catch (t: Throwable) {
+            android.util.Log.e("ProxyService", "Crash during Proxy stop: ${t.message}", t)
+        }
     }
 
     private fun start() {
