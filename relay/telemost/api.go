@@ -310,18 +310,21 @@ func UpdatePublisherTrackDescriptionMessage(pc *webrtc.PeerConnection, audioLabe
 			continue
 		}
 		kind := strings.ToUpper(sender.Track().Kind().String())
-		if kind == "AUDIO" {
-			continue
-		}
 		mid := tr.Mid()
+		label := videoLabel
+		groupId := 2
+		if kind == "AUDIO" {
+			label = audioLabel
+			groupId = 1
+		}
 		descs = append(descs, map[string]interface{}{
 			"mid":            mid,
 			"transceiverMid": mid,
 			"kind":           kind,
 			"priority":       0,
-			"label":          videoLabel,
+			"label":          label,
 			"codecs":         map[string]interface{}{},
-			"groupId":        1,
+			"groupId":        groupId,
 			"description":    "",
 		})
 	}
