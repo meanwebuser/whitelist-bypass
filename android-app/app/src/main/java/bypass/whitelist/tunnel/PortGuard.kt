@@ -16,7 +16,11 @@ object PortGuard {
         Log.w(TAG, "Port $port is busy, killing occupying process")
         killByPort(port)
         for (attempt in 1..20) {
-            Thread.sleep(100)
+            try {
+                Thread.sleep(100)
+            } catch (e: InterruptedException) {
+                break
+            }
             if (tryBind(port)) {
                 Log.i(TAG, "Port $port freed after kill (attempt $attempt)")
                 return true

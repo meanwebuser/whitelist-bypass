@@ -39,10 +39,16 @@ class HeadlessRelayController(
         }
 
         thread = Thread {
-            val socksPort = Prefs.socksPort
-            if (!PortGuard.ensurePortFree(socksPort)) {
-                onLog?.invoke("SOCKS5 port $socksPort is busy and could not be freed")
-                onStatus?.invoke(VpnStatus.PORT_BUSY)
+            try {
+                val socksPort = Prefs.socksPort
+                if (!PortGuard.ensurePortFree(socksPort)) {
+                    onLog?.invoke("SOCKS5 port $socksPort is busy and could not be freed")
+                    onStatus?.invoke(VpnStatus.PORT_BUSY)
+                    isRunning = false
+                    return@Thread
+                }
+            } catch (e: Exception) {
+                onLog?.invoke("Port check error: ${e.message}")
                 isRunning = false
                 return@Thread
             }
