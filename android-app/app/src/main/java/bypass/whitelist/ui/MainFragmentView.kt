@@ -55,7 +55,34 @@ class MainFragmentView(private val root: View) {
         pingButton.clipToOutline = true
         addButton.setOnClickListener { onAddCallClicked?.invoke() }
         emptyCta.setOnClickListener { onAddCallClicked?.invoke() }
-        hero.setOnClickListener { onHeroPressed?.invoke() }
+        hero.setOnTouchListener { v, event ->
+            when (event.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    v.animate().scaleX(0.92f).scaleY(0.92f)
+                        .setDuration(100)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(2f))
+                        .start()
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    v.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(200)
+                        .setInterpolator(android.view.animation.OvershootInterpolator(3f))
+                        .start()
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    onHeroPressed?.invoke()
+                    v.performClick()
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    v.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(150)
+                        .start()
+                    true
+                }
+                else -> false
+            }
+        }
         pingButton.setOnClickListener { onPingPressed?.invoke() }
     }
 
@@ -115,6 +142,8 @@ class MainFragmentView(private val root: View) {
             row.setBackgroundResource(R.drawable.bg_destination_card)
             statusDot.setBackgroundResource(R.drawable.bg_status_dot_idle)
             glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip)
+            nameView.setTextColor(context.getColor(R.color.ink))
+            linkView.setTextColor(context.getColor(R.color.ink_3))
             glyphView.setTextColor(context.getColor(R.color.ink))
         }
     }

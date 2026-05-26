@@ -131,7 +131,7 @@ class JsHookJoinFragment : Fragment() {
                         text.contains("CALL CONNECTED") -> host?.onJoinStatus(VpnStatus.CALL_CONNECTED)
                         text.contains("DataChannel open") -> host?.onJoinStatus(VpnStatus.DATACHANNEL_OPEN)
                         text.contains("DataChannel closed") -> host?.onJoinStatus(VpnStatus.DATACHANNEL_LOST)
-                        text.contains("WebSocket connected") -> host?.onJoinStatus(VpnStatus.TUNNEL_ACTIVE)
+                        text.contains("WebSocket connected") -> host?.onJoinStatus(VpnStatus.CALL_CONNECTED)
                         text.contains("WebSocket disconnected") -> host?.onJoinStatus(VpnStatus.TUNNEL_LOST)
                         text.contains("Connection state: connecting") -> host?.onJoinStatus(VpnStatus.CONNECTING)
                         text.contains("Connection state: disconnected") -> host?.onJoinStatus(VpnStatus.CALL_DISCONNECTED)
@@ -270,7 +270,7 @@ class JsHookJoinFragment : Fragment() {
         @JavascriptInterface
         fun onTunnelReady() {
             host?.appendLog("Tunnel ready, starting VPN...")
-            host?.onJoinStatus(VpnStatus.TUNNEL_ACTIVE)
+            host?.onJoinStatusText("Relay ready, starting local VPN")
             activity?.runOnUiThread { host?.requestVpn() }
         }
 

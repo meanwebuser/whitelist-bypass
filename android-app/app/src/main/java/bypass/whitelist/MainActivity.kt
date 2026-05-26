@@ -1,30 +1,38 @@
 package bypass.whitelist
 
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.VpnService
-import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
+import androidx.viewpager2.adapter.FragmentStateAdapter
+import androidx.viewpager2.widget.ViewPager2
 import bypass.whitelist.tunnel.CallConfig
 import bypass.whitelist.tunnel.CallPlatform
+import bypass.whitelist.tunnel.HeadlessSessionService
 import bypass.whitelist.tunnel.HeadlessJoinController
 import bypass.whitelist.tunnel.ProxyService
+import bypass.whitelist.tunnel.TunnelServiceState
 import bypass.whitelist.tunnel.TunnelMode
 import bypass.whitelist.tunnel.TunnelVpnService
 import bypass.whitelist.tunnel.VpnStatus
-import bypass.whitelist.ui.LogsFragment
+import bypass.whitelist.ui.CallsListener
 import bypass.whitelist.ui.HeadlessVkFragment
 import bypass.whitelist.ui.JoinFragmentHost
 import bypass.whitelist.ui.JsHookJoinFragment
+import bypass.whitelist.ui.LogsFragment
 import bypass.whitelist.ui.MainActivityHost
 import bypass.whitelist.ui.MainFragment
 import bypass.whitelist.ui.SettingsScreenFragment
@@ -33,10 +41,6 @@ import bypass.whitelist.util.Net
 import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.SocksAuth
 import bypass.whitelist.util.maskUrl
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
-import bypass.whitelist.ui.CallsListener
 import java.net.InetSocketAddress
 import java.net.Socket
 import kotlin.concurrent.thread
@@ -56,22 +60,20 @@ class MainActivity :
     private lateinit var navMain: LinearLayout
     private lateinit var navSettings: LinearLayout
     private lateinit var navLogs: LinearLayout
-    private lateinit var tabContainer: View
+    private lateinit var tabContainer: ViewPager2
+    private lateinit var navIndicator: View
     private lateinit var subPageContainer: View
     private lateinit var joinOverlayContainer: View
     private lateinit var overlayLogs: View
     private lateinit var overlayLogsText: TextView
     private lateinit var overlayLogsScroll: android.widget.ScrollView
-    private var currentTabId: Int = 0
 
+    private var currentTabId: Int = 0
     private var lastStatus: VpnStatus? = null
     private var connected: Boolean = false
     private var activeJoinUrl: String = ""
     private var activeHeadlessController: HeadlessJoinController? = null
-
-    private val vpnPrepLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) {}
+    private var navPageChangeCallback: ViewPager2.OnPageChangeCallback? = null
 
     private val vpnLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -90,20 +92,56 @@ class MainActivity :
         navSettings = findViewById(R.id.navSettings)
         navLogs = findViewById(R.id.navLogs)
         tabContainer = findViewById(R.id.tabContainer)
+        navIndicator = findViewById(R.id.navIndicator)
         subPageContainer = findViewById(R.id.subPageContainer)
         joinOverlayContainer = findViewById(R.id.joinOverlayContainer)
         overlayLogs = findViewById(R.id.overlayLogs)
         overlayLogsText = findViewById(R.id.overlayLogsText)
         overlayLogsScroll = findViewById(R.id.overlayLogsScroll)
+
+        tabContainer.adapter = object : FragmentStateAdapter(this) {
+            override fun getItemCount(): Int = 3
+            override fun createFragment(position: Int): Fragment {
+                return when (position) {
+                    0 -> MainFragment()
+                    1 -> SettingsScreenFragment()
+                    else -> LogsFragment()
+                }
+            }
+        }
+        tabContainer.offscreenPageLimit = 3
+
+        navPageChangeCallback = object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
+                moveNavIndicatorForPager(position, positionOffset)
+            }
+
+            override fun onPageSelected(position: Int) {
+                currentTabId = when (position) {
+                    0 -> R.id.navMain
+                    1 -> R.id.navSettings
+                    else -> R.id.navLogs
+                }
+                updateNavSelection(currentTabId)
+                moveNavIndicatorTo(currentTabId, animate = false)
+                (supportFragmentManager.findFragmentByTag("f1") as? SettingsScreenFragment)?.refresh()
+            }
+        }.also(tabContainer::registerOnPageChangeCallback)
+
         findViewById<View>(R.id.overlayCopyButton).setOnClickListener { copyLogs() }
         findViewById<View>(R.id.overlayShareButton).setOnClickListener { shareLogs() }
 
-        val baseTabPaddingTop = tabContainer.paddingTop
+        val baseTabPaddingTop = findViewById<View>(R.id.tabContainerWrap).paddingTop
         val bottomWrap = findViewById<View>(R.id.bottomWrap)
         val baseBottomWrapPaddingBottom = bottomWrap.paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            tabContainer.setPadding(bars.left, baseTabPaddingTop + bars.top, bars.right, 0)
+            findViewById<View>(R.id.tabContainerWrap).setPadding(
+                bars.left,
+                baseTabPaddingTop + bars.top,
+                bars.right,
+                0
+            )
             subPageContainer.setPadding(bars.left, bars.top, bars.right, 0)
             joinOverlayContainer.setPadding(bars.left, bars.top, bars.right, 0)
             bottomWrap.setPadding(
@@ -121,24 +159,79 @@ class MainActivity :
 
         val restoredTabId =
             savedInstanceState?.getInt(STATE_CURRENT_TAB_ID, R.id.navMain) ?: R.id.navMain
-        selectNavTab(restoredTabId)
+        selectNavTab(restoredTabId, animatePager = false)
+        findViewById<View>(R.id.navItemsRow).doOnLayout {
+            moveNavIndicatorTo(currentTabId, animate = false)
+        }
 
         TunnelVpnService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
         ProxyService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
 
-        VpnService.prepare(this)?.let { vpnPrepLauncher.launch(it) }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 0)
-        }
-
         if (CALL_LINK.isNotEmpty()) {
             startJoinFor(CallConfig.newWith(name = CallConfig.suggestNameFor(CALL_LINK), url = CALL_LINK))
         } else if (Prefs.connectOnStart) {
-            val active = Prefs.activeDestination
-            if (active != null) startJoinFor(active)
+            Prefs.activeDestination?.let(::startJoinFor)
         }
+
+        handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-attach disconnect callbacks 
+        TunnelVpnService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
+        ProxyService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
+        
+        TunnelServiceState.vpnStatusCallback = { status ->
+            runOnUiThread {
+                lastStatus = status
+                mainFragment()?.onStatusChanged(status)
+                if (status == VpnStatus.TUNNEL_ACTIVE) {
+                    if (!connected) {
+                        connected = true
+                        mainFragment()?.onConnectedChanged(true)
+                    }
+                } else if (status == VpnStatus.CALL_FAILED || status == VpnStatus.CALL_DISCONNECTED || status == VpnStatus.TUNNEL_LOST) {
+                    if (connected) {
+                        connected = false
+                        mainFragment()?.onConnectedChanged(false)
+                    }
+                }
+            }
+        }
+
+        TunnelServiceState.logCallback = { message ->
+            runOnUiThread { appendLog(message) }
+        }
+
+        when {
+            TunnelServiceState.isTunnelActive(this) -> {
+                // VPN service is running — sync UI without calling onJoinStatus
+                // (onJoinStatus has side effects like updating notification unnecessarily)
+                if (!connected || lastStatus != VpnStatus.TUNNEL_ACTIVE) {
+                    connected = true
+                    lastStatus = VpnStatus.TUNNEL_ACTIVE
+                    mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_ACTIVE)
+                    mainFragment()?.onConnectedChanged(true)
+                }
+            }
+            TunnelServiceState.isHeadlessSessionRunning(this) -> {
+                // Relay is connecting but VPN not yet up — show connecting state
+                connected = false
+                lastStatus = VpnStatus.CONNECTING
+                mainFragment()?.onConnectedChanged(false)
+                mainFragment()?.onStatusChanged(VpnStatus.CONNECTING)
+            }
+            connected && lastStatus == VpnStatus.TUNNEL_ACTIVE -> {
+                // UI thinks it's connected but no service is running — reset
+                onDisconnectFromService()
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -147,52 +240,64 @@ class MainActivity :
     }
 
     override fun onDestroy() {
+        navPageChangeCallback?.let(tabContainer::unregisterOnPageChangeCallback)
+        navPageChangeCallback = null
         TunnelVpnService.onDisconnect = null
-        TunnelVpnService.instance?.stop()
         ProxyService.onDisconnect = null
-        ProxyService.instance?.stop()
         logWriter.close()
         super.onDestroy()
     }
 
-    private fun selectNavTab(itemId: Int) {
+    private fun handleIntent(intent: Intent?) {
+        if (intent?.action != ACTION_AUTO_START) return
+        intent.action = null
+        val isConnecting = lastStatus == VpnStatus.CONNECTING
+        if (!connected && !isConnecting) {
+            Prefs.activeDestination?.let(::onConnectPressed) ?: run {
+                Toast.makeText(this, R.string.error_no_destination, Toast.LENGTH_SHORT).show()
+            }
+        } else if (connected) {
+            onDisconnectPressed()
+        }
+    }
+
+    private fun selectNavTab(itemId: Int, animatePager: Boolean = true) {
         if (currentTabId == itemId) return
         currentTabId = itemId
         dismissSubPage()
-        when (itemId) {
-            R.id.navMain -> showTab(MainFragment::class.java)
-            R.id.navSettings -> showTab(SettingsScreenFragment::class.java)
-            R.id.navLogs -> showTab(LogsFragment::class.java)
+        val index = when (itemId) {
+            R.id.navMain -> 0
+            R.id.navSettings -> 1
+            R.id.navLogs -> 2
+            else -> 0
         }
         updateNavSelection(itemId)
+        if (!animatePager || tabContainer.currentItem == index) {
+            moveNavIndicatorTo(itemId, animate = false)
+        }
+        tabContainer.setCurrentItem(index, animatePager)
     }
 
     private fun updateNavSelection(itemId: Int) {
-        val transparent = android.graphics.Color.TRANSPARENT
-        val activeBg = R.drawable.bg_nav_item_active
         val accent = getColor(R.color.accent_emerald)
         val ink3 = getColor(R.color.ink_3)
 
-        listOf(navMain, navSettings, navLogs).forEach { it.setBackgroundColor(transparent) }
         findViewById<ImageView>(R.id.navMainIcon).setColorFilter(ink3)
         findViewById<ImageView>(R.id.navSettingsIcon).setColorFilter(ink3)
         findViewById<ImageView>(R.id.navLogsIcon).setColorFilter(ink3)
         findViewById<TextView>(R.id.navMainLabel).apply {
-            setTextColor(ink3); setTypeface(typeface, android.graphics.Typeface.NORMAL)
+            setTextColor(ink3)
+            setTypeface(typeface, android.graphics.Typeface.NORMAL)
         }
         findViewById<TextView>(R.id.navSettingsLabel).apply {
-            setTextColor(ink3); setTypeface(typeface, android.graphics.Typeface.NORMAL)
+            setTextColor(ink3)
+            setTypeface(typeface, android.graphics.Typeface.NORMAL)
         }
         findViewById<TextView>(R.id.navLogsLabel).apply {
-            setTextColor(ink3); setTypeface(typeface, android.graphics.Typeface.NORMAL)
+            setTextColor(ink3)
+            setTypeface(typeface, android.graphics.Typeface.NORMAL)
         }
-        val activeContainer = when (itemId) {
-            R.id.navMain -> navMain
-            R.id.navSettings -> navSettings
-            R.id.navLogs -> navLogs
-            else -> null
-        } ?: return
-        activeContainer.setBackgroundResource(activeBg)
+
         val activeIcon = when (itemId) {
             R.id.navMain -> R.id.navMainIcon
             R.id.navSettings -> R.id.navSettingsIcon
@@ -205,34 +310,75 @@ class MainActivity :
             R.id.navLogs -> R.id.navLogsLabel
             else -> 0
         }
-        findViewById<ImageView>(activeIcon).setColorFilter(accent)
-        findViewById<TextView>(activeLabel).apply {
-            setTextColor(accent)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        if (activeIcon != 0) findViewById<ImageView>(activeIcon).setColorFilter(accent)
+        if (activeLabel != 0) {
+            findViewById<TextView>(activeLabel).apply {
+                setTextColor(accent)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            }
         }
     }
 
-    private fun showTab(cls: Class<out Fragment>) {
-        val tag = cls.name
-        val existing = supportFragmentManager.findFragmentByTag(tag)
-        val tx = supportFragmentManager.beginTransaction()
-        supportFragmentManager.fragments
-            .filter { it.id == R.id.tabContainer && it.tag != tag }
-            .forEach { tx.hide(it) }
-        if (existing == null) {
-            tx.add(R.id.tabContainer, cls.getDeclaredConstructor().newInstance(), tag)
-        } else {
-            tx.show(existing)
-            if (existing is LogsFragment) existing.refresh()
+    private fun moveNavIndicatorTo(itemId: Int, animate: Boolean) {
+        val target = when (itemId) {
+            R.id.navMain -> navMain
+            R.id.navSettings -> navSettings
+            R.id.navLogs -> navLogs
+            else -> null
+        } ?: return
+
+        navIndicator.layoutParams = navIndicator.layoutParams.apply {
+            width = target.width
+            height = target.height
         }
-        tx.commit()
+        navIndicator.requestLayout()
+        val targetTranslation = target.left.toFloat()
+        if (animate) {
+            navIndicator.animate()
+                .translationX(targetTranslation)
+                .setDuration(220L)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .start()
+        } else {
+            navIndicator.animate().cancel()
+            navIndicator.translationX = targetTranslation
+        }
+    }
+
+    private fun moveNavIndicatorForPager(position: Int, positionOffset: Float) {
+        val targets = listOf(navMain, navSettings, navLogs)
+        val current = targets.getOrNull(position) ?: return
+        val next = targets.getOrNull(position + 1)
+        val targetWidth = if (next != null) {
+            current.width + ((next.width - current.width) * positionOffset)
+        } else {
+            current.width.toFloat()
+        }
+        val targetLeft = if (next != null) {
+            current.left + ((next.left - current.left) * positionOffset)
+        } else {
+            current.left.toFloat()
+        }
+        navIndicator.layoutParams = navIndicator.layoutParams.apply {
+            width = targetWidth.toInt()
+            height = current.height
+        }
+        navIndicator.requestLayout()
+        navIndicator.animate().cancel()
+        navIndicator.translationX = targetLeft
+    }
+
+    override fun onPause() {
+        super.onPause()
+        TunnelServiceState.vpnStatusCallback = null
+        TunnelServiceState.logCallback = null
     }
 
     private fun mainFragment(): MainFragment? =
-        supportFragmentManager.findFragmentByTag(MainFragment::class.java.name) as? MainFragment
+        supportFragmentManager.fragments.firstOrNull { it is MainFragment } as? MainFragment
 
     private fun logsFragment(): LogsFragment? =
-        supportFragmentManager.findFragmentByTag(LogsFragment::class.java.name) as? LogsFragment
+        supportFragmentManager.fragments.firstOrNull { it is LogsFragment } as? LogsFragment
 
     override fun onConnectPressed(config: CallConfig) {
         startJoinFor(config)
@@ -280,7 +426,10 @@ class MainActivity :
 
             val hostBytes = host.toByteArray(Charsets.US_ASCII)
             val request = ByteArray(4 + 1 + hostBytes.size + 2)
-            request[0] = 0x05; request[1] = 0x01; request[2] = 0x00; request[3] = 0x03
+            request[0] = 0x05
+            request[1] = 0x01
+            request[2] = 0x00
+            request[3] = 0x03
             request[4] = hostBytes.size.toByte()
             System.arraycopy(hostBytes, 0, request, 5, hostBytes.size)
             request[5 + hostBytes.size] = ((port shr 8) and 0xff).toByte()
@@ -320,7 +469,7 @@ class MainActivity :
     override fun onResetAllSettings() {
         Prefs.resetAllSettings()
         App.applyTheme(Prefs.themeMode)
-        (supportFragmentManager.findFragmentByTag(SettingsScreenFragment::class.java.name) as? SettingsScreenFragment)?.refresh()
+        (supportFragmentManager.fragments.firstOrNull { it is SettingsScreenFragment } as? SettingsScreenFragment)?.refresh()
         Toast.makeText(this, R.string.settings_toast_reset_done, Toast.LENGTH_SHORT).show()
     }
 
@@ -341,7 +490,9 @@ class MainActivity :
 
     override fun shareLogs() {
         val uri = androidx.core.content.FileProvider.getUriForFile(
-            this, "${packageName}.fileprovider", logWriter.file
+            this,
+            "${packageName}.fileprovider",
+            logWriter.file
         )
         val share = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
@@ -448,7 +599,9 @@ class MainActivity :
         if (url.isEmpty()) return
 
         val platform = config.platform
-        if (Prefs.tunnelMode == TunnelMode.DC && (platform == CallPlatform.TELEMOST || platform == CallPlatform.DION)) {
+        if (Prefs.tunnelMode == TunnelMode.DC &&
+            (platform == CallPlatform.TELEMOST || platform == CallPlatform.DION)
+        ) {
             Toast.makeText(this, R.string.dc_mode_not_supported, Toast.LENGTH_SHORT).show()
         }
 
@@ -470,7 +623,10 @@ class MainActivity :
         if (headlessMode && platform != CallPlatform.VK) {
             setJoinOverlayVisible(false)
             activeHeadlessController = HeadlessJoinController(
-                applicationInfo.nativeLibraryDir, this, platform, url,
+                applicationInfo.nativeLibraryDir,
+                this,
+                platform,
+                url,
             ).also { it.start() }
             return
         }
@@ -509,15 +665,16 @@ class MainActivity :
         lastStatus = null
         val controller = activeHeadlessController
         activeHeadlessController = null
-        val vpn = TunnelVpnService.instance
-        val proxy = ProxyService.instance
+
+        startService(Intent(this, TunnelVpnService::class.java).apply { action = TunnelVpnService.ACTION_STOP })
+        startService(Intent(this, ProxyService::class.java).apply { action = ProxyService.ACTION_STOP })
+        startService(Intent(this, HeadlessSessionService::class.java).apply { action = HeadlessSessionService.ACTION_STOP })
+
         removeJoinFragment()
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
         thread(name = "full-reset-shutdown") {
             controller?.close()
-            vpn?.stop()
-            proxy?.stop()
         }
     }
 
@@ -539,6 +696,7 @@ class MainActivity :
     }
 
     companion object {
+        const val ACTION_AUTO_START = "bypass.whitelist.AUTO_START"
         private const val SUB_PAGE_TAG = "sub_page"
         private const val STATE_CURRENT_TAB_ID = "current_tab_id"
         private const val CALL_LINK = "" // Open call page on app start (do not delete - I need it for debug)

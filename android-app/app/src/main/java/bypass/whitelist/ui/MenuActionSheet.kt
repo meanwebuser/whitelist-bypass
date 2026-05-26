@@ -56,9 +56,9 @@ class MenuActionSheet : BottomSheetDialogFragment() {
             label.text = item.title
             icon.setImageResource(item.iconRes)
             if (item.danger) {
-                label.setTextColor(requireContext().getColor(R.color.error_red))
+                label.setTextColor(requireContext().getColor(R.color.accent_emerald))
                 iconBox.setBackgroundResource(R.drawable.bg_settings_row_icon_danger)
-                icon.setColorFilter(requireContext().getColor(R.color.error_red))
+                icon.setColorFilter(requireContext().getColor(R.color.accent_emerald))
             }
             row.setOnClickListener {
                 onSelect?.invoke(item)

@@ -30,6 +30,7 @@ class ProxyService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        TunnelServiceState.requestTileRefresh(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -47,6 +48,7 @@ class ProxyService : Service() {
             instance = null
         }
         onDisconnect = null
+        TunnelServiceState.requestTileRefresh(this)
         super.onDestroy()
     }
 
@@ -63,11 +65,16 @@ class ProxyService : Service() {
         stopForeground(true)
         stopSelf()
         onDisconnect?.invoke()
+        startService(Intent(this, HeadlessSessionService::class.java).apply {
+            action = HeadlessSessionService.ACTION_DEPENDENT_STOPPED
+        })
+        TunnelServiceState.requestTileRefresh(this)
     }
 
     private fun start() {
         if (isRunning) return
         isRunning = true
+        TunnelServiceState.requestTileRefresh(this)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(

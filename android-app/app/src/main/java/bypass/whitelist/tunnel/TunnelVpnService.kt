@@ -60,24 +60,46 @@ class TunnelVpnService : VpnService() {
     fun updateStatus(status: VpnStatus) {
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(NOTIFICATION_ID, buildNotification(getString(status.labelRes)))
+        TunnelServiceState.requestTileRefresh(this)
     }
 
     @Synchronized
     fun stop() {
         if (!isRunning) return
         isRunning = false
-        try {
-            Androidbind.stopTun2Socks()
-        } catch (e: Exception) {
-            Log.e(TAG, "tun2socks stop error: ${e.message}")
-        }
-        tun2socksThread?.join(3000)
-        tun2socksThread = null
-        vpnFd = null
-        @Suppress("DEPRECATION")
-        stopForeground(true)
-        //stopSelf()
-        onDisconnect?.invoke()
+        
+        Thread {
+            val stopDone = java.util.concurrent.CountDownLatch(1)
+            Thread {
+                try {
+                    Androidbind.stopTun2Socks()
+                } catch (e: Exception) {
+                    Log.e(TAG, "tun2socks stop error: ${e.message}")
+                }
+                stopDone.countDown()
+            }.start()
+            
+            // Wait up to 2 seconds for tun2socks to stop gracefully
+            stopDone.await(2000, java.util.concurrent.TimeUnit.MILLISECONDS)
+            
+            try {
+                tun2socksThread?.join(1000)
+            } catch (e: Exception) {}
+            
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                tun2socksThread = null
+                vpnFd = null
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+                try {
+                    onDisconnect?.invoke()
+                } catch (e: Exception) {
+                    Log.e(TAG, "onDisconnect error: ${e.message}")
+                }
+                TunnelServiceState.requestTileRefresh(this@TunnelVpnService)
+                stopSelf()
+            }
+        }.start()
     }
 
     private fun start() {
@@ -88,7 +110,9 @@ class TunnelVpnService : VpnService() {
         val builder = Builder()
             .setSession(Vpn.SESSION_NAME)
             .addAddress(Vpn.ADDRESS, Vpn.PREFIX_LENGTH)
+            .addAddress("fd00:1:fd00:1:fd00:1:fd00:1", 128)
             .addRoute(Vpn.ROUTE, 0)
+            .addRoute("::", 0)
             .setMtu(Vpn.MTU)
 
         when (Prefs.dnsMode) {

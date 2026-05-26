@@ -28,11 +28,16 @@ class HeadlessJoinController(
 
     private fun handleStatus(status: VpnStatus) {
         Log.d(LOG_TAG, "status: $status")
-        host.onJoinStatus(status)
         when (status) {
-            VpnStatus.STARTING -> relay.sendJoinParams(buildJoinParams().toString())
-            VpnStatus.TUNNEL_ACTIVE -> mainHandler.post { host.requestVpn() }
-            else -> {}
+            VpnStatus.STARTING -> {
+                host.onJoinStatus(status)
+                relay.sendJoinParams(buildJoinParams().toString())
+            }
+            VpnStatus.TUNNEL_ACTIVE -> {
+                host.onJoinStatusText("Relay ready, starting local VPN")
+                mainHandler.post { host.requestVpn() }
+            }
+            else -> host.onJoinStatus(status)
         }
     }
 
@@ -53,6 +58,7 @@ class HeadlessJoinController(
     }
 
     override fun close() {
+        mainHandler.removeCallbacksAndMessages(null)
         relay.stop()
     }
 

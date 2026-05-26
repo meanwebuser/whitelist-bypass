@@ -1,5 +1,5 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">WhitelistBypass</string>
+    <string name="app_name">whitelistbypass</string>
     <string name="share_logs">Share logs</string>
     <string name="copy_logs_toast">Logs copied to clipboard</string>
     <string name="autofill_settings_title">Autofill settings</string>
@@ -38,8 +38,12 @@
     <string name="vp8_dual_track_sub">Publish a second VP8 track as screen-share and shard outbound across both.</string>
     <string name="notification_vpn_title">VPN active</string>
     <string name="notification_proxy_title">Proxy active</string>
+    <string name="notification_session_connecting">Starting headless session</string>
+    <string name="error_no_destination">Add and select a destination first</string>
     <string name="notification_disconnect">Disconnect</string>
     <string name="dc_mode_not_supported">DC mode not supported - falling back to video</string>
+    <string name="tile_requires_headless_destination">Select a headless destination first</string>
+    <string name="tile_vpn_permission_required">Open the app once and grant VPN permission</string>
 
     <string name="nav_main">Main</string>
     <string name="nav_settings">Settings</string>
@@ -166,4 +170,6 @@
     <string name="activity_empty">No events yet</string>
     <string name="activity_copy">Copy raw</string>
     <string name="activity_share">Share file</string>
+    <string name="settings_row_bind_profiles">Bind settings to profiles</string>
+    <string name="settings_row_bind_profiles_sub">Save connection settings for each profile separately</string>
 </resources>
