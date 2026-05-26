@@ -55,6 +55,7 @@ object PrefsKeys {
     const val AUTOFILL_ENABLED = "autofill_enabled"
     const val AUTOFILL_NAME = "autofill_name"
     const val HEADLESS = "headless"
+    const val BIND_SETTINGS_TO_PROFILES = "bind_settings"
     const val SOCKS_HOST = "socks_host"
     const val SOCKS_PORT = "socks_port"
     const val SOCKS_AUTH_MODE = "socks_auth_mode"

@@ -27,6 +27,12 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         fun onResetAllSettings()
     }
 
+    
+    override fun onResume() {
+        super.onResume()
+        rebuild()
+    }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val root = view.findViewById<LinearLayout>(R.id.settingsContent)
         root.removeAllViews()
@@ -73,7 +79,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
             ChoiceActionSheet.show(
                 manager = parentFragmentManager,
                 title = getString(R.string.settings_row_tunnel_mode),
-                options = TunnelMode.entries.map { ChoiceActionSheet.Option(it.name, it.label) },
+                options = TunnelMode.entries.filter { it == TunnelMode.VIDEO || (Prefs.activeDestination?.platform != bypass.whitelist.tunnel.CallPlatform.TELEMOST && Prefs.activeDestination?.platform != bypass.whitelist.tunnel.CallPlatform.DION) }.map { ChoiceActionSheet.Option(it.name, it.label) },
                 selectedId = Prefs.tunnelMode.name,
             ) { picked ->
                 val newMode = TunnelMode.valueOf(picked.id)
@@ -85,9 +91,11 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
             }
         }
 
-        val vp8SubRes = if (Prefs.dualTrack) R.string.settings_row_vp8_sub_dual else R.string.settings_row_vp8_sub
-        addRow(card, R.drawable.ic_setting_vp8, getString(R.string.settings_row_vp8), getString(vp8SubRes, Prefs.vp8Fps, Prefs.vp8Batch), null) {
-            Vp8ActionSheet.show(parentFragmentManager) { rebuild() }
+        if (Prefs.tunnelMode == TunnelMode.VIDEO) {
+            val vp8SubRes = if (Prefs.dualTrack) R.string.settings_row_vp8_sub_dual else R.string.settings_row_vp8_sub
+            addRow(card, R.drawable.ic_setting_vp8, getString(R.string.settings_row_vp8), getString(vp8SubRes, Prefs.vp8Fps, Prefs.vp8Batch), null) {
+                Vp8ActionSheet.show(parentFragmentManager) { rebuild() }
+            }
         }
 
         addRow(card, R.drawable.ic_setting_autofill, getString(R.string.settings_row_autofill), if (Prefs.autofillEnabled) Prefs.autofillName else getString(R.string.settings_row_autofill_off), null) {
@@ -125,6 +133,9 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         val section = newSection(R.string.settings_section_behavior)
         val card = section.findViewById<LinearLayout>(R.id.sectionCard)
 
+                addSwitchRow(card, R.drawable.ic_setting_reconnect, getString(R.string.settings_row_bind_profiles), getString(R.string.settings_row_bind_profiles_sub), Prefs.bindSettingsToProfiles) { checked ->
+            Prefs.bindSettingsToProfiles = checked
+        }
         addSwitchRow(card, R.drawable.ic_setting_headless, getString(R.string.settings_row_headless), getString(R.string.settings_row_headless_sub), Prefs.headless) { checked ->
             Prefs.headless = checked
         }

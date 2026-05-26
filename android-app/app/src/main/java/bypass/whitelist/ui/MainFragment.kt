@@ -61,6 +61,16 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         }
         container.onCallSelected = { config ->
             Prefs.activeDestinationId = config.id
+            if (Prefs.bindSettingsToProfiles) {
+                if (config.tunnelMode == null) {
+                    val updated = config.copy(tunnelMode = Prefs.tunnelMode, vp8Fps = Prefs.vp8Fps, vp8Batch = Prefs.vp8Batch)
+                    Prefs.updateDestination(updated)
+                } else {
+                    Prefs.tunnelMode = config.tunnelMode
+                    if (config.vp8Fps != null) Prefs.vp8Fps = config.vp8Fps
+                    if (config.vp8Batch != null) Prefs.vp8Batch = config.vp8Batch
+                }
+            }
             container.bindCalls(Prefs.savedDestinations, Prefs.activeDestinationId)
         }
         container.onCallLongPressed = { config, anchor ->

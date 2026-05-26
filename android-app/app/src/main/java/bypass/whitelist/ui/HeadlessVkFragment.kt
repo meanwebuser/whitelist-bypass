@@ -54,15 +54,17 @@ class HeadlessVkFragment : Fragment() {
             },
             onStatus = { status ->
                 Log.d("HEADLESS-VK", "status: $status")
-                host?.onJoinStatus(status)
                 if (status == VpnStatus.TUNNEL_ACTIVE) {
                     activity?.runOnUiThread {
+                        host?.onJoinStatusText("Relay ready, starting local VPN")
                         webView.stopLoading()
                         webView.loadUrl(BLANK_URL)
                         webView.isVisible = false
                         host?.setJoinUiVisible(false)
                         host?.requestVpn()
                     }
+                } else {
+                    host?.onJoinStatus(status)
                 }
             },
             onCaptchaUrl = { captchaUrl ->

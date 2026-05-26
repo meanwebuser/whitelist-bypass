@@ -34,15 +34,15 @@ class HeadlessRelayController(
 
         val relayBin = File(nativeLibDir, "librelay.so")
         if (!relayBin.exists()) {
-            onLog("Relay binary not found")
+            onLog?.invoke("Relay binary not found")
             return
         }
 
         thread = Thread {
             val socksPort = Prefs.socksPort
             if (!PortGuard.ensurePortFree(socksPort)) {
-                onLog("SOCKS5 port $socksPort is busy and could not be freed")
-                onStatus(VpnStatus.PORT_BUSY)
+                onLog?.invoke("SOCKS5 port $socksPort is busy and could not be freed")
+                onStatus?.invoke(VpnStatus.PORT_BUSY)
                 isRunning = false
                 return@Thread
             }
@@ -64,7 +64,7 @@ class HeadlessRelayController(
                     pendingCommands.forEach { writeStdin(it) }
                     pendingCommands.clear()
                 }
-                onLog("Headless relay started (signaling :${Ports.PION_SIGNALING}, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort})")
+                onLog?.invoke("Headless relay started (signaling :${Ports.PION_SIGNALING}, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort})")
 
                 proc.inputStream.bufferedReader().forEachLine { line ->
                     if (line.startsWith("RESOLVE:")) {
@@ -83,29 +83,38 @@ class HeadlessRelayController(
                         val status = line.removePrefix("STATUS:")
                         Log.d("RELAY", "status: $status")
                         when {
-                            status == "READY" -> onStatus(VpnStatus.STARTING)
-                            status == "CONNECTING" -> onStatus(VpnStatus.CONNECTING)
-                            status == "RECONNECTING" -> onStatus(VpnStatus.CONNECTING)
-                            status == "TUNNEL_CONNECTED" -> onStatus(VpnStatus.TUNNEL_ACTIVE)
-                            status == "TUNNEL_LOST" -> onStatus(VpnStatus.TUNNEL_LOST)
+                            status == "READY" -> onStatus?.invoke(VpnStatus.STARTING)
+                            status == "CONNECTING" -> onStatus?.invoke(VpnStatus.CONNECTING)
+                            status == "RECONNECTING" -> onStatus?.invoke(VpnStatus.CONNECTING)
+                            status == "TUNNEL_CONNECTED" -> onStatus?.invoke(VpnStatus.TUNNEL_ACTIVE)
+                            status == "TUNNEL_LOST" -> onStatus?.invoke(VpnStatus.TUNNEL_LOST)
                             status.startsWith("CAPTCHA:") -> {
                                 val captchaUrl = status.removePrefix("CAPTCHA:")
-                                onStatus(VpnStatus.ACTION_REQUIRED_CAPTCHA)
+                                onStatus?.invoke(VpnStatus.ACTION_REQUIRED_CAPTCHA)
                                 onCaptchaUrl?.invoke(captchaUrl)
                             }
-                            status.startsWith("ERROR:") -> onStatus(VpnStatus.CALL_FAILED)
+                            status.startsWith("ERROR:") -> {
+                                onLog?.invoke("Headless relay error: $status")
+                                onStatus?.invoke(VpnStatus.CALL_FAILED)
+                            }
                         }
                     } else {
                         Log.d("RELAY", line)
-                        onLog(line)
+                        onLog?.invoke(line)
                     }
                 }
                 proc.waitFor()
-                Log.d("RELAY", "Headless relay exited: ${proc.exitValue()}")
+                android.util.Log.d("RELAY", "Headless relay exited: ${proc.exitValue()}")
+                if (isRunning) {
+                    onStatus?.invoke(VpnStatus.CALL_FAILED)
+                    isRunning = false
+                }
             } catch (e: Exception) {
                 if (isRunning) {
-                    Log.e("RELAY", "Headless relay error", e)
-                    onLog("Relay error: ${e.message}")
+                    android.util.Log.e("RELAY", "Headless relay error", e)
+                    onLog?.invoke("Relay error: ${e.message}")
+                    onStatus?.invoke(VpnStatus.CALL_FAILED)
+                    isRunning = false
                 }
             }
         }.also { it.start() }
@@ -120,9 +129,9 @@ class HeadlessRelayController(
             put("joinLink", joinLink)
             put("displayName", displayName)
             put("tunnelMode", tunnelMode)
-            put("vp8Fps", bypass.whitelist.util.Prefs.vp8Fps)
-            put("vp8Batch", bypass.whitelist.util.Prefs.vp8Batch)
-            put("dualTrack", bypass.whitelist.util.Prefs.dualTrack)
+            put("vp8Fps", Prefs.vp8Fps)
+            put("vp8Batch", Prefs.vp8Batch)
+            put("dualTrack", Prefs.dualTrack)
         }
         writeStdin("AUTH:$json")
     }
@@ -130,14 +139,12 @@ class HeadlessRelayController(
     @Synchronized
     fun stop() {
         isRunning = false
-        process?.let {
-            it.destroy()
-            it.waitFor()
-        }
-        process = null
-        stdinWriter = null
         thread?.interrupt()
         thread = null
+        try { stdinWriter?.close() } catch (_: Exception) {}
+        stdinWriter = null
+        process?.destroy()
+        process = null
     }
 
     @Synchronized

@@ -11,10 +11,15 @@
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <androidx.fragment.app.FragmentContainerView
-            android:id="@+id/tabContainer"
+        <FrameLayout
+            android:id="@+id/tabContainerWrap"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="match_parent">
+            <androidx.viewpager2.widget.ViewPager2
+                android:id="@+id/tabContainer"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+        </FrameLayout>
 
         <FrameLayout
             android:id="@+id/subPageContainer"

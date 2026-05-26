@@ -15,6 +15,10 @@ object Prefs {
         prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
     }
 
+        var bindSettingsToProfiles: Boolean
+        get() = prefs.getBoolean(PrefsKeys.BIND_SETTINGS_TO_PROFILES, false)
+        set(value) = prefs.edit { putBoolean(PrefsKeys.BIND_SETTINGS_TO_PROFILES, value) }
+
     var connectOnStart: Boolean
         get() = prefs.getBoolean(PrefsKeys.CONNECT_ON_START, false)
         set(value) = prefs.edit { putBoolean(PrefsKeys.CONNECT_ON_START, value) }
@@ -28,7 +32,11 @@ object Prefs {
                 TunnelMode.VIDEO
             }
         }
-        set(value) = prefs.edit { putString(PrefsKeys.TUNNEL_MODE, value.name) }
+        set(value) {
+            prefs.edit { putString(PrefsKeys.TUNNEL_MODE, value.name) }
+            val active = activeDestination
+            if (active != null && bindSettingsToProfiles) updateDestination(active.copy(tunnelMode = value))
+        }
 
     var showLogs: Boolean
         get() = prefs.getBoolean(PrefsKeys.SHOW_LOGS, false)
@@ -113,15 +121,27 @@ object Prefs {
 
     var vp8Fps: Int
         get() = prefs.getInt(PrefsKeys.VP8_FPS, VP8Defaults.FPS)
-        set(value) = prefs.edit { putInt(PrefsKeys.VP8_FPS, value) }
+        set(value) {
+            prefs.edit { putInt(PrefsKeys.VP8_FPS, value) }
+            val active = activeDestination
+            if (active != null && bindSettingsToProfiles) updateDestination(active.copy(vp8Fps = value))
+        }
 
     var vp8Batch: Int
         get() = prefs.getInt(PrefsKeys.VP8_BATCH, VP8Defaults.BATCH)
-        set(value) = prefs.edit { putInt(PrefsKeys.VP8_BATCH, value) }
+        set(value) {
+            prefs.edit { putInt(PrefsKeys.VP8_BATCH, value) }
+            val active = activeDestination
+            if (active != null && bindSettingsToProfiles) updateDestination(active.copy(vp8Batch = value))
+        }
 
     var dualTrack: Boolean
         get() = prefs.getBoolean(PrefsKeys.DUAL_TRACK, false)
-        set(value) = prefs.edit { putBoolean(PrefsKeys.DUAL_TRACK, value) }
+        set(value) {
+            prefs.edit { putBoolean(PrefsKeys.DUAL_TRACK, value) }
+            val active = activeDestination
+            if (active != null && bindSettingsToProfiles) updateDestination(active.copy(dualTrack = value))
+        }
 
     var savedDestinations: List<CallConfig>
         get() = CallConfig.listFromJson(prefs.getString(PrefsKeys.SAVED_DESTINATIONS, "") ?: "")
@@ -129,7 +149,18 @@ object Prefs {
 
     var activeDestinationId: String
         get() = prefs.getString(PrefsKeys.ACTIVE_DESTINATION_ID, "") ?: ""
-        set(value) = prefs.edit { putString(PrefsKeys.ACTIVE_DESTINATION_ID, value) }
+        set(value) {
+            prefs.edit { putString(PrefsKeys.ACTIVE_DESTINATION_ID, value) }
+            if (bindSettingsToProfiles) {
+                val active = savedDestinations.firstOrNull { it.id == value }
+                if (active != null) {
+                    if (active.tunnelMode != null) tunnelMode = active.tunnelMode
+                    if (active.vp8Fps != null) prefs.edit { putInt(PrefsKeys.VP8_FPS, active.vp8Fps) }
+                    if (active.vp8Batch != null) prefs.edit { putInt(PrefsKeys.VP8_BATCH, active.vp8Batch) }
+                    if (active.dualTrack != null) prefs.edit { putBoolean(PrefsKeys.DUAL_TRACK, active.dualTrack) }
+                }
+            }
+        }
 
     var themeMode: ThemeMode
         get() {
@@ -144,6 +175,15 @@ object Prefs {
             if (id.isEmpty()) return null
             return savedDestinations.firstOrNull { it.id == id }
         }
+
+    fun updateDestination(config: CallConfig) {
+        val list = savedDestinations.toMutableList()
+        val index = list.indexOfFirst { it.id == config.id }
+        if (index != -1) {
+            list[index] = config
+            savedDestinations = list
+        }
+    }
 
     fun addDestination(config: CallConfig) {
         val list = savedDestinations.toMutableList()
