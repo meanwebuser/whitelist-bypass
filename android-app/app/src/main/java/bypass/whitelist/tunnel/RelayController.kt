@@ -57,7 +57,12 @@ class RelayController(
             else if (msg.contains("ws read error")) onStatus(VpnStatus.TUNNEL_LOST)
         }
         dcThread = Thread {
-            if (!checkPortOrAbort()) return@Thread
+            try {
+                if (!checkPortOrAbort()) return@Thread
+            } catch (e: Exception) {
+                if (isRunning) onLog("Port check error: ${e.message}")
+                return@Thread
+            }
             try {
                 Androidbind.startJoiner(Ports.DC_WS, Prefs.socksPort, Prefs.socksHost, SocksAuth.user, SocksAuth.pass, cb)
             } catch (e: Exception) {
@@ -75,7 +80,12 @@ class RelayController(
         }
         val relayMode = mode.relayMode(platform)
         pionThread = Thread {
-            if (!checkPortOrAbort()) return@Thread
+            try {
+                if (!checkPortOrAbort()) return@Thread
+            } catch (e: Exception) {
+                if (isRunning) onLog("Port check error: ${e.message}")
+                return@Thread
+            }
             try {
                 val pb = ProcessBuilder(
                     relayBin.absolutePath,
