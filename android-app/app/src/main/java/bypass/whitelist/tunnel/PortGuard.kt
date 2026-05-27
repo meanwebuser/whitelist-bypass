@@ -30,6 +30,8 @@ object PortGuard {
         return false
     }
 
+    fun isPortAvailable(port: Long): Boolean = tryBind(port)
+
     private fun tryBind(port: Long): Boolean {
         return try {
             ServerSocket(port.toInt(), 1, InetAddress.getByName(Prefs.socksHost)).use { true }

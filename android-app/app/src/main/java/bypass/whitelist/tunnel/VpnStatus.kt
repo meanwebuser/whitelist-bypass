@@ -5,6 +5,7 @@ import bypass.whitelist.R
 
 enum class VpnStatus(@StringRes val labelRes: Int) {
     STARTING(R.string.vpn_starting),
+    STOPPING(R.string.vpn_starting),
     CONNECTING(R.string.vpn_connecting),
     CALL_CONNECTED(R.string.vpn_call_connected),
     DATACHANNEL_OPEN(R.string.vpn_datachannel_open),

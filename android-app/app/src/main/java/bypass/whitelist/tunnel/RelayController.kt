@@ -12,6 +12,7 @@ import java.io.File
 import java.io.OutputStreamWriter
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.util.concurrent.TimeUnit
 
 class RelayController(
     private val nativeLibDir: String,
@@ -39,7 +40,13 @@ class RelayController(
 
         pionProcess?.let {
             it.destroy()
-            it.waitFor()
+            try {
+                if (!it.waitFor(1500, TimeUnit.MILLISECONDS)) {
+                    it.destroyForcibly()
+                    it.waitFor(500, TimeUnit.MILLISECONDS)
+                }
+            } catch (_: Exception) {
+            }
         }
         pionProcess = null
         pionThread?.interrupt()

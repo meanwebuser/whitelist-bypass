@@ -173,12 +173,12 @@ class MainFragmentView(private val root: View) {
             collapsedToActive = true
             renderCalls()
             stopPulse()
-        } else if (status == VpnStatus.CONNECTING || status == VpnStatus.STARTING || status == VpnStatus.CALL_CONNECTED || status == VpnStatus.DATACHANNEL_OPEN) {
+        } else if (status == VpnStatus.CONNECTING || status == VpnStatus.STARTING || status == VpnStatus.STOPPING || status == VpnStatus.CALL_CONNECTED || status == VpnStatus.DATACHANNEL_OPEN) {
             heroLabel.text = context.getString(R.string.hero_cancel)
             hero.setBackgroundResource(R.drawable.bg_hero_active)
             heroLabel.setTextColor(context.getColor(R.color.accent_emerald))
             heroPowerIcon.setColorFilter(context.getColor(R.color.accent_emerald))
-            statusHeadline.text = context.getString(R.string.status_headline_connecting)
+            statusHeadline.text = context.getString(if (status == VpnStatus.STOPPING) R.string.status_headline_disconnected else R.string.status_headline_connecting)
             statsCard.visibility = View.GONE
             pingRow.visibility = View.GONE
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTING)

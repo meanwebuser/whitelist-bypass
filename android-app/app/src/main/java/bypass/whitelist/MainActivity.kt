@@ -23,6 +23,7 @@ import bypass.whitelist.tunnel.CallConfig
 import bypass.whitelist.tunnel.CallPlatform
 import bypass.whitelist.tunnel.HeadlessSessionService
 import bypass.whitelist.tunnel.HeadlessJoinController
+import bypass.whitelist.tunnel.PortGuard
 import bypass.whitelist.tunnel.ProxyService
 import bypass.whitelist.tunnel.TunnelServiceState
 import bypass.whitelist.tunnel.TunnelMode
@@ -74,6 +75,8 @@ class MainActivity :
     private var activeJoinUrl: String = ""
     private var activeHeadlessController: HeadlessJoinController? = null
     private var navPageChangeCallback: ViewPager2.OnPageChangeCallback? = null
+    @Volatile private var resetInProgress: Boolean = false
+    private var pendingConnectConfig: CallConfig? = null
 
     private val vpnLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -167,9 +170,9 @@ class MainActivity :
         TunnelVpnService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
         ProxyService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
 
-        if (CALL_LINK.isNotEmpty()) {
+        if (CALL_LINK.isNotEmpty() && !TunnelServiceState.isAnyTunnelComponentRunning(this)) {
             startJoinFor(CallConfig.newWith(name = CallConfig.suggestNameFor(CALL_LINK), url = CALL_LINK))
-        } else if (Prefs.connectOnStart) {
+        } else if (Prefs.connectOnStart && !TunnelServiceState.isAnyTunnelComponentRunning(this)) {
             Prefs.activeDestination?.let(::startJoinFor)
         }
 
@@ -184,6 +187,11 @@ class MainActivity :
         
         TunnelServiceState.vpnStatusCallback = { status ->
             runOnUiThread {
+                if (resetInProgress) {
+                    mainFragment()?.onStatusChanged(VpnStatus.STOPPING)
+                    mainFragment()?.onStatusTextChanged("Stopping previous session...")
+                    return@runOnUiThread
+                }
                 lastStatus = status
                 mainFragment()?.onStatusChanged(status)
                 if (status == VpnStatus.TUNNEL_ACTIVE) {
@@ -205,6 +213,13 @@ class MainActivity :
         }
 
         when {
+            resetInProgress -> {
+                connected = false
+                lastStatus = VpnStatus.STOPPING
+                mainFragment()?.onConnectedChanged(false)
+                mainFragment()?.onStatusChanged(VpnStatus.STOPPING)
+                mainFragment()?.onStatusTextChanged("Stopping previous session...")
+            }
             TunnelServiceState.isTunnelActive(this) -> {
                 // VPN service is running — sync UI without calling onJoinStatus
                 // (onJoinStatus has side effects like updating notification unnecessarily)
@@ -252,7 +267,7 @@ class MainActivity :
         if (intent?.action != ACTION_AUTO_START) return
         intent.action = null
         val isConnecting = lastStatus == VpnStatus.CONNECTING
-        if (!connected && !isConnecting) {
+        if (!connected && !isConnecting && !TunnelServiceState.isAnyTunnelComponentRunning(this)) {
             Prefs.activeDestination?.let(::onConnectPressed) ?: run {
                 Toast.makeText(this, R.string.error_no_destination, Toast.LENGTH_SHORT).show()
             }
@@ -381,10 +396,23 @@ class MainActivity :
         supportFragmentManager.fragments.firstOrNull { it is LogsFragment } as? LogsFragment
 
     override fun onConnectPressed(config: CallConfig) {
+        if (resetInProgress) {
+            pendingConnectConfig = config
+            appendLog("Queued connect after previous session stops")
+            mainFragment()?.onStatusTextChanged("Stopping previous session...")
+            return
+        }
+        if (TunnelServiceState.isAnyTunnelComponentRunning(this) || !PortGuard.isPortAvailable(Prefs.socksPort)) {
+            pendingConnectConfig = config
+            appendLog("Waiting for previous local tunnel to stop")
+            fullReset()
+            return
+        }
         startJoinFor(config)
     }
 
     override fun onDisconnectPressed() {
+        pendingConnectConfig = null
         fullReset()
     }
 
@@ -514,10 +542,12 @@ class MainActivity :
     }
 
     override fun onJoinStatusText(text: String) {
+        if (resetInProgress) return
         runOnUiThread { mainFragment()?.onStatusTextChanged(text) }
     }
 
     override fun onJoinStatus(status: VpnStatus) {
+        if (resetInProgress && status != VpnStatus.CALL_FAILED) return
         TunnelVpnService.instance?.updateStatus(status)
         ProxyService.instance?.updateStatus(status)
         lastStatus = status
@@ -566,6 +596,7 @@ class MainActivity :
     }
 
     override fun onJoinCancel() {
+        pendingConnectConfig = null
         runOnUiThread { fullReset() }
     }
 
@@ -595,6 +626,12 @@ class MainActivity :
     }
 
     private fun startJoinFor(config: CallConfig) {
+        if (resetInProgress) {
+            pendingConnectConfig = config
+            appendLog("Queued connect after previous session stops")
+            mainFragment()?.onStatusTextChanged("Stopping previous session...")
+            return
+        }
         val url = config.url.trim()
         if (url.isEmpty()) return
 
@@ -651,6 +688,10 @@ class MainActivity :
     }
 
     private fun onDisconnectFromService() {
+        if (resetInProgress) {
+            maybeFinishReset()
+            return
+        }
         connected = false
         lastStatus = null
         closeActiveHeadlessController()
@@ -661,8 +702,10 @@ class MainActivity :
     }
 
     private fun fullReset() {
+        if (resetInProgress) return
+        resetInProgress = true
         connected = false
-        lastStatus = null
+        lastStatus = VpnStatus.STOPPING
         val controller = activeHeadlessController
         activeHeadlessController = null
 
@@ -673,8 +716,35 @@ class MainActivity :
         removeJoinFragment()
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
+        mainFragment()?.onStatusChanged(VpnStatus.STOPPING)
+        mainFragment()?.onStatusTextChanged("Stopping previous session...")
         thread(name = "full-reset-shutdown") {
             controller?.close()
+            var attempts = 0
+            while (attempts < 40 && (TunnelServiceState.isAnyTunnelComponentRunning(this@MainActivity) || !PortGuard.isPortAvailable(Prefs.socksPort))) {
+                Thread.sleep(100)
+                attempts++
+            }
+            Thread.sleep(400)
+            runOnUiThread { maybeFinishReset() }
+        }
+    }
+
+    private fun maybeFinishReset() {
+        if (!resetInProgress) return
+        if (TunnelServiceState.isAnyTunnelComponentRunning(this) || !PortGuard.isPortAvailable(Prefs.socksPort)) return
+        resetInProgress = false
+        connected = false
+        lastStatus = null
+        removeJoinFragment()
+        setJoinOverlayVisible(false)
+        mainFragment()?.onConnectedChanged(false)
+        mainFragment()?.onStatusChanged(VpnStatus.CALL_DISCONNECTED)
+        val pendingConfig = pendingConnectConfig
+        pendingConnectConfig = null
+        if (pendingConfig != null) {
+            appendLog("Previous session stopped, starting new connection")
+            startJoinFor(pendingConfig)
         }
     }
 
@@ -687,11 +757,12 @@ class MainActivity :
     }
 
     private fun removeJoinFragment() {
+        if (isDestroyed || supportFragmentManager.isStateSaved) return
         val fragment = supportFragmentManager.findFragmentById(R.id.joinOverlayContainer)
         if (fragment != null) {
             supportFragmentManager.beginTransaction()
                 .remove(fragment)
-                .commitNowAllowingStateLoss()
+                .commitAllowingStateLoss()
         }
     }
 

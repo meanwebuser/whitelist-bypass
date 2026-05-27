@@ -31,6 +31,7 @@ class TunnelVpnService : VpnService() {
     }
 
     @Volatile var isRunning: Boolean = false
+    @Volatile private var startInProgress: Boolean = false
     private var vpnFd: ParcelFileDescriptor? = null
     private var tun2socksThread: Thread? = null
 
@@ -65,8 +66,9 @@ class TunnelVpnService : VpnService() {
 
     @Synchronized
     fun stop() {
-        if (!isRunning) return
+        if (!isRunning && !startInProgress) return
         isRunning = false
+        startInProgress = false
         
         Thread {
             val stopDone = java.util.concurrent.CountDownLatch(1)
@@ -103,7 +105,8 @@ class TunnelVpnService : VpnService() {
     }
 
     private fun start() {
-        if (isRunning) return
+        if (isRunning || startInProgress) return
+        startInProgress = true
 
         startForegroundNotification()
 
@@ -167,10 +170,13 @@ class TunnelVpnService : VpnService() {
         vpnFd = builder.establish()
         if (vpnFd == null) {
             Log.e(TAG, "Failed to establish VPN")
+            startInProgress = false
+            stopSelf()
             return
         }
 
         isRunning = true
+        startInProgress = false
         val fd = vpnFd!!.detachFd()
         vpnFd = null
         Log.i(TAG, "VPN established, fd=$fd, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort}")
@@ -182,6 +188,7 @@ class TunnelVpnService : VpnService() {
             } catch (e: Exception) {
                 Log.e(TAG, "tun2socks error: ${e.message}")
                 isRunning = false
+                startInProgress = false
             }
         }.also { it.start() }
     }

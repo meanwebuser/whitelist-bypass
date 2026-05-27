@@ -192,6 +192,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
     private fun isHostConnected(): Boolean = host()?.isTunnelActive() ?: false
 
     private fun isHostConnecting(): Boolean = when (hostStatus()) {
+        VpnStatus.STOPPING,
         VpnStatus.CONNECTING,
         VpnStatus.STARTING,
         VpnStatus.CALL_CONNECTED,
