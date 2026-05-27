@@ -11,6 +11,7 @@
     <string name="expand_webview">Expand WebView</string>
     <string name="collapse_webview">Collapse WebView</string>
     <string name="vpn_starting">Starting…</string>
+    <string name="vpn_stopping">Stopping...</string>
     <string name="vpn_connecting">Connecting…</string>
     <string name="vpn_call_connected">Call connected</string>
     <string name="vpn_datachannel_open">DataChannel open</string>
@@ -20,6 +21,7 @@
     <string name="vpn_call_disconnected">Call disconnected</string>
     <string name="vpn_call_failed">Call failed</string>
     <string name="vpn_port_busy" tools:ignore="PluralsCandidate">Port %1$d busy</string>
+    <string name="vpn_foreign_active">Another VPN is active. Turn it off first.</string>
     <string name="action_required_captcha">Action required (captcha)</string>
     <string name="captcha_pill_label">Captcha required / id.vk.com</string>
     <string name="jshook_pill_label">Live / interactive page</string>

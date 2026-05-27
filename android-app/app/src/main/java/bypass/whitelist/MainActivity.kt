@@ -1,5 +1,6 @@
 package bypass.whitelist
 
+import android.animation.ArgbEvaluator
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
@@ -61,6 +62,12 @@ class MainActivity :
     private lateinit var navMain: LinearLayout
     private lateinit var navSettings: LinearLayout
     private lateinit var navLogs: LinearLayout
+    private lateinit var navMainIcon: ImageView
+    private lateinit var navSettingsIcon: ImageView
+    private lateinit var navLogsIcon: ImageView
+    private lateinit var navMainLabel: TextView
+    private lateinit var navSettingsLabel: TextView
+    private lateinit var navLogsLabel: TextView
     private lateinit var tabContainer: ViewPager2
     private lateinit var navIndicator: View
     private lateinit var subPageContainer: View
@@ -75,8 +82,10 @@ class MainActivity :
     private var activeJoinUrl: String = ""
     private var activeHeadlessController: HeadlessJoinController? = null
     private var navPageChangeCallback: ViewPager2.OnPageChangeCallback? = null
+    private var navScrollState: Int = ViewPager2.SCROLL_STATE_IDLE
     @Volatile private var resetInProgress: Boolean = false
     private var pendingConnectConfig: CallConfig? = null
+    private val navColorEvaluator = ArgbEvaluator()
 
     private val vpnLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -94,6 +103,12 @@ class MainActivity :
         navMain = findViewById(R.id.navMain)
         navSettings = findViewById(R.id.navSettings)
         navLogs = findViewById(R.id.navLogs)
+        navMainIcon = findViewById(R.id.navMainIcon)
+        navSettingsIcon = findViewById(R.id.navSettingsIcon)
+        navLogsIcon = findViewById(R.id.navLogsIcon)
+        navMainLabel = findViewById(R.id.navMainLabel)
+        navSettingsLabel = findViewById(R.id.navSettingsLabel)
+        navLogsLabel = findViewById(R.id.navLogsLabel)
         tabContainer = findViewById(R.id.tabContainer)
         navIndicator = findViewById(R.id.navIndicator)
         subPageContainer = findViewById(R.id.subPageContainer)
@@ -117,6 +132,7 @@ class MainActivity :
         navPageChangeCallback = object : ViewPager2.OnPageChangeCallback() {
             override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
                 moveNavIndicatorForPager(position, positionOffset)
+                interpolateNavSelection(position, positionOffset)
             }
 
             override fun onPageSelected(position: Int) {
@@ -125,9 +141,18 @@ class MainActivity :
                     1 -> R.id.navSettings
                     else -> R.id.navLogs
                 }
-                updateNavSelection(currentTabId)
-                moveNavIndicatorTo(currentTabId, animate = false)
+                if (navScrollState == ViewPager2.SCROLL_STATE_IDLE) {
+                    updateNavSelection(currentTabId)
+                }
                 (supportFragmentManager.findFragmentByTag("f1") as? SettingsScreenFragment)?.refresh()
+            }
+
+            override fun onPageScrollStateChanged(state: Int) {
+                navScrollState = state
+                if (state == ViewPager2.SCROLL_STATE_IDLE) {
+                    updateNavSelection(currentTabId)
+                    moveNavIndicatorTo(currentTabId, animate = false)
+                }
             }
         }.also(tabContainer::registerOnPageChangeCallback)
 
@@ -287,51 +312,20 @@ class MainActivity :
             else -> 0
         }
         updateNavSelection(itemId)
+        val animateIndicator = tabContainer.currentItem != index
         if (!animatePager || tabContainer.currentItem == index) {
-            moveNavIndicatorTo(itemId, animate = false)
+            moveNavIndicatorTo(itemId, animate = animateIndicator)
         }
         tabContainer.setCurrentItem(index, animatePager)
     }
 
     private fun updateNavSelection(itemId: Int) {
-        val accent = getColor(R.color.accent_emerald)
-        val ink3 = getColor(R.color.ink_3)
-
-        findViewById<ImageView>(R.id.navMainIcon).setColorFilter(ink3)
-        findViewById<ImageView>(R.id.navSettingsIcon).setColorFilter(ink3)
-        findViewById<ImageView>(R.id.navLogsIcon).setColorFilter(ink3)
-        findViewById<TextView>(R.id.navMainLabel).apply {
-            setTextColor(ink3)
-            setTypeface(typeface, android.graphics.Typeface.NORMAL)
-        }
-        findViewById<TextView>(R.id.navSettingsLabel).apply {
-            setTextColor(ink3)
-            setTypeface(typeface, android.graphics.Typeface.NORMAL)
-        }
-        findViewById<TextView>(R.id.navLogsLabel).apply {
-            setTextColor(ink3)
-            setTypeface(typeface, android.graphics.Typeface.NORMAL)
-        }
-
-        val activeIcon = when (itemId) {
-            R.id.navMain -> R.id.navMainIcon
-            R.id.navSettings -> R.id.navSettingsIcon
-            R.id.navLogs -> R.id.navLogsIcon
+        applyNavSelectionState(0f, when (itemId) {
+            R.id.navMain -> 0
+            R.id.navSettings -> 1
+            R.id.navLogs -> 2
             else -> 0
-        }
-        val activeLabel = when (itemId) {
-            R.id.navMain -> R.id.navMainLabel
-            R.id.navSettings -> R.id.navSettingsLabel
-            R.id.navLogs -> R.id.navLogsLabel
-            else -> 0
-        }
-        if (activeIcon != 0) findViewById<ImageView>(activeIcon).setColorFilter(accent)
-        if (activeLabel != 0) {
-            findViewById<TextView>(activeLabel).apply {
-                setTextColor(accent)
-                setTypeface(typeface, android.graphics.Typeface.BOLD)
-            }
-        }
+        })
     }
 
     private fun moveNavIndicatorTo(itemId: Int, animate: Boolean) {
@@ -364,23 +358,54 @@ class MainActivity :
         val targets = listOf(navMain, navSettings, navLogs)
         val current = targets.getOrNull(position) ?: return
         val next = targets.getOrNull(position + 1)
-        val targetWidth = if (next != null) {
-            current.width + ((next.width - current.width) * positionOffset)
-        } else {
-            current.width.toFloat()
-        }
         val targetLeft = if (next != null) {
             current.left + ((next.left - current.left) * positionOffset)
         } else {
             current.left.toFloat()
         }
-        navIndicator.layoutParams = navIndicator.layoutParams.apply {
-            width = targetWidth.toInt()
-            height = current.height
+        val lp = navIndicator.layoutParams
+        if (lp.width != current.width || lp.height != current.height) {
+            navIndicator.layoutParams = lp.apply {
+                width = current.width
+                height = current.height
+            }
+            navIndicator.requestLayout()
         }
-        navIndicator.requestLayout()
         navIndicator.animate().cancel()
         navIndicator.translationX = targetLeft
+    }
+
+    private fun interpolateNavSelection(position: Int, positionOffset: Float) {
+        if (navScrollState == ViewPager2.SCROLL_STATE_IDLE) return
+        val clampedOffset = positionOffset.coerceIn(0f, 1f)
+        applyNavSelectionState(clampedOffset, position)
+    }
+
+    private fun applyNavSelectionState(positionOffset: Float, position: Int) {
+        val emphasis = floatArrayOf(0f, 0f, 0f)
+        val baseIndex = position.coerceIn(0, emphasis.lastIndex)
+        emphasis[baseIndex] = 1f - positionOffset
+        val nextIndex = (baseIndex + 1).coerceAtMost(emphasis.lastIndex)
+        if (nextIndex != baseIndex) {
+            emphasis[nextIndex] = positionOffset
+        }
+
+        applyNavVisual(navMainIcon, navMainLabel, emphasis[0])
+        applyNavVisual(navSettingsIcon, navSettingsLabel, emphasis[1])
+        applyNavVisual(navLogsIcon, navLogsLabel, emphasis[2])
+    }
+
+    private fun applyNavVisual(icon: ImageView, label: TextView, emphasis: Float) {
+        val accent = getColor(R.color.accent_emerald)
+        val ink = getColor(R.color.ink_3)
+        val blended = navColorEvaluator.evaluate(emphasis, ink, accent) as Int
+        icon.setColorFilter(blended)
+        icon.alpha = 0.72f + (0.28f * emphasis)
+        label.setTextColor(blended)
+        label.alpha = 0.74f + (0.26f * emphasis)
+        label.scaleX = 1f + (0.06f * emphasis)
+        label.scaleY = 1f + (0.06f * emphasis)
+        label.paint.isFakeBoldText = emphasis > 0.92f
     }
 
     override fun onPause() {
@@ -413,6 +438,10 @@ class MainActivity :
 
     override fun onDisconnectPressed() {
         pendingConnectConfig = null
+        if (resetInProgress) {
+            forceUnlockReset("Stopped waiting for previous session")
+            return
+        }
         fullReset()
     }
 
@@ -621,6 +650,10 @@ class MainActivity :
             onJoinStatus(VpnStatus.TUNNEL_ACTIVE)
             return
         }
+        if (TunnelServiceState.hasForeignVpn(this)) {
+            appendLog("Another VPN is active, requesting system VPN switch")
+            mainFragment()?.onStatusTextChanged("Requesting VPN replacement...")
+        }
         val intent = VpnService.prepare(this)
         if (intent != null) vpnLauncher.launch(intent) else startVpnService()
     }
@@ -683,8 +716,8 @@ class MainActivity :
 
     private fun startVpnService() {
         startService(Intent(this, TunnelVpnService::class.java))
-        appendLog("VPN started")
-        onJoinStatus(VpnStatus.TUNNEL_ACTIVE)
+        appendLog("VPN start requested")
+        onJoinStatus(VpnStatus.STARTING)
     }
 
     private fun onDisconnectFromService() {
@@ -725,6 +758,10 @@ class MainActivity :
                 Thread.sleep(100)
                 attempts++
             }
+            if (TunnelServiceState.isAnyTunnelComponentRunning(this@MainActivity) || !PortGuard.isPortAvailable(Prefs.socksPort)) {
+                runOnUiThread { forceUnlockReset("Previous session is still shutting down. Try connect again.") }
+                return@thread
+            }
             Thread.sleep(400)
             runOnUiThread { maybeFinishReset() }
         }
@@ -746,6 +783,23 @@ class MainActivity :
             appendLog("Previous session stopped, starting new connection")
             startJoinFor(pendingConfig)
         }
+    }
+
+    private fun forceUnlockReset(message: String) {
+        resetInProgress = false
+        pendingConnectConfig = null
+        connected = false
+        lastStatus = if (PortGuard.isPortAvailable(Prefs.socksPort)) VpnStatus.CALL_DISCONNECTED else VpnStatus.PORT_BUSY
+        closeActiveHeadlessController()
+        removeJoinFragment()
+        setJoinOverlayVisible(false)
+        startService(Intent(this, TunnelVpnService::class.java).apply { action = TunnelVpnService.ACTION_STOP })
+        startService(Intent(this, ProxyService::class.java).apply { action = ProxyService.ACTION_STOP })
+        startService(Intent(this, HeadlessSessionService::class.java).apply { action = HeadlessSessionService.ACTION_STOP })
+        mainFragment()?.onConnectedChanged(false)
+        mainFragment()?.onStatusChanged(lastStatus ?: VpnStatus.CALL_DISCONNECTED)
+        mainFragment()?.onStatusTextChanged(message)
+        appendLog(message)
     }
 
     private fun closeActiveHeadlessController() {
