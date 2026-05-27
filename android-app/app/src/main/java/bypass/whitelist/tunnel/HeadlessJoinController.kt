@@ -6,6 +6,7 @@ import android.util.Log
 import bypass.whitelist.ui.JoinFragmentHost
 import bypass.whitelist.util.Prefs
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 class HeadlessJoinController(
     nativeLibraryDir: String,
@@ -15,6 +16,7 @@ class HeadlessJoinController(
 ) : AutoCloseable {
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val vpnRequested = AtomicBoolean(false)
     private val relay: HeadlessRelayController = HeadlessRelayController(
         nativeLibraryDir,
         relayMode = "${platform.id}-headless-joiner",
@@ -34,8 +36,13 @@ class HeadlessJoinController(
                 relay.sendJoinParams(buildJoinParams().toString())
             }
             VpnStatus.TUNNEL_ACTIVE -> {
-                host.onJoinStatusText("Relay ready, starting local VPN")
-                mainHandler.post { host.requestVpn() }
+                if (vpnRequested.compareAndSet(false, true)) {
+                    host.onJoinStatusText("Relay ready, starting local VPN")
+                    mainHandler.post { host.requestVpn() }
+                } else {
+                    host.onJoinStatusText("Relay reconnected")
+                    host.onJoinStatus(VpnStatus.TUNNEL_ACTIVE)
+                }
             }
             else -> host.onJoinStatus(status)
         }

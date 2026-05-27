@@ -11,6 +11,7 @@ import java.io.File
 import java.io.OutputStreamWriter
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.util.concurrent.TimeUnit
 
 class HeadlessRelayController(
     private val nativeLibDir: String,
@@ -145,12 +146,29 @@ class HeadlessRelayController(
     @Synchronized
     fun stop() {
         isRunning = false
-        thread?.interrupt()
-        thread = null
         try { stdinWriter?.close() } catch (_: Exception) {}
         stdinWriter = null
-        process?.destroy()
+        val activeProcess = process
         process = null
+        activeProcess?.destroy()
+        if (activeProcess != null) {
+            try {
+                if (!activeProcess.waitFor(1500, TimeUnit.MILLISECONDS)) {
+                    activeProcess.destroyForcibly()
+                    activeProcess.waitFor(500, TimeUnit.MILLISECONDS)
+                }
+            } catch (_: Exception) {
+            }
+        }
+        val activeThread = thread
+        activeThread?.interrupt()
+        if (activeThread != null && activeThread !== Thread.currentThread()) {
+            try {
+                activeThread.join(500)
+            } catch (_: Exception) {
+            }
+        }
+        thread = null
     }
 
     @Synchronized
