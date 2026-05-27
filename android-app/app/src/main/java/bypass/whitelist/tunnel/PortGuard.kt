@@ -10,6 +10,7 @@ import java.net.ServerSocket
 object PortGuard {
 
     private const val TAG = "PortGuard"
+    private val myUid = Process.myUid()
 
     fun ensurePortFree(port: Long): Boolean {
         if (tryBind(port)) return true
@@ -67,6 +68,7 @@ object PortGuard {
             for (entry in procDir.listFiles() ?: emptyArray()) {
                 val pid = entry.name.toIntOrNull() ?: continue
                 if (pid == myPid) continue
+                if (readUid(pid) != myUid) continue
                 val fdDir = File(entry, "fd")
                 if (!fdDir.canRead()) continue
                 for (fd in fdDir.listFiles() ?: emptyArray()) {
@@ -90,7 +92,7 @@ object PortGuard {
                 fuser.waitFor()
                 for (token in output.split("\\s+".toRegex())) {
                     val pid = token.toIntOrNull() ?: continue
-                    if (pid != myPid) {
+                    if (pid != myPid && readUid(pid) == myUid) {
                         Log.w(TAG, "fuser: killing PID $pid for port $port")
                         Process.killProcess(pid)
                         return
@@ -101,6 +103,20 @@ object PortGuard {
             }
         } catch (e: Exception) {
             Log.e(TAG, "killByPort error: ${e.message}")
+        }
+    }
+
+    private fun readUid(pid: Int): Int? {
+        return try {
+            File("/proc/$pid/status").useLines { lines ->
+                lines.firstOrNull { it.startsWith("Uid:") }
+                    ?.trim()
+                    ?.split("\\s+".toRegex())
+                    ?.getOrNull(1)
+                    ?.toIntOrNull()
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 }

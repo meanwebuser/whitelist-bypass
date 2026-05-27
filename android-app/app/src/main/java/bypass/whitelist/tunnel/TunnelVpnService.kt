@@ -61,6 +61,7 @@ class TunnelVpnService : VpnService() {
     fun updateStatus(status: VpnStatus) {
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(NOTIFICATION_ID, buildNotification(getString(status.labelRes)))
+        TunnelServiceState.vpnStatusCallback?.invoke(status)
         TunnelServiceState.requestTileRefresh(this)
     }
 
@@ -113,9 +114,7 @@ class TunnelVpnService : VpnService() {
         val builder = Builder()
             .setSession(Vpn.SESSION_NAME)
             .addAddress(Vpn.ADDRESS, Vpn.PREFIX_LENGTH)
-            .addAddress("fd00:1:fd00:1:fd00:1:fd00:1", 128)
             .addRoute(Vpn.ROUTE, 0)
-            .addRoute("::", 0)
             .setMtu(Vpn.MTU)
 
         when (Prefs.dnsMode) {
@@ -171,6 +170,8 @@ class TunnelVpnService : VpnService() {
         if (vpnFd == null) {
             Log.e(TAG, "Failed to establish VPN")
             startInProgress = false
+            TunnelServiceState.logCallback?.invoke("Failed to establish VPN")
+            TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.CALL_FAILED)
             stopSelf()
             return
         }
@@ -189,6 +190,8 @@ class TunnelVpnService : VpnService() {
                 Log.e(TAG, "tun2socks error: ${e.message}")
                 isRunning = false
                 startInProgress = false
+                TunnelServiceState.logCallback?.invoke("tun2socks error: ${e.message}")
+                TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.TUNNEL_LOST)
             }
         }.also { it.start() }
     }

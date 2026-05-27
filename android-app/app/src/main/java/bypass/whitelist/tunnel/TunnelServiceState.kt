@@ -3,6 +3,8 @@ package bypass.whitelist.tunnel
 import android.app.ActivityManager
 import android.content.ComponentName
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.service.quicksettings.TileService
 
@@ -24,6 +26,14 @@ object TunnelServiceState {
 
     fun isAnyTunnelComponentRunning(context: Context): Boolean {
         return isTunnelActive(context) || isHeadlessSessionRunning(context)
+    }
+
+    fun hasForeignVpn(context: Context): Boolean {
+        if (isTunnelActive(context)) return false
+        val connectivityManager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        val activeNetwork = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
     }
 
     fun requestTileRefresh(context: Context) {

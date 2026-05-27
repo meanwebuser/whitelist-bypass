@@ -110,6 +110,15 @@ class HeadlessSessionService : Service() {
                         return
                     }
 
+                    if (TunnelServiceState.hasForeignVpn(this@HeadlessSessionService)) {
+                        logWriter.append("Another VPN is active. Turn it off first.")
+                        updateNotification(getString(R.string.vpn_foreign_active))
+                        TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.VPN_CONFLICT)
+                        showToast(R.string.vpn_foreign_active)
+                        stopSession(stopDependentServices = true)
+                        return
+                    }
+
                     if (VpnService.prepare(this@HeadlessSessionService) != null) {
                         logWriter.append("VPN permission required")
                         updateNotification(getString(R.string.tile_vpn_permission_required))
@@ -118,10 +127,10 @@ class HeadlessSessionService : Service() {
                         return
                     }
 
-                    logWriter.append("VPN started")
+                    logWriter.append("VPN start requested")
                     startService(Intent(this@HeadlessSessionService, TunnelVpnService::class.java))
-                    updateNotification(getString(R.string.notification_vpn_title))
-                    TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.TUNNEL_ACTIVE)
+                    updateNotification(getString(R.string.vpn_starting))
+                    TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.STARTING)
                     TunnelServiceState.requestTileRefresh(this@HeadlessSessionService)
                 }
 
