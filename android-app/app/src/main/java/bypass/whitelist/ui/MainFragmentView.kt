@@ -2,8 +2,11 @@ package bypass.whitelist.ui
 
 import android.animation.ValueAnimator
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.HapticFeedbackConstants
 import android.view.animation.AlphaAnimation
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -57,24 +60,24 @@ class MainFragmentView(private val root: View) {
         emptyCta.setOnClickListener { onAddCallClicked?.invoke() }
         hero.setOnTouchListener { v, event ->
             when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> {
+                MotionEvent.ACTION_DOWN -> {
                     v.animate().scaleX(0.92f).scaleY(0.92f)
                         .setDuration(100)
-                        .setInterpolator(android.view.animation.OvershootInterpolator(2f))
+                        .setInterpolator(OvershootInterpolator(2f))
                         .start()
                     true
                 }
-                android.view.MotionEvent.ACTION_UP -> {
+                MotionEvent.ACTION_UP -> {
                     v.animate().scaleX(1f).scaleY(1f)
                         .setDuration(200)
-                        .setInterpolator(android.view.animation.OvershootInterpolator(3f))
+                        .setInterpolator(OvershootInterpolator(3f))
                         .start()
-                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                    v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     onHeroPressed?.invoke()
                     v.performClick()
                     true
                 }
-                android.view.MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_CANCEL -> {
                     v.animate().scaleX(1f).scaleY(1f)
                         .setDuration(150)
                         .start()

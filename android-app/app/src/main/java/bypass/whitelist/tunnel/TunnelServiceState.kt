@@ -17,11 +17,13 @@ object TunnelServiceState {
     var logCallback: ((String) -> Unit)? = null
 
     fun isTunnelActive(context: Context): Boolean {
-        return (TunnelVpnService.instance?.isRunning == true) || (ProxyService.instance?.isRunning == true)
+        val vpnActive = TunnelVpnService.instance?.let { it.isRunning || it.startInProgress || it.stopInProgress } == true
+        val proxyActive = ProxyService.instance?.let { it.isRunning || it.stopInProgress } == true
+        return vpnActive || proxyActive
     }
 
     fun isHeadlessSessionRunning(context: Context): Boolean {
-        return HeadlessSessionService.instance != null
+        return HeadlessSessionService.hasLiveSession()
     }
 
     fun isAnyTunnelComponentRunning(context: Context): Boolean {

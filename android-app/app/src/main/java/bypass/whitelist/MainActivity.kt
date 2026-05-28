@@ -33,6 +33,7 @@ import bypass.whitelist.tunnel.VpnStatus
 import bypass.whitelist.ui.CallsListener
 import bypass.whitelist.ui.HeadlessVkFragment
 import bypass.whitelist.ui.JoinFragmentHost
+import bypass.whitelist.ui.JoinSessionShutdown
 import bypass.whitelist.ui.JsHookJoinFragment
 import bypass.whitelist.ui.LogsFragment
 import bypass.whitelist.ui.MainActivityHost
@@ -84,6 +85,7 @@ class MainActivity :
     private var navPageChangeCallback: ViewPager2.OnPageChangeCallback? = null
     private var navScrollState: Int = ViewPager2.SCROLL_STATE_IDLE
     @Volatile private var resetInProgress: Boolean = false
+    @Volatile private var resetGeneration: Long = 0L
     private var pendingConnectConfig: CallConfig? = null
     private val navColorEvaluator = ArgbEvaluator()
 
@@ -206,7 +208,6 @@ class MainActivity :
 
     override fun onResume() {
         super.onResume()
-        // Re-attach disconnect callbacks 
         TunnelVpnService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
         ProxyService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
         
@@ -246,8 +247,6 @@ class MainActivity :
                 mainFragment()?.onStatusTextChanged("Stopping previous session...")
             }
             TunnelServiceState.isTunnelActive(this) -> {
-                // VPN service is running — sync UI without calling onJoinStatus
-                // (onJoinStatus has side effects like updating notification unnecessarily)
                 if (!connected || lastStatus != VpnStatus.TUNNEL_ACTIVE) {
                     connected = true
                     lastStatus = VpnStatus.TUNNEL_ACTIVE
@@ -256,14 +255,12 @@ class MainActivity :
                 }
             }
             TunnelServiceState.isHeadlessSessionRunning(this) -> {
-                // Relay is connecting but VPN not yet up — show connecting state
                 connected = false
                 lastStatus = VpnStatus.CONNECTING
                 mainFragment()?.onConnectedChanged(false)
                 mainFragment()?.onStatusChanged(VpnStatus.CONNECTING)
             }
             connected && lastStatus == VpnStatus.TUNNEL_ACTIVE -> {
-                // UI thinks it's connected but no service is running — reset
                 onDisconnectFromService()
             }
         }
@@ -609,7 +606,6 @@ class MainActivity :
                 androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE
             )
         ) {
-            // popped
         }
         subPageContainer.visibility = View.GONE
     }
@@ -663,6 +659,12 @@ class MainActivity :
             pendingConnectConfig = config
             appendLog("Queued connect after previous session stops")
             mainFragment()?.onStatusTextChanged("Stopping previous session...")
+            return
+        }
+        if (TunnelServiceState.isAnyTunnelComponentRunning(this) || !PortGuard.isPortAvailable(Prefs.socksPort)) {
+            pendingConnectConfig = config
+            appendLog("Waiting for previous local tunnel to stop")
+            fullReset()
             return
         }
         val url = config.url.trim()
@@ -737,16 +739,17 @@ class MainActivity :
     private fun fullReset() {
         if (resetInProgress) return
         resetInProgress = true
+        val resetId = ++resetGeneration
         connected = false
         lastStatus = VpnStatus.STOPPING
         val controller = activeHeadlessController
         activeHeadlessController = null
-
-        startService(Intent(this, TunnelVpnService::class.java).apply { action = TunnelVpnService.ACTION_STOP })
-        startService(Intent(this, ProxyService::class.java).apply { action = ProxyService.ACTION_STOP })
-        startService(Intent(this, HeadlessSessionService::class.java).apply { action = HeadlessSessionService.ACTION_STOP })
+        activeJoinUrl = ""
 
         removeJoinFragment()
+        TunnelVpnService.requestStop(this)
+        ProxyService.requestStop(this)
+        HeadlessSessionService.requestStop(this)
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
         mainFragment()?.onStatusChanged(VpnStatus.STOPPING)
@@ -754,25 +757,49 @@ class MainActivity :
         thread(name = "full-reset-shutdown") {
             controller?.close()
             var attempts = 0
-            while (attempts < 40 && (TunnelServiceState.isAnyTunnelComponentRunning(this@MainActivity) || !PortGuard.isPortAvailable(Prefs.socksPort))) {
+            while (
+                attempts < 40 &&
+                (TunnelServiceState.isAnyTunnelComponentRunning(this@MainActivity) ||
+                    !PortGuard.isPortAvailable(Prefs.socksPort))
+            ) {
+                if (!isResetCurrent(resetId)) return@thread
                 Thread.sleep(100)
                 attempts++
             }
+            if (!isResetCurrent(resetId)) return@thread
             if (TunnelServiceState.isAnyTunnelComponentRunning(this@MainActivity) || !PortGuard.isPortAvailable(Prefs.socksPort)) {
-                runOnUiThread { forceUnlockReset("Previous session is still shutting down. Try connect again.") }
+                TunnelVpnService.requestStop(this@MainActivity)
+                ProxyService.requestStop(this@MainActivity)
+                HeadlessSessionService.requestStop(this@MainActivity)
+                PortGuard.ensurePortFree(Prefs.socksPort)
+                Thread.sleep(150)
+            }
+            if (!isResetCurrent(resetId)) return@thread
+            if (TunnelServiceState.isAnyTunnelComponentRunning(this@MainActivity) || !PortGuard.isPortAvailable(Prefs.socksPort)) {
+                runOnUiThread {
+                    if (isResetCurrent(resetId)) {
+                        forceUnlockReset("Previous session is still shutting down. Try connect again.")
+                    }
+                }
                 return@thread
             }
             Thread.sleep(400)
-            runOnUiThread { maybeFinishReset() }
+            runOnUiThread {
+                if (isResetCurrent(resetId)) {
+                    maybeFinishReset(resetId)
+                }
+            }
         }
     }
 
-    private fun maybeFinishReset() {
+    private fun maybeFinishReset(expectedResetId: Long? = null) {
         if (!resetInProgress) return
+        if (expectedResetId != null && expectedResetId != resetGeneration) return
         if (TunnelServiceState.isAnyTunnelComponentRunning(this) || !PortGuard.isPortAvailable(Prefs.socksPort)) return
         resetInProgress = false
         connected = false
         lastStatus = null
+        activeJoinUrl = ""
         removeJoinFragment()
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
@@ -789,13 +816,14 @@ class MainActivity :
         resetInProgress = false
         pendingConnectConfig = null
         connected = false
+        activeJoinUrl = ""
         lastStatus = if (PortGuard.isPortAvailable(Prefs.socksPort)) VpnStatus.CALL_DISCONNECTED else VpnStatus.PORT_BUSY
         closeActiveHeadlessController()
         removeJoinFragment()
         setJoinOverlayVisible(false)
-        startService(Intent(this, TunnelVpnService::class.java).apply { action = TunnelVpnService.ACTION_STOP })
-        startService(Intent(this, ProxyService::class.java).apply { action = ProxyService.ACTION_STOP })
-        startService(Intent(this, HeadlessSessionService::class.java).apply { action = HeadlessSessionService.ACTION_STOP })
+        TunnelVpnService.requestStop(this)
+        ProxyService.requestStop(this)
+        HeadlessSessionService.requestStop(this)
         mainFragment()?.onConnectedChanged(false)
         mainFragment()?.onStatusChanged(lastStatus ?: VpnStatus.CALL_DISCONNECTED)
         mainFragment()?.onStatusTextChanged(message)
@@ -810,7 +838,16 @@ class MainActivity :
         }
     }
 
+    private fun isResetCurrent(resetId: Long): Boolean =
+        resetInProgress && resetGeneration == resetId
+
+    private fun shutdownJoinFragment() {
+        val fragment = supportFragmentManager.findFragmentById(R.id.joinOverlayContainer)
+        (fragment as? JoinSessionShutdown)?.shutdownSession()
+    }
+
     private fun removeJoinFragment() {
+        shutdownJoinFragment()
         if (isDestroyed || supportFragmentManager.isStateSaved) return
         val fragment = supportFragmentManager.findFragmentById(R.id.joinOverlayContainer)
         if (fragment != null) {
@@ -824,6 +861,6 @@ class MainActivity :
         const val ACTION_AUTO_START = "bypass.whitelist.AUTO_START"
         private const val SUB_PAGE_TAG = "sub_page"
         private const val STATE_CURRENT_TAB_ID = "current_tab_id"
-        private const val CALL_LINK = "" // Open call page on app start (do not delete - I need it for debug)
+        private const val CALL_LINK = ""
     }
 }

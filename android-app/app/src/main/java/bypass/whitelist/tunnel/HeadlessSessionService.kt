@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
@@ -22,24 +23,31 @@ class HeadlessSessionService : Service() {
 
     private val logWriter by lazy { LogWriter(cacheDir) }
     private var controller: HeadlessJoinController? = null
+    @Volatile private var sessionRunning: Boolean = false
+    @Volatile private var stopInProgress: Boolean = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // ALWAYS call startForeground to satisfy startForegroundService requirement
-        // from Android 8+, even if we're immediately stopping.
-        startForegroundNotification(getString(R.string.notification_session_connecting))
-
         when (intent?.action) {
             ACTION_STOP -> {
+                if (!hasLiveSessionInternal()) {
+                    safeStopSelf()
+                    return START_NOT_STICKY
+                }
                 stopSession(stopDependentServices = true)
                 return START_NOT_STICKY
             }
             ACTION_DEPENDENT_STOPPED -> {
+                if (!hasLiveSessionInternal()) {
+                    safeStopSelf()
+                    return START_NOT_STICKY
+                }
                 stopSession(stopDependentServices = false)
                 return START_NOT_STICKY
             }
             else -> {
+                startForegroundNotification(getString(R.string.notification_session_connecting))
                 startSession()
                 return START_STICKY
             }
@@ -49,19 +57,19 @@ class HeadlessSessionService : Service() {
 
 
     private fun startSession() {
+        if (stopInProgress || sessionRunning) return
         val config = Prefs.activeDestination
         if (config == null) {
             showToast(R.string.error_no_destination)
-            stopSelf()
+            safeStopSelf()
             return
         }
 
         val platform = config.platform
 
-        // VK always requires captcha UI — cannot run headlessly from tile
         if (platform == CallPlatform.VK && !Prefs.headless) {
             showToast(R.string.tile_requires_headless_destination)
-            stopSelf()
+            safeStopSelf()
             return
         }
 
@@ -72,13 +80,14 @@ class HeadlessSessionService : Service() {
             platform == CallPlatform.TELEMOST
         if (!headlessMode) {
             showToast(R.string.tile_requires_headless_destination)
-            stopSelf()
+            safeStopSelf()
             return
         }
 
         logWriter.reset()
         logWriter.append("Loading: ${config.url.trim()}")
         controller?.close()
+        sessionRunning = true
         controller = HeadlessJoinController(
             applicationInfo.nativeLibraryDir,
             object : JoinFragmentHost {
@@ -201,22 +210,57 @@ class HeadlessSessionService : Service() {
     }
 
     private fun stopSession(stopDependentServices: Boolean) {
+        if (stopInProgress) return
         val activeController = controller
+        if (activeController == null && !sessionRunning) {
+            safeStopSelf()
+            return
+        }
+        stopInProgress = true
+        sessionRunning = false
         controller = null
         if (stopDependentServices) {
-            try { startService(Intent(this, TunnelVpnService::class.java).apply { action = TunnelVpnService.ACTION_STOP }) } catch (_: Exception) {}
-            try { startService(Intent(this, ProxyService::class.java).apply { action = ProxyService.ACTION_STOP }) } catch (_: Exception) {}
+            TunnelVpnService.requestStop(this)
+            ProxyService.requestStop(this)
         }
         thread(name = "headless-session-shutdown") {
-            activeController?.close()
+            val closeDone = java.util.concurrent.CountDownLatch(1)
+            thread(name = "headless-controller-close") {
+                try {
+                    activeController?.close()
+                } finally {
+                    closeDone.countDown()
+                }
+            }
+            closeDone.await(2200, java.util.concurrent.TimeUnit.MILLISECONDS)
             android.os.Handler(Looper.getMainLooper()).post {
-                TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.CALL_DISCONNECTED)
-                @Suppress("DEPRECATION")
-                stopForeground(true)
-                TunnelServiceState.requestTileRefresh(this)
-                stopSelf()
+                try {
+                    TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.CALL_DISCONNECTED)
+                    @Suppress("DEPRECATION")
+                    stopForeground(true)
+                    TunnelServiceState.requestTileRefresh(this)
+                    stopSelf()
+                } catch (t: Throwable) {
+                    stopInProgress = false
+                    android.util.Log.e(TAG, "Crash during HeadlessSession stop: ${t.message}", t)
+                    safeStopSelf()
+                }
             }
         }
+    }
+
+    private fun hasLiveSessionInternal(): Boolean = sessionRunning || stopInProgress || controller != null
+
+    private fun safeStopSelf() {
+        sessionRunning = false
+        stopInProgress = false
+        controller = null
+        runCatching {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        TunnelServiceState.requestTileRefresh(this)
+        stopSelf()
     }
 
     private fun showToast(messageRes: Int) {
@@ -235,6 +279,34 @@ class HeadlessSessionService : Service() {
 
         @Volatile
         var instance: HeadlessSessionService? = null
+
+        fun hasLiveSession(): Boolean = instance?.hasLiveSessionInternal() == true
+
+        fun requestStop(context: Context) {
+            val intent = Intent(context, HeadlessSessionService::class.java)
+            try {
+                if (hasLiveSession()) {
+                    context.startService(intent.apply { action = ACTION_STOP })
+                } else {
+                    context.stopService(intent)
+                    TunnelServiceState.requestTileRefresh(context)
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        fun requestDependentStop(context: Context) {
+            val intent = Intent(context, HeadlessSessionService::class.java)
+            try {
+                if (hasLiveSession()) {
+                    context.startService(intent.apply { action = ACTION_DEPENDENT_STOPPED })
+                } else {
+                    context.stopService(intent)
+                    TunnelServiceState.requestTileRefresh(context)
+                }
+            } catch (_: Exception) {
+            }
+        }
     }
 
     override fun onCreate() {
@@ -244,6 +316,8 @@ class HeadlessSessionService : Service() {
 
     override fun onDestroy() {
         instance = null
+        sessionRunning = false
+        stopInProgress = false
         controller = null
         logWriter.close()
         TunnelServiceState.requestTileRefresh(this)
