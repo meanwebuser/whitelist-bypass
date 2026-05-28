@@ -4,10 +4,13 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import bypass.whitelist.MainActivity
@@ -18,6 +21,9 @@ import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.SocksAuth
 import bypass.whitelist.util.Vpn
 import androidbind.Androidbind
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 
 class TunnelVpnService : VpnService() {
 
@@ -28,12 +34,29 @@ class TunnelVpnService : VpnService() {
         const val ACTION_STOP = "bypass.whitelist.STOP_VPN"
         @Volatile var instance: TunnelVpnService? = null
         @Volatile var onDisconnect: Callback? = null
+
+        fun requestStop(context: Context) {
+            val running = instance?.let { it.isRunning || it.startInProgress || it.stopInProgress } == true
+            val intent = Intent(context, TunnelVpnService::class.java)
+            try {
+                if (running) {
+                    context.startService(intent.apply { action = ACTION_STOP })
+                } else {
+                    context.stopService(intent)
+                    TunnelServiceState.requestTileRefresh(context)
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "requestStop failed: ${t.message}")
+            }
+        }
     }
 
     @Volatile var isRunning: Boolean = false
-    @Volatile private var startInProgress: Boolean = false
+    @Volatile internal var startInProgress: Boolean = false
+    @Volatile internal var stopInProgress: Boolean = false
     private var vpnFd: ParcelFileDescriptor? = null
     private var tun2socksThread: Thread? = null
+    @Volatile private var tunGeneration: Long = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -42,6 +65,10 @@ class TunnelVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            if (!isRunning && !startInProgress && !stopInProgress) {
+                safeStopSelf()
+                return START_NOT_STICKY
+            }
             stop()
             return START_NOT_STICKY
         }
@@ -50,7 +77,9 @@ class TunnelVpnService : VpnService() {
     }
 
     override fun onDestroy() {
-        stop()
+        if ((isRunning || startInProgress) && !stopInProgress) {
+            stop()
+        }
         if (instance === this) {
             instance = null
         }
@@ -67,42 +96,53 @@ class TunnelVpnService : VpnService() {
 
     @Synchronized
     fun stop() {
-        if (!isRunning && !startInProgress) return
+        if (stopInProgress) return
+        if (!isRunning && !startInProgress) {
+            safeStopSelf()
+            return
+        }
         isRunning = false
         startInProgress = false
-        
-        Thread {
-            val stopDone = java.util.concurrent.CountDownLatch(1)
-            Thread {
-                try {
-                    Androidbind.stopTun2Socks()
-                } catch (e: Exception) {
-                    Log.e(TAG, "tun2socks stop error: ${e.message}")
-                }
-                stopDone.countDown()
-            }.start()
-            
-            // Wait up to 2 seconds for tun2socks to stop gracefully
-            stopDone.await(2000, java.util.concurrent.TimeUnit.MILLISECONDS)
-            
+        stopInProgress = true
+        bumpTunGeneration()
+        val disconnectCallback = onDisconnect
+
+        thread(name = "vpn-stop") {
+            stopTun2SocksWithTimeout()
+
             try {
                 tun2socksThread?.join(1000)
             } catch (e: Exception) {}
-            
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
+
+            Handler(Looper.getMainLooper()).post {
                 try {
                     tun2socksThread = null
                     vpnFd = null
                     @Suppress("DEPRECATION")
                     stopForeground(true)
-                    onDisconnect?.invoke()
+                    disconnectCallback?.invoke()
                     TunnelServiceState.requestTileRefresh(this@TunnelVpnService)
                     stopSelf()
                 } catch (t: Throwable) {
+                    stopInProgress = false
                     Log.e(TAG, "Crash during VPN stop: ${t.message}", t)
                 }
             }
-        }.start()
+        }
+    }
+
+    private fun stopTun2SocksWithTimeout() {
+        val stopDone = CountDownLatch(1)
+        thread(name = "tun2socks-stop") {
+            try {
+                Androidbind.stopTun2Socks()
+            } catch (e: Exception) {
+                Log.e(TAG, "tun2socks stop error: ${e.message}")
+            } finally {
+                stopDone.countDown()
+            }
+        }
+        stopDone.await(2000, TimeUnit.MILLISECONDS)
     }
 
     private fun start() {
@@ -182,18 +222,50 @@ class TunnelVpnService : VpnService() {
         vpnFd = null
         Log.i(TAG, "VPN established, fd=$fd, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort}")
         updateStatus(VpnStatus.TUNNEL_ACTIVE)
+        val startGeneration = bumpTunGeneration()
 
         tun2socksThread = Thread {
+            if (!isRunning || stopInProgress || !isTunGenerationCurrent(startGeneration)) {
+                closeRawFd(fd)
+                return@Thread
+            }
             try {
                 Androidbind.startTun2Socks(fd.toLong(), Vpn.MTU.toLong(), Prefs.socksPort, SocksAuth.user, SocksAuth.pass)
             } catch (e: Exception) {
                 Log.e(TAG, "tun2socks error: ${e.message}")
                 isRunning = false
                 startInProgress = false
+                stopInProgress = false
                 TunnelServiceState.logCallback?.invoke("tun2socks error: ${e.message}")
                 TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.TUNNEL_LOST)
             }
         }.also { it.start() }
+    }
+
+    private fun bumpTunGeneration(): Long = synchronized(this) {
+        tunGeneration += 1
+        tunGeneration
+    }
+
+    private fun isTunGenerationCurrent(generation: Long): Boolean = synchronized(this) {
+        tunGeneration == generation
+    }
+
+    private fun closeRawFd(fd: Int) {
+        runCatching { ParcelFileDescriptor.adoptFd(fd).close() }
+            .onFailure { Log.w(TAG, "Failed to close stale tun fd=$fd: ${it.message}") }
+    }
+
+    private fun safeStopSelf() {
+        stopInProgress = false
+        isRunning = false
+        startInProgress = false
+        runCatching {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        TunnelServiceState.requestTileRefresh(this)
+        stopSelf()
     }
 
     private fun getSystemDnsServers(): List<String> {

@@ -33,10 +33,11 @@ import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.URL
+import java.util.concurrent.atomic.AtomicBoolean
 
 private data class HookKey(val isPion: Boolean, val platform: CallPlatform)
 
-class JsHookJoinFragment : Fragment() {
+class JsHookJoinFragment : Fragment(), JoinSessionShutdown {
 
     private lateinit var webView: WebView
     private lateinit var toggleButton: View
@@ -46,6 +47,7 @@ class JsHookJoinFragment : Fragment() {
 
     private var expanded = false
     private var callUrl = ""
+    private val shutdownOnce = AtomicBoolean(false)
 
     private val host: JoinFragmentHost?
         get() = activity as? JoinFragmentHost
@@ -88,8 +90,12 @@ class JsHookJoinFragment : Fragment() {
 
         relay = RelayController(
             nativeLibDir = requireContext().applicationInfo.nativeLibraryDir,
-            onLog = { host?.appendLog(it) },
+            onLog = {
+                if (!isSessionAlive()) return@RelayController
+                host?.appendLog(it)
+            },
             onStatus = { status ->
+                if (!isSessionAlive()) return@RelayController
                 if (!relay.isRunning) return@RelayController
                 host?.onJoinStatus(status)
             },
@@ -123,6 +129,7 @@ class JsHookJoinFragment : Fragment() {
             }
 
             override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
+                if (!isSessionAlive()) return true
                 val text = msg.message()
                 Log.d("HOOK", text)
                 if (text.contains("[HOOK]")) {
@@ -144,6 +151,7 @@ class JsHookJoinFragment : Fragment() {
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                if (!isSessionAlive()) return null
                 val url = request.url.toString()
                 val platform = CallPlatform.fromUrl(url)
                 if (platform != CallPlatform.TELEMOST || !url.contains("/j/") || request.method != "GET") return null
@@ -151,14 +159,17 @@ class JsHookJoinFragment : Fragment() {
             }
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                if (!isSessionAlive()) return
                 if (url.contains(BLANK_URL)) return
                 view.evaluateJavascript(muteAudioContext, null)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                if (!isSessionAlive()) return
                 if (url.contains(BLANK_URL)) return
                 if (!expanded && url != callUrl) activity?.runOnUiThread { setExpanded(true) }
                 view.evaluateJavascript("!!window.__hookInstalled") { result ->
+                    if (!isSessionAlive()) return@evaluateJavascript
                     if (result == "true") {
                         Log.d("HOOK", "Hook already injected, skipping")
                         return@evaluateJavascript
@@ -185,12 +196,29 @@ class JsHookJoinFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        webView.stopLoading()
-        webView.loadUrl(BLANK_URL)
-        webView.destroy()
-        relay.stop()
+        shutdownSession()
+        if (::webView.isInitialized) {
+            runCatching {
+                webView.stopLoading()
+                webView.loadUrl(BLANK_URL)
+                webView.destroy()
+            }
+        }
         super.onDestroyView()
     }
+
+    override fun shutdownSession() {
+        if (!shutdownOnce.compareAndSet(false, true)) return
+        runCatching { relay.stop() }
+        if (::webView.isInitialized) {
+            runCatching {
+                webView.stopLoading()
+                webView.loadUrl(BLANK_URL)
+            }
+        }
+    }
+
+    private fun isSessionAlive(): Boolean = !shutdownOnce.get()
 
     fun expand() {
         setExpanded(true)
@@ -249,7 +277,10 @@ class JsHookJoinFragment : Fragment() {
     @Suppress("unused")
     inner class JsBridge {
         @JavascriptInterface
-        fun log(msg: String) = host?.appendLog(msg)
+        fun log(msg: String) {
+            if (!isSessionAlive()) return
+            host?.appendLog(msg)
+        }
 
         @JavascriptInterface
         fun getLocalIP(): String = getLocalIPAddress()
@@ -269,6 +300,7 @@ class JsHookJoinFragment : Fragment() {
 
         @JavascriptInterface
         fun onTunnelReady() {
+            if (!isSessionAlive()) return
             host?.appendLog("Tunnel ready, starting VPN...")
             host?.onJoinStatusText("Relay ready, starting local VPN")
             activity?.runOnUiThread { host?.requestVpn() }
@@ -276,6 +308,7 @@ class JsHookJoinFragment : Fragment() {
 
         @JavascriptInterface
         fun onCaptchaDetected(isDone: Boolean) {
+            if (!isSessionAlive()) return
             if (!isDone) {
                 host?.onJoinStatus(VpnStatus.ACTION_REQUIRED_CAPTCHA)
                 activity?.runOnUiThread { expand() }

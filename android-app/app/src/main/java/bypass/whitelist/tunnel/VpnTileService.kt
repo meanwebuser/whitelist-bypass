@@ -22,25 +22,22 @@ class VpnTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
-        val isRunning = TunnelServiceState.isAnyTunnelComponentRunning(this)
-        if (isRunning) {
-            // Stop everything — safe to call startService with STOP action even from tile
+        if (TunnelServiceState.isAnyTunnelComponentRunning(this)) {
             stopAll()
-        } else {
-            // Use unlockAndRun so Android lifts background-start restrictions
-            // This is the correct way for TileService to start foreground services
-            if (isLocked) {
-                // Device is locked — just update tile, can't start
-                updateTile()
-                return
-            }
-            unlockAndRun {
-                startSession()
-                qsTile?.let {
-                    it.state = Tile.STATE_ACTIVE
-                    it.label = "Connecting…"
-                    it.updateTile()
-                }
+            return
+        }
+
+        if (isLocked) {
+            updateTile()
+            return
+        }
+
+        unlockAndRun {
+            startSession()
+            qsTile?.let {
+                it.state = Tile.STATE_ACTIVE
+                it.label = "Connecting..."
+                it.updateTile()
             }
         }
     }
@@ -56,36 +53,9 @@ class VpnTileService : TileService() {
     }
 
     private fun stopAll() {
-        // Send STOP actions — these are regular startService calls (not foreground)
-        // which are allowed even from background since Android handles the stop case
-        try {
-            startService(
-                Intent(this, HeadlessSessionService::class.java).apply {
-                    action = HeadlessSessionService.ACTION_STOP
-                }
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "HeadlessSessionService already stopped: ${e.message}")
-        }
-        try {
-            startService(
-                Intent(this, TunnelVpnService::class.java).apply {
-                    action = TunnelVpnService.ACTION_STOP
-                }
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "TunnelVpnService already stopped: ${e.message}")
-        }
-        try {
-            startService(
-                Intent(this, ProxyService::class.java).apply {
-                    action = ProxyService.ACTION_STOP
-                }
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "ProxyService already stopped: ${e.message}")
-        }
-        // Provide immediate visual feedback since services might take up to 2 seconds to stop
+        HeadlessSessionService.requestStop(this)
+        TunnelVpnService.requestStop(this)
+        ProxyService.requestStop(this)
         qsTile?.let {
             it.state = Tile.STATE_INACTIVE
             it.label = "whitelistbypass"
@@ -102,7 +72,7 @@ class VpnTileService : TileService() {
             }
             TunnelServiceState.isHeadlessSessionRunning(this) -> {
                 tile.state = Tile.STATE_ACTIVE
-                tile.label = "Connecting…"
+                tile.label = "Connecting..."
             }
             else -> {
                 tile.state = Tile.STATE_INACTIVE
