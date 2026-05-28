@@ -32,7 +32,7 @@ func MaskError(err error) string {
 	return err.Error()
 }
 
-var MaskingEnabled = true
+const MaskingEnabled = true
 
 // MaskAddr masks the sensitive portion of an address for logging.
 func MaskAddr(addr string) string {

@@ -114,7 +114,6 @@ func makeHelpers(callback HeadlessCallback) (func(string, ...any), joiner.Resolv
 }
 
 func init() {
-	common.MaskingEnabled = true
 }
 
 func StartWBStreamHeadless(socksPort int, socksUser, socksPass string, callback HeadlessCallback) {
