@@ -70,7 +70,6 @@ func main() {
 	if memLimit > 0 {
 		debug.SetMemoryLimit(memLimit)
 	}
-	common.MaskingEnabled = true
 
 	inner := joiner.NewTelemostHeadlessJoiner(
 		log.Printf,

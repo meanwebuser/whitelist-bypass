@@ -913,7 +913,6 @@ func main() {
 	if memLimit > 0 {
 		debug.SetMemoryLimit(memLimit)
 	}
-	common.MaskingEnabled = true
 	log.Printf("[config] resources=%s read-buf=%d mem-limit=%d", *resources, readBuf, memLimit)
 
 	var cookieStr string
