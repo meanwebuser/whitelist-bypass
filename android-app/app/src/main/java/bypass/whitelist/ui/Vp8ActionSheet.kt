@@ -7,15 +7,16 @@ import android.view.ViewGroup
 import android.widget.EditText
 import androidx.fragment.app.FragmentManager
 import bypass.whitelist.R
-import bypass.whitelist.util.Callback
-import bypass.whitelist.util.Prefs
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 
 class Vp8ActionSheet : BottomSheetDialogFragment() {
 
-    private var onSaved: Callback? = null
+    private var initialFps: Int = 0
+    private var initialBatch: Int = 0
+    private var initialDualTrack: Boolean = false
+    private var onSaved: ((fps: Int, batch: Int, dualTrack: Boolean) -> Unit)? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -26,24 +27,34 @@ class Vp8ActionSheet : BottomSheetDialogFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val fps = view.findViewById<EditText>(R.id.vp8FpsInput)
         val batch = view.findViewById<EditText>(R.id.vp8BatchInput)
-        val dualTrack = view.findViewById<MaterialSwitch>(R.id.vp8DualTrackSwitch)
-        fps.setText(Prefs.vp8Fps.toString())
-        batch.setText(Prefs.vp8Batch.toString())
-        dualTrack.isChecked = Prefs.dualTrack
+        val dualSwitch = view.findViewById<MaterialSwitch>(R.id.vp8DualTrackSwitch)
+        fps.setText(initialFps.toString())
+        batch.setText(initialBatch.toString())
+        dualSwitch.isChecked = initialDualTrack
 
         view.findViewById<MaterialButton>(R.id.vp8CancelButton).setOnClickListener { dismiss() }
         view.findViewById<MaterialButton>(R.id.vp8SaveButton).setOnClickListener {
-            fps.text.toString().toIntOrNull()?.takeIf { it in 1..240 }?.let { Prefs.vp8Fps = it }
-            batch.text.toString().toIntOrNull()?.takeIf { it in 1..256 }?.let { Prefs.vp8Batch = it }
-            Prefs.dualTrack = dualTrack.isChecked
-            onSaved?.invoke()
+            val newFps = fps.text.toString().toIntOrNull()?.takeIf { it in 1..240 } ?: initialFps
+            val newBatch = batch.text.toString().toIntOrNull()?.takeIf { it in 1..256 } ?: initialBatch
+            onSaved?.invoke(newFps, newBatch, dualSwitch.isChecked)
             dismiss()
         }
     }
 
     companion object {
-        fun show(manager: FragmentManager, onSaved: Callback) {
-            Vp8ActionSheet().apply { this.onSaved = onSaved }.show(manager, "Vp8ActionSheet")
+        fun show(
+            manager: FragmentManager,
+            fps: Int,
+            batch: Int,
+            dualTrack: Boolean,
+            onSaved: (fps: Int, batch: Int, dualTrack: Boolean) -> Unit,
+        ) {
+            Vp8ActionSheet().apply {
+                this.initialFps = fps
+                this.initialBatch = batch
+                this.initialDualTrack = dualTrack
+                this.onSaved = onSaved
+            }.show(manager, "Vp8ActionSheet")
         }
     }
 }

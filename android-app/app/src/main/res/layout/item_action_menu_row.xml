@@ -36,4 +36,13 @@
         android:textColor="@color/ink"
         android:textSize="14sp"
         android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/menuValue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textColor="@color/ink_3"
+        android:textSize="13sp"
+        android:visibility="gone" />
 </LinearLayout>

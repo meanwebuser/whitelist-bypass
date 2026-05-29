@@ -11,6 +11,7 @@ import android.graphics.SweepGradient
 import android.os.Build
 import android.util.AttributeSet
 import android.view.View
+import android.view.animation.LinearInterpolator
 import androidx.core.content.ContextCompat
 import bypass.whitelist.R
 
@@ -69,7 +70,7 @@ class HeroRingOuterView @JvmOverloads constructor(
         spinAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
             duration = durationMs
             repeatCount = ValueAnimator.INFINITE
-            interpolator = android.view.animation.LinearInterpolator()
+            interpolator = LinearInterpolator()
             addUpdateListener {
                 sweepRotationDegrees = it.animatedValue as Float
                 invalidate()

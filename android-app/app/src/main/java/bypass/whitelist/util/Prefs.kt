@@ -30,10 +30,6 @@ object Prefs {
         }
         set(value) = prefs.edit { putString(PrefsKeys.TUNNEL_MODE, value.name) }
 
-    var showLogs: Boolean
-        get() = prefs.getBoolean(PrefsKeys.SHOW_LOGS, false)
-        set(value) = prefs.edit { putBoolean(PrefsKeys.SHOW_LOGS, value) }
-
     var splitTunnelingMode: SplitTunnelingMode
         get() {
             val title = prefs.getString(PrefsKeys.SPLIT_TUNNELING_MODE, SplitTunnelingMode.NONE.name)!!
@@ -144,6 +140,27 @@ object Prefs {
             if (id.isEmpty()) return null
             return savedDestinations.firstOrNull { it.id == id }
         }
+
+    val activeTunnelMode: TunnelMode
+        get() = activeDestination?.tunnelMode ?: tunnelMode
+
+    val activeVp8Fps: Int
+        get() = activeDestination?.vp8Fps ?: vp8Fps
+
+    val activeVp8Batch: Int
+        get() = activeDestination?.vp8Batch ?: vp8Batch
+
+    val activeDualTrack: Boolean
+        get() = activeDestination?.dualTrack ?: dualTrack
+
+    fun updateDestination(config: CallConfig) {
+        val list = savedDestinations.toMutableList()
+        val index = list.indexOfFirst { it.id == config.id }
+        if (index != -1) {
+            list[index] = config
+            savedDestinations = list
+        }
+    }
 
     fun addDestination(config: CallConfig) {
         val list = savedDestinations.toMutableList()

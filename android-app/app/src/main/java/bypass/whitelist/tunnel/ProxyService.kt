@@ -5,9 +5,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import bypass.whitelist.MainActivity
 import bypass.whitelist.util.Callback
 import bypass.whitelist.R
@@ -20,20 +22,40 @@ class ProxyService : Service() {
         const val ACTION_STOP = "bypass.whitelist.STOP_PROXY"
         @Volatile var instance: ProxyService? = null
         @Volatile var onDisconnect: Callback? = null
+
+        fun requestStop(context: Context) {
+            val running = instance?.let { it.isRunning || it.stopInProgress } == true
+            val intent = Intent(context, ProxyService::class.java)
+            try {
+                if (running) {
+                    context.startService(intent.apply { action = ACTION_STOP })
+                } else {
+                    context.stopService(intent)
+                    TunnelServiceState.requestTileRefresh(context)
+                }
+            } catch (_: Exception) {
+            }
+        }
     }
 
     @Volatile var isRunning = false
         private set
+    @Volatile internal var stopInProgress = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         instance = this
+        TunnelServiceState.requestTileRefresh(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            if (!isRunning && !stopInProgress) {
+                safeStopSelf()
+                return START_NOT_STICKY
+            }
             stop()
             return START_NOT_STICKY
         }
@@ -42,11 +64,15 @@ class ProxyService : Service() {
     }
 
     override fun onDestroy() {
-        stop()
+        if (isRunning && !stopInProgress) {
+            stop()
+        }
         if (instance === this) {
             instance = null
         }
         onDisconnect = null
+        stopInProgress = false
+        TunnelServiceState.requestTileRefresh(this)
         super.onDestroy()
     }
 
@@ -57,17 +83,42 @@ class ProxyService : Service() {
 
     @Synchronized
     fun stop() {
-        if (!isRunning) return
+        if (stopInProgress) return
+        if (!isRunning) {
+            safeStopSelf()
+            return
+        }
         isRunning = false
-        @Suppress("DEPRECATION")
-        stopForeground(true)
+        stopInProgress = true
+        val disconnectCallback = onDisconnect
+        try {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+            HeadlessSessionService.requestDependentStop(this)
+            disconnectCallback?.invoke()
+            TunnelServiceState.requestTileRefresh(this)
+        } catch (t: Throwable) {
+            Log.e("ProxyService", "Crash during Proxy stop: ${t.message}", t)
+        } finally {
+            stopSelf()
+        }
+    }
+
+    private fun safeStopSelf() {
+        isRunning = false
+        stopInProgress = false
+        runCatching {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        TunnelServiceState.requestTileRefresh(this)
         stopSelf()
-        onDisconnect?.invoke()
     }
 
     private fun start() {
         if (isRunning) return
         isRunning = true
+        TunnelServiceState.requestTileRefresh(this)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(

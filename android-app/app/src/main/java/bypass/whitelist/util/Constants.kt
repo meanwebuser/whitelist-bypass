@@ -49,7 +49,6 @@ enum class ThemeMode(val label: String) {
 object PrefsKeys {
     const val CONNECT_ON_START = "connect_on_start"
     const val TUNNEL_MODE = "tunnel_mode"
-    const val SHOW_LOGS = "show_logs"
     const val SPLIT_TUNNELING_MODE = "split_tunneling_mode"
     const val SPLIT_TUNNELING_PACKAGES = "split_tunneling_packages"
     const val AUTOFILL_ENABLED = "autofill_enabled"

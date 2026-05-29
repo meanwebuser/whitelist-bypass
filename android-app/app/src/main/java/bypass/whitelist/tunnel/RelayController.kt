@@ -1,5 +1,6 @@
 package bypass.whitelist.tunnel
 
+import android.os.Build
 import android.util.Log
 import bypass.whitelist.util.ParamCallback
 import bypass.whitelist.util.Ports
@@ -12,6 +13,7 @@ import java.io.File
 import java.io.OutputStreamWriter
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.util.concurrent.TimeUnit
 
 class RelayController(
     private val nativeLibDir: String,
@@ -39,7 +41,17 @@ class RelayController(
 
         pionProcess?.let {
             it.destroy()
-            it.waitFor()
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (!it.waitFor(1500, TimeUnit.MILLISECONDS)) {
+                        it.destroyForcibly()
+                        it.waitFor(500, TimeUnit.MILLISECONDS)
+                    }
+                } else {
+                    it.waitFor()
+                }
+            } catch (_: Exception) {
+            }
         }
         pionProcess = null
         pionThread?.interrupt()
@@ -57,7 +69,12 @@ class RelayController(
             else if (msg.contains("ws read error")) onStatus(VpnStatus.TUNNEL_LOST)
         }
         dcThread = Thread {
-            if (!checkPortOrAbort()) return@Thread
+            try {
+                if (!checkPortOrAbort()) return@Thread
+            } catch (e: Exception) {
+                if (isRunning) onLog("Port check error: ${e.message}")
+                return@Thread
+            }
             try {
                 Androidbind.startJoiner(Ports.DC_WS, Prefs.socksPort, Prefs.socksHost, SocksAuth.user, SocksAuth.pass, cb)
             } catch (e: Exception) {
@@ -75,7 +92,12 @@ class RelayController(
         }
         val relayMode = mode.relayMode(platform)
         pionThread = Thread {
-            if (!checkPortOrAbort()) return@Thread
+            try {
+                if (!checkPortOrAbort()) return@Thread
+            } catch (e: Exception) {
+                if (isRunning) onLog("Port check error: ${e.message}")
+                return@Thread
+            }
             try {
                 val pb = ProcessBuilder(
                     relayBin.absolutePath,

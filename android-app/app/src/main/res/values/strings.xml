@@ -1,5 +1,5 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">WhitelistBypass</string>
+    <string name="app_name">whitelistbypass</string>
     <string name="share_logs">Share logs</string>
     <string name="copy_logs_toast">Logs copied to clipboard</string>
     <string name="autofill_settings_title">Autofill settings</string>
@@ -11,6 +11,7 @@
     <string name="expand_webview">Expand WebView</string>
     <string name="collapse_webview">Collapse WebView</string>
     <string name="vpn_starting">Starting…</string>
+    <string name="vpn_stopping">Stopping…</string>
     <string name="vpn_connecting">Connecting…</string>
     <string name="vpn_call_connected">Call connected</string>
     <string name="vpn_datachannel_open">DataChannel open</string>
@@ -20,6 +21,7 @@
     <string name="vpn_call_disconnected">Call disconnected</string>
     <string name="vpn_call_failed">Call failed</string>
     <string name="vpn_port_busy" tools:ignore="PluralsCandidate">Port %1$d busy</string>
+    <string name="vpn_foreign_active">Another VPN is active. Turn it off first.</string>
     <string name="action_required_captcha">Action required (captcha)</string>
     <string name="captcha_pill_label">Captcha required / id.vk.com</string>
     <string name="jshook_pill_label">Live / interactive page</string>
@@ -38,8 +40,12 @@
     <string name="vp8_dual_track_sub">Publish a second VP8 track as screen-share and shard outbound across both.</string>
     <string name="notification_vpn_title">VPN active</string>
     <string name="notification_proxy_title">Proxy active</string>
+    <string name="notification_session_connecting">Starting headless session</string>
+    <string name="error_no_destination">Add and select a destination first</string>
     <string name="notification_disconnect">Disconnect</string>
     <string name="dc_mode_not_supported">DC mode not supported - falling back to video</string>
+    <string name="tile_requires_headless_destination">Select a headless destination first</string>
+    <string name="tile_vpn_permission_required">Open the app once and grant VPN permission</string>
 
     <string name="nav_main">Main</string>
     <string name="nav_settings">Settings</string>

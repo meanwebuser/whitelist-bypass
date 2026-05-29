@@ -6,18 +6,17 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isNotEmpty
 import androidx.fragment.app.Fragment
-import com.google.android.material.materialswitch.MaterialSwitch
 import bypass.whitelist.App
 import bypass.whitelist.R
 import bypass.whitelist.tunnel.SplitTunnelingMode
 import bypass.whitelist.tunnel.TunnelMode
-import bypass.whitelist.tunnel.TunnelVpnService
+import bypass.whitelist.util.Callback
+import bypass.whitelist.util.ParamCallback
 import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.ThemeMode
+import com.google.android.material.materialswitch.MaterialSwitch
 
 class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
 
@@ -35,6 +34,11 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         root.addView(buildNetworkSection())
         root.addView(buildBehaviorSection())
         root.addView(buildDangerSection())
+    }
+
+    override fun onResume() {
+        super.onResume()
+        rebuild()
     }
 
     fun refresh() {
@@ -87,7 +91,12 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
 
         val vp8SubRes = if (Prefs.dualTrack) R.string.settings_row_vp8_sub_dual else R.string.settings_row_vp8_sub
         addRow(card, R.drawable.ic_setting_vp8, getString(R.string.settings_row_vp8), getString(vp8SubRes, Prefs.vp8Fps, Prefs.vp8Batch), null) {
-            Vp8ActionSheet.show(parentFragmentManager) { rebuild() }
+            Vp8ActionSheet.show(parentFragmentManager, Prefs.vp8Fps, Prefs.vp8Batch, Prefs.dualTrack) { fps, batch, dual ->
+                Prefs.vp8Fps = fps
+                Prefs.vp8Batch = batch
+                Prefs.dualTrack = dual
+                rebuild()
+            }
         }
 
         addRow(card, R.drawable.ic_setting_autofill, getString(R.string.settings_row_autofill), if (Prefs.autofillEnabled) Prefs.autofillName else getString(R.string.settings_row_autofill_off), null) {
@@ -175,7 +184,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         sub: String?,
         trail: String?,
         danger: Boolean = false,
-        onClick: () -> Unit,
+        onClick: Callback,
     ) {
         val row = layoutInflater.inflate(R.layout.item_settings_row, card, false)
         row.findViewById<ImageView>(R.id.rowIcon).setImageResource(iconRes)
@@ -203,7 +212,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         title: String,
         sub: String?,
         initial: Boolean,
-        onToggled: (Boolean) -> Unit,
+        onToggled: ParamCallback<Boolean>,
     ) {
         val row = layoutInflater.inflate(R.layout.item_settings_row, card, false)
         row.findViewById<ImageView>(R.id.rowIcon).setImageResource(iconRes)
@@ -237,9 +246,5 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         if (!isAdded) return
         val rootView = view ?: return
         onViewCreated(rootView, null)
-    }
-
-    companion object {
-        const val TAG = "SettingsScreenFragment"
     }
 }

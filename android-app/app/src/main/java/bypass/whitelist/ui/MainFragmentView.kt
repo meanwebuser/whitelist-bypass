@@ -2,8 +2,11 @@ package bypass.whitelist.ui
 
 import android.animation.ValueAnimator
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.HapticFeedbackConstants
 import android.view.animation.AlphaAnimation
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -43,7 +46,7 @@ class MainFragmentView(private val root: View) {
     var onHeroPressed: Callback? = null
     var onPingPressed: Callback? = null
     var onCallSelected: ParamCallback<CallConfig>? = null
-    var onCallLongPressed: ((CallConfig, View) -> Unit)? = null
+    var onCallLongPressed: ParamCallback<CallConfig>? = null
 
     private var pulseAnimator: ValueAnimator? = null
     private var collapsedToActive: Boolean = false
@@ -55,7 +58,34 @@ class MainFragmentView(private val root: View) {
         pingButton.clipToOutline = true
         addButton.setOnClickListener { onAddCallClicked?.invoke() }
         emptyCta.setOnClickListener { onAddCallClicked?.invoke() }
-        hero.setOnClickListener { onHeroPressed?.invoke() }
+        hero.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate().scaleX(0.92f).scaleY(0.92f)
+                        .setDuration(100)
+                        .setInterpolator(OvershootInterpolator(2f))
+                        .start()
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    v.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(200)
+                        .setInterpolator(OvershootInterpolator(3f))
+                        .start()
+                    v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    onHeroPressed?.invoke()
+                    v.performClick()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    v.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(150)
+                        .start()
+                    true
+                }
+                else -> false
+            }
+        }
         pingButton.setOnClickListener { onPingPressed?.invoke() }
     }
 
@@ -64,67 +94,6 @@ class MainFragmentView(private val root: View) {
         activeCallId = activeId
         renderCalls()
         updateHeaderSubForList(calls.size)
-    }
-
-    private fun renderCalls() {
-        callsList.removeAllViews()
-        val inflater = LayoutInflater.from(root.context)
-        val visibleCalls = if (collapsedToActive) {
-            currentCalls.filter { it.id == activeCallId }
-        } else {
-            currentCalls
-        }
-        if (currentCalls.isEmpty()) {
-            emptyCta.visibility = View.VISIBLE
-            callsList.visibility = View.GONE
-            return
-        }
-        emptyCta.visibility = View.GONE
-        callsList.visibility = View.VISIBLE
-        visibleCalls.forEach { config ->
-            val row = inflater.inflate(R.layout.item_call_row, callsList, false)
-            row.clipToOutline = true
-            bindRow(row, config, isActive = config.id == activeCallId)
-            row.setOnClickListener { onCallSelected?.invoke(config) }
-            row.setOnLongClickListener {
-                onCallLongPressed?.invoke(config, row)
-                true
-            }
-            callsList.addView(row)
-        }
-    }
-
-    private fun bindRow(row: View, config: CallConfig, isActive: Boolean) {
-        val context = row.context
-        val nameView = row.findViewById<TextView>(R.id.rowName)
-        val linkView = row.findViewById<TextView>(R.id.rowLink)
-        val glyphView = row.findViewById<TextView>(R.id.rowGlyph)
-        val glyphBox = row.findViewById<View>(R.id.rowGlyphBox)
-        val statusDot = row.findViewById<View>(R.id.rowStatusDot)
-
-        nameView.text = config.name
-        linkView.text = config.url
-        glyphView.text = config.platformGlyph
-
-        if (isActive) {
-            row.setBackgroundResource(R.drawable.bg_destination_card_active)
-            statusDot.setBackgroundResource(R.drawable.bg_status_dot_active)
-            glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip_active)
-            glyphView.setTextColor(context.getColor(R.color.panel_bg))
-        } else {
-            row.setBackgroundResource(R.drawable.bg_destination_card)
-            statusDot.setBackgroundResource(R.drawable.bg_status_dot_idle)
-            glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip)
-            glyphView.setTextColor(context.getColor(R.color.ink))
-        }
-    }
-
-    private fun updateHeaderSubForList(count: Int) {
-        if (collapsedToActive) return
-        headerSub.text = when (count) {
-            0 -> root.context.getString(R.string.main_sub_no_configs)
-            else -> root.context.resources.getQuantityString(R.plurals.main_sub_count, count, count)
-        }
     }
 
     fun bindHero(connected: Boolean, status: VpnStatus?) {
@@ -144,12 +113,12 @@ class MainFragmentView(private val root: View) {
             collapsedToActive = true
             renderCalls()
             stopPulse()
-        } else if (status == VpnStatus.CONNECTING || status == VpnStatus.STARTING || status == VpnStatus.CALL_CONNECTED || status == VpnStatus.DATACHANNEL_OPEN) {
+        } else if (status == VpnStatus.CONNECTING || status == VpnStatus.STARTING || status == VpnStatus.STOPPING || status == VpnStatus.CALL_CONNECTED || status == VpnStatus.DATACHANNEL_OPEN) {
             heroLabel.text = context.getString(R.string.hero_cancel)
             hero.setBackgroundResource(R.drawable.bg_hero_active)
             heroLabel.setTextColor(context.getColor(R.color.accent_emerald))
             heroPowerIcon.setColorFilter(context.getColor(R.color.accent_emerald))
-            statusHeadline.text = context.getString(R.string.status_headline_connecting)
+            statusHeadline.text = context.getString(if (status == VpnStatus.STOPPING) R.string.status_headline_disconnected else R.string.status_headline_connecting)
             statsCard.visibility = View.GONE
             pingRow.visibility = View.GONE
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTING)
@@ -234,6 +203,69 @@ class MainFragmentView(private val root: View) {
         heroRingOuter.release()
         stopPulse()
         pingButton.clearAnimation()
+    }
+
+    private fun renderCalls() {
+        callsList.removeAllViews()
+        val inflater = LayoutInflater.from(root.context)
+        val visibleCalls = if (collapsedToActive) {
+            currentCalls.filter { it.id == activeCallId }
+        } else {
+            currentCalls
+        }
+        if (currentCalls.isEmpty()) {
+            emptyCta.visibility = View.VISIBLE
+            callsList.visibility = View.GONE
+            return
+        }
+        emptyCta.visibility = View.GONE
+        callsList.visibility = View.VISIBLE
+        visibleCalls.forEach { config ->
+            val row = inflater.inflate(R.layout.item_call_row, callsList, false)
+            row.clipToOutline = true
+            bindRow(row, config, isActive = config.id == activeCallId)
+            row.setOnClickListener { onCallSelected?.invoke(config) }
+            row.setOnLongClickListener {
+                onCallLongPressed?.invoke(config)
+                true
+            }
+            callsList.addView(row)
+        }
+    }
+
+    private fun bindRow(row: View, config: CallConfig, isActive: Boolean) {
+        val context = row.context
+        val nameView = row.findViewById<TextView>(R.id.rowName)
+        val linkView = row.findViewById<TextView>(R.id.rowLink)
+        val glyphView = row.findViewById<TextView>(R.id.rowGlyph)
+        val glyphBox = row.findViewById<View>(R.id.rowGlyphBox)
+        val statusDot = row.findViewById<View>(R.id.rowStatusDot)
+
+        nameView.text = config.name
+        linkView.text = config.url
+        glyphView.text = config.platformGlyph
+
+        if (isActive) {
+            row.setBackgroundResource(R.drawable.bg_destination_card_active)
+            statusDot.setBackgroundResource(R.drawable.bg_status_dot_active)
+            glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip_active)
+            glyphView.setTextColor(context.getColor(R.color.panel_bg))
+        } else {
+            row.setBackgroundResource(R.drawable.bg_destination_card)
+            statusDot.setBackgroundResource(R.drawable.bg_status_dot_idle)
+            glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip)
+            nameView.setTextColor(context.getColor(R.color.ink))
+            linkView.setTextColor(context.getColor(R.color.ink_3))
+            glyphView.setTextColor(context.getColor(R.color.ink))
+        }
+    }
+
+    private fun updateHeaderSubForList(count: Int) {
+        if (collapsedToActive) return
+        headerSub.text = when (count) {
+            0 -> root.context.getString(R.string.main_sub_no_configs)
+            else -> root.context.resources.getQuantityString(R.plurals.main_sub_count, count, count)
+        }
     }
 
     private fun startPulse() {

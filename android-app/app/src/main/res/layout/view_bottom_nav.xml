@@ -10,15 +10,26 @@
         android:layout_height="1dp"
         android:background="@color/hair" />
 
-    <LinearLayout
-        android:id="@+id/navItemsRow"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:baselineAligned="false"
-        android:orientation="horizontal"
         android:paddingHorizontal="16dp"
         android:paddingTop="8dp"
         android:paddingBottom="12dp">
+
+        <View
+            android:id="@+id/navIndicator"
+            android:layout_width="0dp"
+            android:layout_height="10dp"
+            android:background="@drawable/bg_nav_item_active"
+            android:layout_gravity="start|center_vertical" />
+
+        <LinearLayout
+            android:id="@+id/navItemsRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
 
         <LinearLayout
             android:id="@+id/navMain"
@@ -26,7 +37,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginEnd="4dp"
-            android:background="@drawable/bg_nav_item_active"
+            android:background="@android:color/transparent"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"
@@ -123,4 +134,5 @@
                 android:textSize="10sp" />
         </LinearLayout>
     </LinearLayout>
+    </FrameLayout>
 </LinearLayout>

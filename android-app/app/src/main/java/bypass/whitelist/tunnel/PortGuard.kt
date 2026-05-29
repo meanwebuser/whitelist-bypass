@@ -10,13 +10,18 @@ import java.net.ServerSocket
 object PortGuard {
 
     private const val TAG = "PortGuard"
+    private val myUid = Process.myUid()
 
     fun ensurePortFree(port: Long): Boolean {
         if (tryBind(port)) return true
         Log.w(TAG, "Port $port is busy, killing occupying process")
         killByPort(port)
         for (attempt in 1..20) {
-            Thread.sleep(100)
+            try {
+                Thread.sleep(100)
+            } catch (e: InterruptedException) {
+                break
+            }
             if (tryBind(port)) {
                 Log.i(TAG, "Port $port freed after kill (attempt $attempt)")
                 return true
@@ -25,6 +30,8 @@ object PortGuard {
         Log.e(TAG, "Port $port still busy after kill attempt")
         return false
     }
+
+    fun isPortAvailable(port: Long): Boolean = tryBind(port)
 
     private fun tryBind(port: Long): Boolean {
         return try {
@@ -61,6 +68,7 @@ object PortGuard {
             for (entry in procDir.listFiles() ?: emptyArray()) {
                 val pid = entry.name.toIntOrNull() ?: continue
                 if (pid == myPid) continue
+                if (readUid(pid) != myUid) continue
                 val fdDir = File(entry, "fd")
                 if (!fdDir.canRead()) continue
                 for (fd in fdDir.listFiles() ?: emptyArray()) {
@@ -84,7 +92,7 @@ object PortGuard {
                 fuser.waitFor()
                 for (token in output.split("\\s+".toRegex())) {
                     val pid = token.toIntOrNull() ?: continue
-                    if (pid != myPid) {
+                    if (pid != myPid && readUid(pid) == myUid) {
                         Log.w(TAG, "fuser: killing PID $pid for port $port")
                         Process.killProcess(pid)
                         return
@@ -95,6 +103,20 @@ object PortGuard {
             }
         } catch (e: Exception) {
             Log.e(TAG, "killByPort error: ${e.message}")
+        }
+    }
+
+    private fun readUid(pid: Int): Int? {
+        return try {
+            File("/proc/$pid/status").useLines { lines ->
+                lines.firstOrNull { it.startsWith("Uid:") }
+                    ?.trim()
+                    ?.split("\\s+".toRegex())
+                    ?.getOrNull(1)
+                    ?.toIntOrNull()
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 }

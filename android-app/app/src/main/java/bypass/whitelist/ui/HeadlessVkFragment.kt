@@ -1,5 +1,6 @@
 package bypass.whitelist.ui
 
+import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -15,11 +16,13 @@ import bypass.whitelist.tunnel.HeadlessRelayController
 import bypass.whitelist.tunnel.VpnStatus
 import bypass.whitelist.util.BLANK_URL
 import bypass.whitelist.util.Prefs
+import java.util.concurrent.atomic.AtomicBoolean
 
-class HeadlessVkFragment : Fragment() {
+class HeadlessVkFragment : Fragment(), JoinSessionShutdown {
 
     private lateinit var relay: HeadlessRelayController
     private lateinit var webView: WebView
+    private val shutdownOnce = AtomicBoolean(false)
 
     private val host: JoinFragmentHost?
         get() = activity as? JoinFragmentHost
@@ -41,33 +44,40 @@ class HeadlessVkFragment : Fragment() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.webViewClient = WebViewClient()
-        webView.setBackgroundColor(android.graphics.Color.WHITE)
+        webView.setBackgroundColor(Color.WHITE)
         webView.isVisible = false
 
         relay = HeadlessRelayController(
             requireContext().applicationInfo.nativeLibraryDir,
             onLog = { message ->
+                if (!isSessionAlive()) return@HeadlessRelayController
                 if (message.contains("ERROR:") && !message.contains("ortc ERROR")) {
                     host?.onJoinStatusText(message)
                 }
                 host?.appendLog(message)
             },
             onStatus = { status ->
+                if (!isSessionAlive()) return@HeadlessRelayController
                 Log.d("HEADLESS-VK", "status: $status")
-                host?.onJoinStatus(status)
                 if (status == VpnStatus.TUNNEL_ACTIVE) {
                     activity?.runOnUiThread {
+                        if (!isSessionAlive()) return@runOnUiThread
+                        host?.onJoinStatusText("Relay ready, starting local VPN")
                         webView.stopLoading()
                         webView.loadUrl(BLANK_URL)
                         webView.isVisible = false
                         host?.setJoinUiVisible(false)
                         host?.requestVpn()
                     }
+                } else {
+                    host?.onJoinStatus(status)
                 }
             },
             onCaptchaUrl = { captchaUrl ->
+                if (!isSessionAlive()) return@HeadlessRelayController
                 Log.d("HEADLESS-VK", "captcha URL: $captchaUrl")
                 activity?.runOnUiThread {
+                    if (!isSessionAlive()) return@runOnUiThread
                     host?.setJoinUiVisible(true)
                     webView.isVisible = true
                     webView.loadUrl(captchaUrl)
@@ -75,16 +85,35 @@ class HeadlessVkFragment : Fragment() {
             },
         )
         relay.start()
-        relay.sendAuth(url, displayName, Prefs.tunnelMode.relayArg)
+        relay.sendAuth(url, displayName, Prefs.activeTunnelMode.relayArg)
     }
 
     override fun onDestroyView() {
-        webView.stopLoading()
-        webView.loadUrl(BLANK_URL)
-        webView.destroy()
-        relay.stop()
+        shutdownSession()
+        if (::webView.isInitialized) {
+            runCatching {
+                webView.stopLoading()
+                webView.loadUrl(BLANK_URL)
+                webView.destroy()
+            }
+        }
         super.onDestroyView()
     }
+
+    override fun shutdownSession() {
+        if (!shutdownOnce.compareAndSet(false, true)) return
+        if (::webView.isInitialized) {
+            runCatching {
+                webView.stopLoading()
+                webView.loadUrl(BLANK_URL)
+            }
+        }
+        if (::relay.isInitialized) {
+            runCatching { relay.stop() }
+        }
+    }
+
+    private fun isSessionAlive(): Boolean = !shutdownOnce.get()
 
     companion object {
         const val ARG_URL = "url"
