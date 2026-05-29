@@ -357,7 +357,12 @@ export class TabManager {
     tab.relay = proc;
     let sawAuthFailure = false;
     this.attachProcessOutput(proc, tabId, (msg) => {
-      if (msg.includes('status 401') || msg.includes('"UnauthorizedError"')) {
+      if (
+        msg.includes('status 401') ||
+        msg.includes('"UnauthorizedError"') ||
+        msg.includes('"error":"unauthorized') ||
+        msg.includes('empty access_token')
+      ) {
         sawAuthFailure = true;
       }
     });

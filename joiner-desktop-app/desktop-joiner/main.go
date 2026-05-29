@@ -122,7 +122,6 @@ func main() {
 	default:
 		log.Fatalf("[config] unknown resources mode: %s", *resources)
 	}
-	common.MaskingEnabled = true
 
 	// One desktoptun.Tunnel covers both platforms. Created up-front so
 	// signaling-host bypass routes can be installed before any platform

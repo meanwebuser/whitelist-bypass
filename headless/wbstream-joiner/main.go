@@ -46,7 +46,6 @@ func main() {
 	if memLimit > 0 {
 		debug.SetMemoryLimit(memLimit)
 	}
-	common.MaskingEnabled = true
 
 	roomID := wbstream.ParseRoomID(*roomFlag)
 	id, roomToken, _, serverURL, err := wbstream.AuthAndGetToken(nil, roomID, *displayName)

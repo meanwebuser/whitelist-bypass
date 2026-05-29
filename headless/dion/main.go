@@ -37,7 +37,6 @@ func main() {
 	if memLimit > 0 {
 		debug.SetMemoryLimit(memLimit)
 	}
-	common.MaskingEnabled = true
 	log.Printf("[config] resources=%s name=%q", *resources, *displayName)
 
 	if *cookiesPath == "" {

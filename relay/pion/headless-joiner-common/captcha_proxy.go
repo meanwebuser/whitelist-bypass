@@ -47,6 +47,7 @@ func StartCaptchaProxy(redirectURI string, resolveFn ResolveFunc) int {
 		MaxIdleConnsPerHost: 100,
 		IdleConnTimeout:     90 * time.Second,
 		TLSHandshakeTimeout: 10 * time.Second,
+		ForceAttemptHTTP2:   false,
 	}
 	if resolveFn != nil {
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -69,6 +70,7 @@ func StartCaptchaProxy(redirectURI string, resolveFn ResolveFunc) int {
 			}
 			req.Out.Host = targetURL.Host
 			req.Out.Header.Del("Accept-Encoding")
+			req.Out.Header.Del("TE")
 			for _, headerName := range []string{"Origin", "Referer"} {
 				val := req.Out.Header.Get(headerName)
 				if val != "" {
@@ -86,16 +88,18 @@ func StartCaptchaProxy(redirectURI string, resolveFn ResolveFunc) int {
 			}
 
 			contentType := res.Header.Get("Content-Type")
-			shouldInspect := strings.Contains(contentType, "text/html") || strings.Contains(res.Request.URL.Path, "captchaNotRobot.check")
+			shouldInspect := isHTMLLike(contentType) || strings.Contains(res.Request.URL.Path, "captchaNotRobot.check")
 			if !shouldInspect {
 				return nil
 			}
 
 			reader := res.Body
+			decompressed := false
 			if res.Header.Get("Content-Encoding") == "gzip" {
 				gzReader, err := gzip.NewReader(res.Body)
 				if err == nil {
 					reader = gzReader
+					decompressed = true
 					defer gzReader.Close()
 				}
 			}
@@ -116,16 +120,20 @@ func StartCaptchaProxy(redirectURI string, resolveFn ResolveFunc) int {
 				}
 			}
 
-			if strings.Contains(contentType, "text/html") {
+			if isHTMLLike(contentType) {
 				for _, h := range []string{
 					"Content-Security-Policy", "Content-Security-Policy-Report-Only",
 					"X-Content-Security-Policy", "X-WebKit-CSP",
 					"Cross-Origin-Opener-Policy", "Cross-Origin-Embedder-Policy",
 					"Cross-Origin-Resource-Policy", "X-Frame-Options",
+					"Strict-Transport-Security", "Alt-Svc",
 				} {
 					res.Header.Del(h)
 				}
 				bodyBytes = []byte(rewriteCaptchaHTML(string(bodyBytes), localOrigin, upstreamOrigin))
+			}
+
+			if decompressed {
 				res.Header.Del("Content-Encoding")
 			}
 
@@ -242,6 +250,11 @@ func rewriteProxyCookies(res *http.Response) {
 		}
 		res.Header.Add("Set-Cookie", cookie.String())
 	}
+}
+
+func isHTMLLike(contentType string) bool {
+	return strings.Contains(contentType, "text/html") ||
+		strings.Contains(contentType, "application/xhtml+xml")
 }
 
 func extractSuccessToken(body []byte) string {
