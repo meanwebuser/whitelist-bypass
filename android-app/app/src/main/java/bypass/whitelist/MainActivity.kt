@@ -1,6 +1,9 @@
 package bypass.whitelist
 
 import android.animation.ArgbEvaluator
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
@@ -8,16 +11,19 @@ import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import bypass.whitelist.tunnel.CallConfig
@@ -75,7 +81,7 @@ class MainActivity :
     private lateinit var joinOverlayContainer: View
     private lateinit var overlayLogs: View
     private lateinit var overlayLogsText: TextView
-    private lateinit var overlayLogsScroll: android.widget.ScrollView
+    private lateinit var overlayLogsScroll: ScrollView
 
     private var currentTabId: Int = 0
     private var lastStatus: VpnStatus? = null
@@ -123,8 +129,8 @@ class MainActivity :
             override fun getItemCount(): Int = 3
             override fun createFragment(position: Int): Fragment {
                 return when (position) {
-                    0 -> MainFragment()
-                    1 -> SettingsScreenFragment()
+                    TAB_MAIN -> MainFragment()
+                    TAB_SETTINGS -> SettingsScreenFragment()
                     else -> LogsFragment()
                 }
             }
@@ -139,14 +145,15 @@ class MainActivity :
 
             override fun onPageSelected(position: Int) {
                 currentTabId = when (position) {
-                    0 -> R.id.navMain
-                    1 -> R.id.navSettings
-                    else -> R.id.navLogs
+                    TAB_MAIN -> R.id.navMain
+                    TAB_SETTINGS -> R.id.navSettings
+                    TAB_LOGS -> R.id.navLogs
+                    else -> return
                 }
                 if (navScrollState == ViewPager2.SCROLL_STATE_IDLE) {
                     updateNavSelection(currentTabId)
                 }
-                (supportFragmentManager.findFragmentByTag("f1") as? SettingsScreenFragment)?.refresh()
+                settingsFragment()?.refresh()
             }
 
             override fun onPageScrollStateChanged(state: Int) {
@@ -210,7 +217,7 @@ class MainActivity :
         super.onResume()
         TunnelVpnService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
         ProxyService.onDisconnect = { runOnUiThread { onDisconnectFromService() } }
-        
+
         TunnelServiceState.vpnStatusCallback = { status ->
             runOnUiThread {
                 if (resetInProgress) {
@@ -266,6 +273,21 @@ class MainActivity :
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        TunnelServiceState.vpnStatusCallback = null
+        TunnelServiceState.logCallback = null
+    }
+
+    override fun onDestroy() {
+        navPageChangeCallback?.let(tabContainer::unregisterOnPageChangeCallback)
+        navPageChangeCallback = null
+        TunnelVpnService.onDisconnect = null
+        ProxyService.onDisconnect = null
+        logWriter.close()
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
@@ -276,13 +298,179 @@ class MainActivity :
         outState.putInt(STATE_CURRENT_TAB_ID, currentTabId)
     }
 
-    override fun onDestroy() {
-        navPageChangeCallback?.let(tabContainer::unregisterOnPageChangeCallback)
-        navPageChangeCallback = null
-        TunnelVpnService.onDisconnect = null
-        ProxyService.onDisconnect = null
-        logWriter.close()
-        super.onDestroy()
+    override fun onConnectPressed(config: CallConfig) {
+        if (resetInProgress) {
+            pendingConnectConfig = config
+            appendLog("Queued connect after previous session stops")
+            mainFragment()?.onStatusTextChanged("Stopping previous session...")
+            return
+        }
+        if (TunnelServiceState.isAnyTunnelComponentRunning(this) || !PortGuard.isPortAvailable(Prefs.socksPort)) {
+            pendingConnectConfig = config
+            appendLog("Waiting for previous local tunnel to stop")
+            fullReset()
+            return
+        }
+        startJoinFor(config)
+    }
+
+    override fun onDisconnectPressed() {
+        pendingConnectConfig = null
+        if (resetInProgress) {
+            forceUnlockReset("Stopped waiting for previous session")
+            return
+        }
+        fullReset()
+    }
+
+    override fun onPingPressed(callback: (Boolean, Int) -> Unit) {
+        thread {
+            val started = System.nanoTime()
+            val ok = try {
+                probeViaSocks5(host = "ya.ru", port = 443)
+            } catch (_: Exception) {
+                false
+            }
+            val rtt = ((System.nanoTime() - started) / 1_000_000).toInt()
+            runOnUiThread { callback(ok, rtt) }
+        }
+    }
+
+    override fun isTunnelActive(): Boolean = connected
+
+    override fun currentStatus(): VpnStatus? = lastStatus
+
+    override fun onDestinationSelected(config: CallConfig) {
+        Prefs.activeDestinationId = config.id
+        mainFragment()?.onDestinationsChanged()
+    }
+
+    override fun onDestinationsChanged() {
+        mainFragment()?.onDestinationsChanged()
+    }
+
+    override fun onTunnelModeChanged(mode: TunnelMode) {
+        fullReset()
+    }
+
+    override fun onForgetAllDestinations() {
+        Prefs.savedDestinations = emptyList()
+        Prefs.activeDestinationId = ""
+        mainFragment()?.onDestinationsChanged()
+        Toast.makeText(this, R.string.settings_toast_destinations_cleared, Toast.LENGTH_SHORT)
+            .show()
+    }
+
+    override fun onResetAllSettings() {
+        Prefs.resetAllSettings()
+        App.applyTheme(Prefs.themeMode)
+        settingsFragment()?.refresh()
+        Toast.makeText(this, R.string.settings_toast_reset_done, Toast.LENGTH_SHORT).show()
+    }
+
+    override fun activityLogLines(): List<String> {
+        val text = logWriter.displayText()
+        if (text.isEmpty()) return emptyList()
+        return text.split('\n').filter { it.isNotBlank() }
+    }
+
+    override fun copyLogs() {
+        val contents =
+            if (logWriter.file.exists()) logWriter.file.readText() else logWriter.displayText()
+        val clipboard =
+            getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("relay.log", contents))
+        Toast.makeText(this, R.string.copy_logs_toast, Toast.LENGTH_SHORT).show()
+    }
+
+    override fun shareLogs() {
+        val uri = FileProvider.getUriForFile(
+            this,
+            "${packageName}.fileprovider",
+            logWriter.file
+        )
+        val share = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(share, getString(R.string.share_logs)))
+    }
+
+    override fun appendLog(message: String) {
+        val (line, _) = logWriter.append(message)
+        runOnUiThread {
+            logsFragment()?.onLineAppended(line)
+            if (overlayLogs.isVisible) {
+                overlayLogsText.append("$line\n")
+                overlayLogsScroll.post { overlayLogsScroll.fullScroll(View.FOCUS_DOWN) }
+            }
+        }
+    }
+
+    override fun onJoinStatusText(text: String) {
+        if (resetInProgress) return
+        runOnUiThread { mainFragment()?.onStatusTextChanged(text) }
+    }
+
+    override fun onJoinStatus(status: VpnStatus) {
+        if (resetInProgress && status != VpnStatus.CALL_FAILED) return
+        TunnelVpnService.instance?.updateStatus(status)
+        ProxyService.instance?.updateStatus(status)
+        lastStatus = status
+        runOnUiThread {
+            if (status == VpnStatus.CALL_FAILED) {
+                fullReset()
+                lastStatus = VpnStatus.CALL_FAILED
+                mainFragment()?.onStatusChanged(VpnStatus.CALL_FAILED)
+                return@runOnUiThread
+            }
+            mainFragment()?.onStatusChanged(status)
+            if (status == VpnStatus.TUNNEL_ACTIVE) {
+                connected = true
+                mainFragment()?.onConnectedChanged(true)
+            }
+        }
+    }
+
+    override fun pushSubPage(fragment: Fragment) {
+        subPageContainer.visibility = View.VISIBLE
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.subPageContainer, fragment, SUB_PAGE_TAG)
+            .addToBackStack(SUB_PAGE_TAG)
+            .commit()
+    }
+
+    override fun popSubPage() {
+        supportFragmentManager.popBackStackImmediate(
+            SUB_PAGE_TAG,
+            FragmentManager.POP_BACK_STACK_INCLUSIVE
+        )
+        subPageContainer.visibility = View.GONE
+    }
+
+    override fun onJoinCancel() {
+        pendingConnectConfig = null
+        runOnUiThread { fullReset() }
+    }
+
+    override fun setJoinUiVisible(visible: Boolean) {
+        runOnUiThread { setJoinOverlayVisible(visible) }
+    }
+
+    override fun requestVpn() {
+        if (Prefs.proxyOnly) {
+            appendLog("Proxy only mode, skipping VPN")
+            startService(Intent(this, ProxyService::class.java))
+            onJoinStatus(VpnStatus.TUNNEL_ACTIVE)
+            return
+        }
+        if (TunnelServiceState.hasForeignVpn(this)) {
+            appendLog("Another VPN is active, requesting system VPN switch")
+            mainFragment()?.onStatusTextChanged("Requesting VPN replacement...")
+        }
+        val intent = VpnService.prepare(this)
+        if (intent != null) vpnLauncher.launch(intent) else startVpnService()
     }
 
     private fun handleIntent(intent: Intent?) {
@@ -303,10 +491,10 @@ class MainActivity :
         currentTabId = itemId
         dismissSubPage()
         val index = when (itemId) {
-            R.id.navMain -> 0
-            R.id.navSettings -> 1
-            R.id.navLogs -> 2
-            else -> 0
+            R.id.navMain -> TAB_MAIN
+            R.id.navSettings -> TAB_SETTINGS
+            R.id.navLogs -> TAB_LOGS
+            else -> TAB_MAIN
         }
         updateNavSelection(itemId)
         val animateIndicator = tabContainer.currentItem != index
@@ -318,10 +506,10 @@ class MainActivity :
 
     private fun updateNavSelection(itemId: Int) {
         applyNavSelectionState(0f, when (itemId) {
-            R.id.navMain -> 0
-            R.id.navSettings -> 1
-            R.id.navLogs -> 2
-            else -> 0
+            R.id.navMain -> TAB_MAIN
+            R.id.navSettings -> TAB_SETTINGS
+            R.id.navLogs -> TAB_LOGS
+            else -> TAB_MAIN
         })
     }
 
@@ -405,55 +593,14 @@ class MainActivity :
         label.paint.isFakeBoldText = emphasis > 0.92f
     }
 
-    override fun onPause() {
-        super.onPause()
-        TunnelServiceState.vpnStatusCallback = null
-        TunnelServiceState.logCallback = null
-    }
-
     private fun mainFragment(): MainFragment? =
         supportFragmentManager.fragments.firstOrNull { it is MainFragment } as? MainFragment
 
+    private fun settingsFragment(): SettingsScreenFragment? =
+        supportFragmentManager.fragments.firstOrNull { it is SettingsScreenFragment } as? SettingsScreenFragment
+
     private fun logsFragment(): LogsFragment? =
         supportFragmentManager.fragments.firstOrNull { it is LogsFragment } as? LogsFragment
-
-    override fun onConnectPressed(config: CallConfig) {
-        if (resetInProgress) {
-            pendingConnectConfig = config
-            appendLog("Queued connect after previous session stops")
-            mainFragment()?.onStatusTextChanged("Stopping previous session...")
-            return
-        }
-        if (TunnelServiceState.isAnyTunnelComponentRunning(this) || !PortGuard.isPortAvailable(Prefs.socksPort)) {
-            pendingConnectConfig = config
-            appendLog("Waiting for previous local tunnel to stop")
-            fullReset()
-            return
-        }
-        startJoinFor(config)
-    }
-
-    override fun onDisconnectPressed() {
-        pendingConnectConfig = null
-        if (resetInProgress) {
-            forceUnlockReset("Stopped waiting for previous session")
-            return
-        }
-        fullReset()
-    }
-
-    override fun onPingPressed(callback: (Boolean, Int) -> Unit) {
-        thread {
-            val started = System.nanoTime()
-            val ok = try {
-                probeViaSocks5(host = "ya.ru", port = 443)
-            } catch (_: Exception) {
-                false
-            }
-            val rtt = ((System.nanoTime() - started) / 1_000_000).toInt()
-            runOnUiThread { callback(ok, rtt) }
-        }
-    }
 
     private fun probeViaSocks5(host: String, port: Int): Boolean {
         Socket().use { socket ->
@@ -495,138 +642,14 @@ class MainActivity :
         }
     }
 
-    override fun isTunnelActive(): Boolean = connected
-
-    override fun currentStatus(): VpnStatus? = lastStatus
-
-    override fun onDestinationSelected(config: CallConfig) {
-        Prefs.activeDestinationId = config.id
-        mainFragment()?.onDestinationsChanged()
-    }
-
-    override fun onDestinationsChanged() {
-        mainFragment()?.onDestinationsChanged()
-    }
-
-    override fun onTunnelModeChanged(mode: TunnelMode) {
-        fullReset()
-    }
-
-    override fun onForgetAllDestinations() {
-        Prefs.savedDestinations = emptyList()
-        Prefs.activeDestinationId = ""
-        mainFragment()?.onDestinationsChanged()
-        Toast.makeText(this, R.string.settings_toast_destinations_cleared, Toast.LENGTH_SHORT)
-            .show()
-    }
-
-    override fun onResetAllSettings() {
-        Prefs.resetAllSettings()
-        App.applyTheme(Prefs.themeMode)
-        (supportFragmentManager.fragments.firstOrNull { it is SettingsScreenFragment } as? SettingsScreenFragment)?.refresh()
-        Toast.makeText(this, R.string.settings_toast_reset_done, Toast.LENGTH_SHORT).show()
-    }
-
-    override fun activityLogLines(): List<String> {
-        val text = logWriter.displayText()
-        if (text.isEmpty()) return emptyList()
-        return text.split('\n').filter { it.isNotBlank() }
-    }
-
-    override fun copyLogs() {
-        val contents =
-            if (logWriter.file.exists()) logWriter.file.readText() else logWriter.displayText()
-        val clipboard =
-            getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("relay.log", contents))
-        Toast.makeText(this, R.string.copy_logs_toast, Toast.LENGTH_SHORT).show()
-    }
-
-    override fun shareLogs() {
-        val uri = androidx.core.content.FileProvider.getUriForFile(
-            this,
-            "${packageName}.fileprovider",
-            logWriter.file
-        )
-        val share = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        startActivity(Intent.createChooser(share, getString(R.string.share_logs)))
-    }
-
-    override fun appendLog(message: String) {
-        val (line, _) = logWriter.append(message)
-        runOnUiThread {
-            logsFragment()?.onLineAppended(line)
-            if (overlayLogs.isVisible) {
-                overlayLogsText.append("$line\n")
-                overlayLogsScroll.post { overlayLogsScroll.fullScroll(View.FOCUS_DOWN) }
-            }
-        }
-    }
-
-    override fun onJoinStatusText(text: String) {
-        if (resetInProgress) return
-        runOnUiThread { mainFragment()?.onStatusTextChanged(text) }
-    }
-
-    override fun onJoinStatus(status: VpnStatus) {
-        if (resetInProgress && status != VpnStatus.CALL_FAILED) return
-        TunnelVpnService.instance?.updateStatus(status)
-        ProxyService.instance?.updateStatus(status)
-        lastStatus = status
-        runOnUiThread {
-            if (status == VpnStatus.CALL_FAILED) {
-                fullReset()
-                lastStatus = VpnStatus.CALL_FAILED
-                mainFragment()?.onStatusChanged(VpnStatus.CALL_FAILED)
-                return@runOnUiThread
-            }
-            mainFragment()?.onStatusChanged(status)
-            if (status == VpnStatus.TUNNEL_ACTIVE) {
-                connected = true
-                mainFragment()?.onConnectedChanged(true)
-            }
-        }
-    }
-
-    override fun pushSubPage(fragment: Fragment) {
-        subPageContainer.visibility = View.VISIBLE
-        supportFragmentManager.beginTransaction()
-            .replace(R.id.subPageContainer, fragment, SUB_PAGE_TAG)
-            .addToBackStack(SUB_PAGE_TAG)
-            .commit()
-    }
-
-    override fun popSubPage() {
-        if (supportFragmentManager.popBackStackImmediate(
-                SUB_PAGE_TAG,
-                androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE
-            )
-        ) {
-        }
-        subPageContainer.visibility = View.GONE
-    }
-
     private fun dismissSubPage() {
         if (supportFragmentManager.backStackEntryCount > 0) {
             supportFragmentManager.popBackStack(
                 SUB_PAGE_TAG,
-                androidx.fragment.app.FragmentManager.POP_BACK_STACK_INCLUSIVE
+                FragmentManager.POP_BACK_STACK_INCLUSIVE
             )
         }
         subPageContainer.visibility = View.GONE
-    }
-
-    override fun onJoinCancel() {
-        pendingConnectConfig = null
-        runOnUiThread { fullReset() }
-    }
-
-    override fun setJoinUiVisible(visible: Boolean) {
-        runOnUiThread { setJoinOverlayVisible(visible) }
     }
 
     private fun setJoinOverlayVisible(visible: Boolean) {
@@ -637,21 +660,6 @@ class MainActivity :
             overlayLogsText.text = logWriter.displayText()
             overlayLogsScroll.post { overlayLogsScroll.fullScroll(View.FOCUS_DOWN) }
         }
-    }
-
-    override fun requestVpn() {
-        if (Prefs.proxyOnly) {
-            appendLog("Proxy only mode, skipping VPN")
-            startService(Intent(this, ProxyService::class.java))
-            onJoinStatus(VpnStatus.TUNNEL_ACTIVE)
-            return
-        }
-        if (TunnelServiceState.hasForeignVpn(this)) {
-            appendLog("Another VPN is active, requesting system VPN switch")
-            mainFragment()?.onStatusTextChanged("Requesting VPN replacement...")
-        }
-        val intent = VpnService.prepare(this)
-        if (intent != null) vpnLauncher.launch(intent) else startVpnService()
     }
 
     private fun startJoinFor(config: CallConfig) {
@@ -862,5 +870,8 @@ class MainActivity :
         private const val SUB_PAGE_TAG = "sub_page"
         private const val STATE_CURRENT_TAB_ID = "current_tab_id"
         private const val CALL_LINK = ""
+        private const val TAB_MAIN = 0
+        private const val TAB_SETTINGS = 1
+        private const val TAB_LOGS = 2
     }
 }

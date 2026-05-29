@@ -1,5 +1,6 @@
 package bypass.whitelist.ui
 
+import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -43,7 +44,7 @@ class HeadlessVkFragment : Fragment(), JoinSessionShutdown {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.webViewClient = WebViewClient()
-        webView.setBackgroundColor(android.graphics.Color.WHITE)
+        webView.setBackgroundColor(Color.WHITE)
         webView.isVisible = false
 
         relay = HeadlessRelayController(

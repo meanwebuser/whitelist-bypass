@@ -15,6 +15,7 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.fragment.app.Fragment
 import bypass.whitelist.R
@@ -91,7 +92,7 @@ class SplitTunnelingScreenFragment : Fragment() {
         Prefs.splitTunnelingMode = mode
         Prefs.splitTunnelingPackages = packages
         if (TunnelVpnService.instance?.isRunning == true) {
-            android.widget.Toast.makeText(requireContext(), R.string.split_tunneling_mode_changed, android.widget.Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), R.string.split_tunneling_mode_changed, Toast.LENGTH_SHORT).show()
         }
         (activity as? MainActivityHost)?.popSubPage()
     }

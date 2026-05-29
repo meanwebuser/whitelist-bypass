@@ -29,12 +29,6 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         fun onResetAllSettings()
     }
 
-    
-    override fun onResume() {
-        super.onResume()
-        rebuild()
-    }
-
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         val root = view.findViewById<LinearLayout>(R.id.settingsContent)
         root.removeAllViews()
@@ -43,6 +37,11 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         root.addView(buildNetworkSection())
         root.addView(buildBehaviorSection())
         root.addView(buildDangerSection())
+    }
+
+    override fun onResume() {
+        super.onResume()
+        rebuild()
     }
 
     fun refresh() {

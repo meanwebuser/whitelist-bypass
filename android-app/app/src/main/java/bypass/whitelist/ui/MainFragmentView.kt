@@ -96,69 +96,6 @@ class MainFragmentView(private val root: View) {
         updateHeaderSubForList(calls.size)
     }
 
-    private fun renderCalls() {
-        callsList.removeAllViews()
-        val inflater = LayoutInflater.from(root.context)
-        val visibleCalls = if (collapsedToActive) {
-            currentCalls.filter { it.id == activeCallId }
-        } else {
-            currentCalls
-        }
-        if (currentCalls.isEmpty()) {
-            emptyCta.visibility = View.VISIBLE
-            callsList.visibility = View.GONE
-            return
-        }
-        emptyCta.visibility = View.GONE
-        callsList.visibility = View.VISIBLE
-        visibleCalls.forEach { config ->
-            val row = inflater.inflate(R.layout.item_call_row, callsList, false)
-            row.clipToOutline = true
-            bindRow(row, config, isActive = config.id == activeCallId)
-            row.setOnClickListener { onCallSelected?.invoke(config) }
-            row.setOnLongClickListener {
-                onCallLongPressed?.invoke(config, row)
-                true
-            }
-            callsList.addView(row)
-        }
-    }
-
-    private fun bindRow(row: View, config: CallConfig, isActive: Boolean) {
-        val context = row.context
-        val nameView = row.findViewById<TextView>(R.id.rowName)
-        val linkView = row.findViewById<TextView>(R.id.rowLink)
-        val glyphView = row.findViewById<TextView>(R.id.rowGlyph)
-        val glyphBox = row.findViewById<View>(R.id.rowGlyphBox)
-        val statusDot = row.findViewById<View>(R.id.rowStatusDot)
-
-        nameView.text = config.name
-        linkView.text = config.url
-        glyphView.text = config.platformGlyph
-
-        if (isActive) {
-            row.setBackgroundResource(R.drawable.bg_destination_card_active)
-            statusDot.setBackgroundResource(R.drawable.bg_status_dot_active)
-            glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip_active)
-            glyphView.setTextColor(context.getColor(R.color.panel_bg))
-        } else {
-            row.setBackgroundResource(R.drawable.bg_destination_card)
-            statusDot.setBackgroundResource(R.drawable.bg_status_dot_idle)
-            glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip)
-            nameView.setTextColor(context.getColor(R.color.ink))
-            linkView.setTextColor(context.getColor(R.color.ink_3))
-            glyphView.setTextColor(context.getColor(R.color.ink))
-        }
-    }
-
-    private fun updateHeaderSubForList(count: Int) {
-        if (collapsedToActive) return
-        headerSub.text = when (count) {
-            0 -> root.context.getString(R.string.main_sub_no_configs)
-            else -> root.context.resources.getQuantityString(R.plurals.main_sub_count, count, count)
-        }
-    }
-
     fun bindHero(connected: Boolean, status: VpnStatus?) {
         val context = root.context
         if (connected) {
@@ -266,6 +203,69 @@ class MainFragmentView(private val root: View) {
         heroRingOuter.release()
         stopPulse()
         pingButton.clearAnimation()
+    }
+
+    private fun renderCalls() {
+        callsList.removeAllViews()
+        val inflater = LayoutInflater.from(root.context)
+        val visibleCalls = if (collapsedToActive) {
+            currentCalls.filter { it.id == activeCallId }
+        } else {
+            currentCalls
+        }
+        if (currentCalls.isEmpty()) {
+            emptyCta.visibility = View.VISIBLE
+            callsList.visibility = View.GONE
+            return
+        }
+        emptyCta.visibility = View.GONE
+        callsList.visibility = View.VISIBLE
+        visibleCalls.forEach { config ->
+            val row = inflater.inflate(R.layout.item_call_row, callsList, false)
+            row.clipToOutline = true
+            bindRow(row, config, isActive = config.id == activeCallId)
+            row.setOnClickListener { onCallSelected?.invoke(config) }
+            row.setOnLongClickListener {
+                onCallLongPressed?.invoke(config, row)
+                true
+            }
+            callsList.addView(row)
+        }
+    }
+
+    private fun bindRow(row: View, config: CallConfig, isActive: Boolean) {
+        val context = row.context
+        val nameView = row.findViewById<TextView>(R.id.rowName)
+        val linkView = row.findViewById<TextView>(R.id.rowLink)
+        val glyphView = row.findViewById<TextView>(R.id.rowGlyph)
+        val glyphBox = row.findViewById<View>(R.id.rowGlyphBox)
+        val statusDot = row.findViewById<View>(R.id.rowStatusDot)
+
+        nameView.text = config.name
+        linkView.text = config.url
+        glyphView.text = config.platformGlyph
+
+        if (isActive) {
+            row.setBackgroundResource(R.drawable.bg_destination_card_active)
+            statusDot.setBackgroundResource(R.drawable.bg_status_dot_active)
+            glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip_active)
+            glyphView.setTextColor(context.getColor(R.color.panel_bg))
+        } else {
+            row.setBackgroundResource(R.drawable.bg_destination_card)
+            statusDot.setBackgroundResource(R.drawable.bg_status_dot_idle)
+            glyphBox.setBackgroundResource(R.drawable.bg_glyph_chip)
+            nameView.setTextColor(context.getColor(R.color.ink))
+            linkView.setTextColor(context.getColor(R.color.ink_3))
+            glyphView.setTextColor(context.getColor(R.color.ink))
+        }
+    }
+
+    private fun updateHeaderSubForList(count: Int) {
+        if (collapsedToActive) return
+        headerSub.text = when (count) {
+            0 -> root.context.getString(R.string.main_sub_no_configs)
+            else -> root.context.resources.getQuantityString(R.plurals.main_sub_count, count, count)
+        }
     }
 
     private fun startPulse() {
