@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import bypass.whitelist.MainActivity
 import bypass.whitelist.util.Callback
 import bypass.whitelist.R
@@ -97,7 +98,7 @@ class ProxyService : Service() {
             disconnectCallback?.invoke()
             TunnelServiceState.requestTileRefresh(this)
         } catch (t: Throwable) {
-            android.util.Log.e("ProxyService", "Crash during Proxy stop: ${t.message}", t)
+            Log.e("ProxyService", "Crash during Proxy stop: ${t.message}", t)
         } finally {
             stopSelf()
         }

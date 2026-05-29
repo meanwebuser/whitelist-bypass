@@ -9,14 +9,18 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import android.widget.Toast
 import bypass.whitelist.MainActivity
 import bypass.whitelist.R
 import bypass.whitelist.ui.JoinFragmentHost
 import bypass.whitelist.util.LogWriter
 import bypass.whitelist.util.Prefs
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 class HeadlessSessionService : Service() {
@@ -93,7 +97,7 @@ class HeadlessSessionService : Service() {
             object : JoinFragmentHost {
                 override fun appendLog(message: String) {
                     logWriter.append(message)
-                    android.util.Log.d(TAG, message)
+                    Log.d(TAG, message)
                     TunnelServiceState.logCallback?.invoke(message)
                 }
 
@@ -224,7 +228,7 @@ class HeadlessSessionService : Service() {
             ProxyService.requestStop(this)
         }
         thread(name = "headless-session-shutdown") {
-            val closeDone = java.util.concurrent.CountDownLatch(1)
+            val closeDone = CountDownLatch(1)
             thread(name = "headless-controller-close") {
                 try {
                     activeController?.close()
@@ -232,8 +236,8 @@ class HeadlessSessionService : Service() {
                     closeDone.countDown()
                 }
             }
-            closeDone.await(2200, java.util.concurrent.TimeUnit.MILLISECONDS)
-            android.os.Handler(Looper.getMainLooper()).post {
+            closeDone.await(2200, TimeUnit.MILLISECONDS)
+            Handler(Looper.getMainLooper()).post {
                 try {
                     TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.CALL_DISCONNECTED)
                     @Suppress("DEPRECATION")
@@ -242,7 +246,7 @@ class HeadlessSessionService : Service() {
                     stopSelf()
                 } catch (t: Throwable) {
                     stopInProgress = false
-                    android.util.Log.e(TAG, "Crash during HeadlessSession stop: ${t.message}", t)
+                    Log.e(TAG, "Crash during HeadlessSession stop: ${t.message}", t)
                     safeStopSelf()
                 }
             }
@@ -264,7 +268,7 @@ class HeadlessSessionService : Service() {
     }
 
     private fun showToast(messageRes: Int) {
-        android.os.Handler(Looper.getMainLooper()).post {
+        Handler(Looper.getMainLooper()).post {
             Toast.makeText(applicationContext, messageRes, Toast.LENGTH_SHORT).show()
         }
     }

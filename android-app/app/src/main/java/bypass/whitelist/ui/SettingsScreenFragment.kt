@@ -16,6 +16,8 @@ import bypass.whitelist.R
 import bypass.whitelist.tunnel.SplitTunnelingMode
 import bypass.whitelist.tunnel.TunnelMode
 import bypass.whitelist.tunnel.TunnelVpnService
+import bypass.whitelist.util.Callback
+import bypass.whitelist.util.ParamCallback
 import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.ThemeMode
 
@@ -186,7 +188,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         sub: String?,
         trail: String?,
         danger: Boolean = false,
-        onClick: () -> Unit,
+        onClick: Callback,
     ) {
         val row = layoutInflater.inflate(R.layout.item_settings_row, card, false)
         row.findViewById<ImageView>(R.id.rowIcon).setImageResource(iconRes)
@@ -214,7 +216,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         title: String,
         sub: String?,
         initial: Boolean,
-        onToggled: (Boolean) -> Unit,
+        onToggled: ParamCallback<Boolean>,
     ) {
         val row = layoutInflater.inflate(R.layout.item_settings_row, card, false)
         row.findViewById<ImageView>(R.id.rowIcon).setImageResource(iconRes)
