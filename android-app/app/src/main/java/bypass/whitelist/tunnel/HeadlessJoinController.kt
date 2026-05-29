@@ -50,14 +50,14 @@ class HeadlessJoinController(
 
     private fun buildJoinParams(): JSONObject = JSONObject().apply {
         put("displayName", Prefs.autofillName)
-        put("vp8Fps", Prefs.vp8Fps)
-        put("vp8Batch", Prefs.vp8Batch)
-        put("dualTrack", Prefs.dualTrack)
+        put("vp8Fps", Prefs.activeVp8Fps)
+        put("vp8Batch", Prefs.activeVp8Batch)
+        put("dualTrack", Prefs.activeDualTrack)
         when (platform) {
             CallPlatform.TELEMOST -> put("joinLink", url)
             CallPlatform.WBSTREAM -> {
                 put("roomId", CallPlatform.extractRoomId(url))
-                put("tunnelMode", Prefs.tunnelMode.relayArg)
+                put("tunnelMode", Prefs.activeTunnelMode.relayArg)
             }
             CallPlatform.DION -> put("roomId", CallPlatform.extractRoomId(url))
             CallPlatform.VK -> error("VK headless flow uses HeadlessVkFragment for captcha UI")

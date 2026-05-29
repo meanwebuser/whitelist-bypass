@@ -3,7 +3,6 @@ package bypass.whitelist
 import android.animation.ArgbEvaluator
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
@@ -28,12 +27,12 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import bypass.whitelist.tunnel.CallConfig
 import bypass.whitelist.tunnel.CallPlatform
-import bypass.whitelist.tunnel.HeadlessSessionService
 import bypass.whitelist.tunnel.HeadlessJoinController
+import bypass.whitelist.tunnel.HeadlessSessionService
 import bypass.whitelist.tunnel.PortGuard
 import bypass.whitelist.tunnel.ProxyService
-import bypass.whitelist.tunnel.TunnelServiceState
 import bypass.whitelist.tunnel.TunnelMode
+import bypass.whitelist.tunnel.TunnelServiceState
 import bypass.whitelist.tunnel.TunnelVpnService
 import bypass.whitelist.tunnel.VpnStatus
 import bypass.whitelist.ui.CallsListener
@@ -378,7 +377,7 @@ class MainActivity :
         val contents =
             if (logWriter.file.exists()) logWriter.file.readText() else logWriter.displayText()
         val clipboard =
-            getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("relay.log", contents))
         Toast.makeText(this, R.string.copy_logs_toast, Toast.LENGTH_SHORT).show()
     }
@@ -679,7 +678,7 @@ class MainActivity :
         if (url.isEmpty()) return
 
         val platform = config.platform
-        if (Prefs.tunnelMode == TunnelMode.DC &&
+        if (Prefs.activeTunnelMode == TunnelMode.DC &&
             (platform == CallPlatform.TELEMOST || platform == CallPlatform.DION)
         ) {
             Toast.makeText(this, R.string.dc_mode_not_supported, Toast.LENGTH_SHORT).show()

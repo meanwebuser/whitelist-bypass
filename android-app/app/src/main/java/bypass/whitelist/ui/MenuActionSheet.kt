@@ -18,6 +18,7 @@ class MenuActionSheet : BottomSheetDialogFragment() {
         val id: String,
         val title: String,
         val iconRes: Int,
+        val value: String? = null,
         val danger: Boolean = false,
     )
 
@@ -50,10 +51,17 @@ class MenuActionSheet : BottomSheetDialogFragment() {
             val row = inflater.inflate(R.layout.item_action_menu_row, menuContainer, false)
             row.clipToOutline = true
             val label = row.findViewById<TextView>(R.id.menuLabel)
+            val valueView = row.findViewById<TextView>(R.id.menuValue)
             val icon = row.findViewById<ImageView>(R.id.menuIcon)
             val iconBox = row.findViewById<View>(R.id.menuIconBox)
 
             label.text = item.title
+            if (item.value.isNullOrBlank()) {
+                valueView.visibility = View.GONE
+            } else {
+                valueView.text = item.value
+                valueView.visibility = View.VISIBLE
+            }
             icon.setImageResource(item.iconRes)
             if (item.danger) {
                 label.setTextColor(requireContext().getColor(R.color.accent_emerald))
