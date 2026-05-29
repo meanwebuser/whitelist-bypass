@@ -111,14 +111,14 @@ class HeadlessRelayController(
                     }
                 }
                 proc.waitFor()
-                android.util.Log.d("RELAY", "Headless relay exited: ${proc.exitValue()}")
+                Log.d("RELAY", "Headless relay exited: ${proc.exitValue()}")
                 if (isRunning) {
                     onStatus?.invoke(VpnStatus.CALL_FAILED)
                     isRunning = false
                 }
             } catch (e: Exception) {
                 if (isRunning) {
-                    android.util.Log.e("RELAY", "Headless relay error", e)
+                    Log.e("RELAY", "Headless relay error", e)
                     onLog?.invoke("Relay error: ${e.message}")
                     onStatus?.invoke(VpnStatus.CALL_FAILED)
                     isRunning = false

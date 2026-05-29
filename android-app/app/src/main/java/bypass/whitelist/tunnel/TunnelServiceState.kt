@@ -7,14 +7,15 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.service.quicksettings.TileService
+import bypass.whitelist.util.ParamCallback
 
 object TunnelServiceState {
 
     @Volatile
-    var vpnStatusCallback: ((VpnStatus) -> Unit)? = null
+    var vpnStatusCallback: ParamCallback<VpnStatus>? = null
 
     @Volatile
-    var logCallback: ((String) -> Unit)? = null
+    var logCallback: ParamCallback<String>? = null
 
     fun isTunnelActive(context: Context): Boolean {
         val vpnActive = TunnelVpnService.instance?.let { it.isRunning || it.startInProgress || it.stopInProgress } == true
