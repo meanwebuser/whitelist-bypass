@@ -11,7 +11,7 @@
     <string name="expand_webview">Expand WebView</string>
     <string name="collapse_webview">Collapse WebView</string>
     <string name="vpn_starting">Starting…</string>
-    <string name="vpn_stopping">Stopping...</string>
+    <string name="vpn_stopping">Stopping…</string>
     <string name="vpn_connecting">Connecting…</string>
     <string name="vpn_call_connected">Call connected</string>
     <string name="vpn_datachannel_open">DataChannel open</string>
@@ -172,6 +172,4 @@
     <string name="activity_empty">No events yet</string>
     <string name="activity_copy">Copy raw</string>
     <string name="activity_share">Share file</string>
-    <string name="settings_row_bind_profiles">Bind settings to profiles</string>
-    <string name="settings_row_bind_profiles_sub">Save connection settings for each profile separately</string>
 </resources>

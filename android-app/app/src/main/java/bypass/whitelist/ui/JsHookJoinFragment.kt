@@ -55,7 +55,7 @@ class JsHookJoinFragment : Fragment(), JoinSessionShutdown {
         get() = activity as? JoinFragmentHost
 
     private val tunnelMode: TunnelMode
-        get() = Prefs.tunnelMode
+        get() = Prefs.activeTunnelMode
 
     private val hooks = mapOf(
         HookKey(false, CallPlatform.VK) to lazy { loadAsset("dc-joiner-vk.js") },

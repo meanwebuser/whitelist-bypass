@@ -6,20 +6,17 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isNotEmpty
 import androidx.fragment.app.Fragment
-import com.google.android.material.materialswitch.MaterialSwitch
 import bypass.whitelist.App
 import bypass.whitelist.R
 import bypass.whitelist.tunnel.SplitTunnelingMode
 import bypass.whitelist.tunnel.TunnelMode
-import bypass.whitelist.tunnel.TunnelVpnService
 import bypass.whitelist.util.Callback
 import bypass.whitelist.util.ParamCallback
 import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.ThemeMode
+import com.google.android.material.materialswitch.MaterialSwitch
 
 class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
 
@@ -80,7 +77,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
             ChoiceActionSheet.show(
                 manager = parentFragmentManager,
                 title = getString(R.string.settings_row_tunnel_mode),
-                options = TunnelMode.entries.filter { it == TunnelMode.VIDEO || (Prefs.activeDestination?.platform != bypass.whitelist.tunnel.CallPlatform.TELEMOST && Prefs.activeDestination?.platform != bypass.whitelist.tunnel.CallPlatform.DION) }.map { ChoiceActionSheet.Option(it.name, it.label) },
+                options = TunnelMode.entries.map { ChoiceActionSheet.Option(it.name, it.label) },
                 selectedId = Prefs.tunnelMode.name,
             ) { picked ->
                 val newMode = TunnelMode.valueOf(picked.id)
@@ -92,10 +89,13 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
             }
         }
 
-        if (Prefs.tunnelMode == TunnelMode.VIDEO) {
-            val vp8SubRes = if (Prefs.dualTrack) R.string.settings_row_vp8_sub_dual else R.string.settings_row_vp8_sub
-            addRow(card, R.drawable.ic_setting_vp8, getString(R.string.settings_row_vp8), getString(vp8SubRes, Prefs.vp8Fps, Prefs.vp8Batch), null) {
-                Vp8ActionSheet.show(parentFragmentManager) { rebuild() }
+        val vp8SubRes = if (Prefs.dualTrack) R.string.settings_row_vp8_sub_dual else R.string.settings_row_vp8_sub
+        addRow(card, R.drawable.ic_setting_vp8, getString(R.string.settings_row_vp8), getString(vp8SubRes, Prefs.vp8Fps, Prefs.vp8Batch), null) {
+            Vp8ActionSheet.show(parentFragmentManager, Prefs.vp8Fps, Prefs.vp8Batch, Prefs.dualTrack) { fps, batch, dual ->
+                Prefs.vp8Fps = fps
+                Prefs.vp8Batch = batch
+                Prefs.dualTrack = dual
+                rebuild()
             }
         }
 
@@ -134,9 +134,6 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         val section = newSection(R.string.settings_section_behavior)
         val card = section.findViewById<LinearLayout>(R.id.sectionCard)
 
-                addSwitchRow(card, R.drawable.ic_setting_reconnect, getString(R.string.settings_row_bind_profiles), getString(R.string.settings_row_bind_profiles_sub), Prefs.bindSettingsToProfiles) { checked ->
-            Prefs.bindSettingsToProfiles = checked
-        }
         addSwitchRow(card, R.drawable.ic_setting_headless, getString(R.string.settings_row_headless), getString(R.string.settings_row_headless_sub), Prefs.headless) { checked ->
             Prefs.headless = checked
         }
@@ -249,9 +246,5 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         if (!isAdded) return
         val rootView = view ?: return
         onViewCreated(rootView, null)
-    }
-
-    companion object {
-        const val TAG = "SettingsScreenFragment"
     }
 }

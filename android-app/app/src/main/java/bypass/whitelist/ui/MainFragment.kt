@@ -4,11 +4,11 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.widget.PopupMenu
-import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import bypass.whitelist.R
 import bypass.whitelist.tunnel.CallConfig
+import bypass.whitelist.tunnel.CallPlatform
+import bypass.whitelist.tunnel.TunnelMode
 import bypass.whitelist.tunnel.VpnStatus
 import bypass.whitelist.util.Prefs
 
@@ -61,21 +61,9 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         }
         container.onCallSelected = { config ->
             Prefs.activeDestinationId = config.id
-            if (Prefs.bindSettingsToProfiles) {
-                if (config.tunnelMode == null) {
-                    val updated = config.copy(tunnelMode = Prefs.tunnelMode, vp8Fps = Prefs.vp8Fps, vp8Batch = Prefs.vp8Batch)
-                    Prefs.updateDestination(updated)
-                } else {
-                    Prefs.tunnelMode = config.tunnelMode
-                    if (config.vp8Fps != null) Prefs.vp8Fps = config.vp8Fps
-                    if (config.vp8Batch != null) Prefs.vp8Batch = config.vp8Batch
-                }
-            }
             container.bindCalls(Prefs.savedDestinations, Prefs.activeDestinationId)
         }
-        container.onCallLongPressed = { config, anchor ->
-            showRowMenu(config, anchor)
-        }
+        container.onCallLongPressed = ::showRowMenu
 
         pendingStatus?.let { container.bindStatus(it) }
         pendingStatus = null
@@ -125,20 +113,57 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         content?.bindCalls(Prefs.savedDestinations, Prefs.activeDestinationId)
     }
 
-    private fun showRowMenu(config: CallConfig, anchor: View) {
+    private fun showRowMenu(config: CallConfig) {
+        val tunnelMode = (config.tunnelMode ?: Prefs.tunnelMode).forPlatform(config.platform)
+        val vp8Fps = config.vp8Fps ?: Prefs.vp8Fps
+        val vp8Batch = config.vp8Batch ?: Prefs.vp8Batch
+        val vp8SubRes = if (config.dualTrack ?: Prefs.dualTrack) R.string.settings_row_vp8_sub_dual else R.string.settings_row_vp8_sub
         MenuActionSheet.show(
             manager = parentFragmentManager,
             title = config.name,
             subtitle = config.url,
             items = listOf(
+                MenuActionSheet.MenuItem("tunnel", getString(R.string.settings_row_tunnel_mode), R.drawable.ic_setting_tunnel, value = tunnelMode.label),
+                MenuActionSheet.MenuItem("vp8", getString(R.string.settings_row_vp8), R.drawable.ic_setting_vp8, value = getString(vp8SubRes, vp8Fps, vp8Batch)),
                 MenuActionSheet.MenuItem("rename", getString(R.string.destination_menu_rename), R.drawable.ic_action_pencil),
                 MenuActionSheet.MenuItem("delete", getString(R.string.destination_menu_delete), R.drawable.ic_setting_trash, danger = true),
             ),
         ) { item ->
             when (item.id) {
+                "tunnel" -> editTunnelMode(config)
+                "vp8" -> editVp8(config)
                 "rename" -> promptRename(config)
                 "delete" -> confirmDelete(config)
             }
+        }
+    }
+
+    private fun editTunnelMode(config: CallConfig) {
+        val current = (config.tunnelMode ?: Prefs.tunnelMode).forPlatform(config.platform)
+        ChoiceActionSheet.show(
+            manager = parentFragmentManager,
+            title = getString(R.string.settings_row_tunnel_mode),
+            options = TunnelMode.entries.filter { it == TunnelMode.VIDEO || (config.platform != CallPlatform.TELEMOST && config.platform != CallPlatform.DION) }.map { ChoiceActionSheet.Option(it.name, it.label) },
+            selectedId = current.name,
+        ) { picked ->
+            val newMode = TunnelMode.valueOf(picked.id)
+            Prefs.updateDestination(config.copy(tunnelMode = newMode))
+            onDestinationsChanged()
+            if (Prefs.activeDestinationId == config.id) {
+                (activity as? SettingsScreenFragment.Host)?.onTunnelModeChanged(newMode)
+            }
+        }
+    }
+
+    private fun editVp8(config: CallConfig) {
+        Vp8ActionSheet.show(
+            parentFragmentManager,
+            config.vp8Fps ?: Prefs.vp8Fps,
+            config.vp8Batch ?: Prefs.vp8Batch,
+            config.dualTrack ?: Prefs.dualTrack,
+        ) { fps, batch, dual ->
+            Prefs.updateDestination(config.copy(vp8Fps = fps, vp8Batch = batch, dualTrack = dual))
+            onDestinationsChanged()
         }
     }
 
@@ -174,8 +199,8 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         val view = content ?: return
         val uptimeMs = if (connectedSinceMs > 0L) System.currentTimeMillis() - connectedSinceMs else 0L
         val active = Prefs.activeDestination
-        val effectiveMode = if (active != null) Prefs.tunnelMode.effectiveFor(active.platform) else Prefs.tunnelMode
-        view.setStats(uptimeText = formatUptime(uptimeMs), mode = effectiveMode.label)
+        val mode = if (active != null) Prefs.activeTunnelMode.forPlatform(active.platform) else Prefs.tunnelMode
+        view.setStats(uptimeText = formatUptime(uptimeMs), mode = mode.label)
     }
 
     private fun formatUptime(ms: Long): String {
@@ -201,9 +226,4 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
     }
 
     private fun hostStatus(): VpnStatus? = host()?.currentStatus()
-
-    companion object {
-        private const val MENU_RENAME = 1
-        private const val MENU_DELETE = 2
-    }
 }

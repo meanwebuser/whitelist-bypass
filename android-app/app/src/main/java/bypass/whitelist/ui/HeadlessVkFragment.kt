@@ -85,7 +85,7 @@ class HeadlessVkFragment : Fragment(), JoinSessionShutdown {
             },
         )
         relay.start()
-        relay.sendAuth(url, displayName, Prefs.tunnelMode.relayArg)
+        relay.sendAuth(url, displayName, Prefs.activeTunnelMode.relayArg)
     }
 
     override fun onDestroyView() {

@@ -15,10 +15,6 @@ object Prefs {
         prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
     }
 
-        var bindSettingsToProfiles: Boolean
-        get() = prefs.getBoolean(PrefsKeys.BIND_SETTINGS_TO_PROFILES, false)
-        set(value) = prefs.edit { putBoolean(PrefsKeys.BIND_SETTINGS_TO_PROFILES, value) }
-
     var connectOnStart: Boolean
         get() = prefs.getBoolean(PrefsKeys.CONNECT_ON_START, false)
         set(value) = prefs.edit { putBoolean(PrefsKeys.CONNECT_ON_START, value) }
@@ -32,15 +28,7 @@ object Prefs {
                 TunnelMode.VIDEO
             }
         }
-        set(value) {
-            prefs.edit { putString(PrefsKeys.TUNNEL_MODE, value.name) }
-            val active = activeDestination
-            if (active != null && bindSettingsToProfiles) updateDestination(active.copy(tunnelMode = value))
-        }
-
-    var showLogs: Boolean
-        get() = prefs.getBoolean(PrefsKeys.SHOW_LOGS, false)
-        set(value) = prefs.edit { putBoolean(PrefsKeys.SHOW_LOGS, value) }
+        set(value) = prefs.edit { putString(PrefsKeys.TUNNEL_MODE, value.name) }
 
     var splitTunnelingMode: SplitTunnelingMode
         get() {
@@ -121,27 +109,15 @@ object Prefs {
 
     var vp8Fps: Int
         get() = prefs.getInt(PrefsKeys.VP8_FPS, VP8Defaults.FPS)
-        set(value) {
-            prefs.edit { putInt(PrefsKeys.VP8_FPS, value) }
-            val active = activeDestination
-            if (active != null && bindSettingsToProfiles) updateDestination(active.copy(vp8Fps = value))
-        }
+        set(value) = prefs.edit { putInt(PrefsKeys.VP8_FPS, value) }
 
     var vp8Batch: Int
         get() = prefs.getInt(PrefsKeys.VP8_BATCH, VP8Defaults.BATCH)
-        set(value) {
-            prefs.edit { putInt(PrefsKeys.VP8_BATCH, value) }
-            val active = activeDestination
-            if (active != null && bindSettingsToProfiles) updateDestination(active.copy(vp8Batch = value))
-        }
+        set(value) = prefs.edit { putInt(PrefsKeys.VP8_BATCH, value) }
 
     var dualTrack: Boolean
         get() = prefs.getBoolean(PrefsKeys.DUAL_TRACK, false)
-        set(value) {
-            prefs.edit { putBoolean(PrefsKeys.DUAL_TRACK, value) }
-            val active = activeDestination
-            if (active != null && bindSettingsToProfiles) updateDestination(active.copy(dualTrack = value))
-        }
+        set(value) = prefs.edit { putBoolean(PrefsKeys.DUAL_TRACK, value) }
 
     var savedDestinations: List<CallConfig>
         get() = CallConfig.listFromJson(prefs.getString(PrefsKeys.SAVED_DESTINATIONS, "") ?: "")
@@ -149,18 +125,7 @@ object Prefs {
 
     var activeDestinationId: String
         get() = prefs.getString(PrefsKeys.ACTIVE_DESTINATION_ID, "") ?: ""
-        set(value) {
-            prefs.edit { putString(PrefsKeys.ACTIVE_DESTINATION_ID, value) }
-            if (bindSettingsToProfiles) {
-                val active = savedDestinations.firstOrNull { it.id == value }
-                if (active != null) {
-                    if (active.tunnelMode != null) tunnelMode = active.tunnelMode
-                    if (active.vp8Fps != null) prefs.edit { putInt(PrefsKeys.VP8_FPS, active.vp8Fps) }
-                    if (active.vp8Batch != null) prefs.edit { putInt(PrefsKeys.VP8_BATCH, active.vp8Batch) }
-                    if (active.dualTrack != null) prefs.edit { putBoolean(PrefsKeys.DUAL_TRACK, active.dualTrack) }
-                }
-            }
-        }
+        set(value) = prefs.edit { putString(PrefsKeys.ACTIVE_DESTINATION_ID, value) }
 
     var themeMode: ThemeMode
         get() {
@@ -175,6 +140,18 @@ object Prefs {
             if (id.isEmpty()) return null
             return savedDestinations.firstOrNull { it.id == id }
         }
+
+    val activeTunnelMode: TunnelMode
+        get() = activeDestination?.tunnelMode ?: tunnelMode
+
+    val activeVp8Fps: Int
+        get() = activeDestination?.vp8Fps ?: vp8Fps
+
+    val activeVp8Batch: Int
+        get() = activeDestination?.vp8Batch ?: vp8Batch
+
+    val activeDualTrack: Boolean
+        get() = activeDestination?.dualTrack ?: dualTrack
 
     fun updateDestination(config: CallConfig) {
         val list = savedDestinations.toMutableList()

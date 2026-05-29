@@ -1,5 +1,6 @@
 package bypass.whitelist.tunnel
 
+import android.os.Build
 import android.util.Log
 import bypass.whitelist.util.ParamCallback
 import bypass.whitelist.util.Ports
@@ -41,9 +42,13 @@ class RelayController(
         pionProcess?.let {
             it.destroy()
             try {
-                if (!it.waitFor(1500, TimeUnit.MILLISECONDS)) {
-                    it.destroyForcibly()
-                    it.waitFor(500, TimeUnit.MILLISECONDS)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    if (!it.waitFor(1500, TimeUnit.MILLISECONDS)) {
+                        it.destroyForcibly()
+                        it.waitFor(500, TimeUnit.MILLISECONDS)
+                    }
+                } else {
+                    it.waitFor()
                 }
             } catch (_: Exception) {
             }
