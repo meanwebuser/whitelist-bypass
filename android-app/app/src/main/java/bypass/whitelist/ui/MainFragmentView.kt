@@ -46,7 +46,7 @@ class MainFragmentView(private val root: View) {
     var onHeroPressed: Callback? = null
     var onPingPressed: Callback? = null
     var onCallSelected: ParamCallback<CallConfig>? = null
-    var onCallLongPressed: ((CallConfig, View) -> Unit)? = null
+    var onCallLongPressed: ParamCallback<CallConfig>? = null
 
     private var pulseAnimator: ValueAnimator? = null
     private var collapsedToActive: Boolean = false
@@ -226,7 +226,7 @@ class MainFragmentView(private val root: View) {
             bindRow(row, config, isActive = config.id == activeCallId)
             row.setOnClickListener { onCallSelected?.invoke(config) }
             row.setOnLongClickListener {
-                onCallLongPressed?.invoke(config, row)
+                onCallLongPressed?.invoke(config)
                 true
             }
             callsList.addView(row)
