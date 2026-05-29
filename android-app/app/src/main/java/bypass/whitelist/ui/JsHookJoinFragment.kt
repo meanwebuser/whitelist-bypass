@@ -1,6 +1,7 @@
 package bypass.whitelist.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.os.Bundle
@@ -16,6 +17,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.fragment.app.Fragment
@@ -69,9 +71,6 @@ class JsHookJoinFragment : Fragment(), JoinSessionShutdown {
 
     private val muteAudioContext by lazy { loadAsset("mute-audio-context.js") }
 
-    private fun loadAsset(name: String): String =
-        requireContext().assets.open(name).bufferedReader().readText()
-
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -84,7 +83,7 @@ class JsHookJoinFragment : Fragment(), JoinSessionShutdown {
         toggleButton = view.findViewById(R.id.toggleWebViewButton)
         toggleArrow = view.findViewById(R.id.toggleWebViewArrow)
         toggleLabel = view.findViewById(R.id.toggleWebViewLabel)
-        view.findViewById<android.widget.ImageButton>(R.id.webviewBackButton).setOnClickListener {
+        view.findViewById<ImageButton>(R.id.webviewBackButton).setOnClickListener {
             host?.onJoinCancel()
         }
 
@@ -218,11 +217,11 @@ class JsHookJoinFragment : Fragment(), JoinSessionShutdown {
         }
     }
 
-    private fun isSessionAlive(): Boolean = !shutdownOnce.get()
-
     fun expand() {
         setExpanded(true)
     }
+
+    private fun isSessionAlive(): Boolean = !shutdownOnce.get()
 
     private fun setExpanded(value: Boolean) {
         expanded = value
@@ -259,7 +258,7 @@ class JsHookJoinFragment : Fragment(), JoinSessionShutdown {
     private fun getLocalIPAddress(): String {
         try {
             val context = context ?: return ""
-            val connectivityManager = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             val network = connectivityManager.activeNetwork ?: return ""
             val linkProperties = connectivityManager.getLinkProperties(network) ?: return ""
             for (addr in linkProperties.linkAddresses) {
@@ -273,6 +272,9 @@ class JsHookJoinFragment : Fragment(), JoinSessionShutdown {
         }
         return ""
     }
+
+    private fun loadAsset(name: String): String =
+        requireContext().assets.open(name).bufferedReader().readText()
 
     @Suppress("unused")
     inner class JsBridge {
