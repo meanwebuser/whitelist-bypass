@@ -39,6 +39,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
 
         container.bindCalls(Prefs.savedDestinations, Prefs.activeDestinationId)
         container.bindHero(connected = isHostConnected(), status = hostStatus())
+        if (!isResumed) container.pauseAnimations()
 
         container.onAddCallClicked = {
             AddDestinationSheet.show(parentFragmentManager)
@@ -73,6 +74,17 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         super.onResume()
         content?.bindCalls(Prefs.savedDestinations, Prefs.activeDestinationId)
         content?.bindHero(connected = isHostConnected(), status = hostStatus())
+        content?.resumeAnimations()
+        if (isHostConnected()) {
+            tickHandler.removeCallbacks(tickRunnable)
+            tickHandler.postDelayed(tickRunnable, 1000L)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        content?.pauseAnimations()
+        tickHandler.removeCallbacks(tickRunnable)
     }
 
     override fun onDestroyView() {
@@ -97,14 +109,18 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
     }
 
     fun onConnectedChanged(connected: Boolean) {
-        content?.bindHero(connected = connected, status = hostStatus())
         if (connected) {
             if (connectedSinceMs == 0L) connectedSinceMs = System.currentTimeMillis()
+        } else {
+            connectedSinceMs = 0L
+        }
+        if (!isResumed) return
+        content?.bindHero(connected = connected, status = hostStatus())
+        if (connected) {
             refreshStats()
             tickHandler.removeCallbacks(tickRunnable)
             tickHandler.postDelayed(tickRunnable, 1000L)
         } else {
-            connectedSinceMs = 0L
             tickHandler.removeCallbacks(tickRunnable)
         }
     }

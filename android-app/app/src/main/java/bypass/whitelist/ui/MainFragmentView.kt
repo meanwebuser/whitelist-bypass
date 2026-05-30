@@ -49,6 +49,7 @@ class MainFragmentView(private val root: View) {
     var onCallLongPressed: ParamCallback<CallConfig>? = null
 
     private var pulseAnimator: ValueAnimator? = null
+    private var pulseRunning: Boolean = false
     private var collapsedToActive: Boolean = false
     private var currentCalls: List<CallConfig> = emptyList()
     private var activeCallId: String = ""
@@ -199,6 +200,18 @@ class MainFragmentView(private val root: View) {
         }
     }
 
+    fun pauseAnimations() {
+        heroRingOuter.pauseAnimation()
+        pulseAnimator?.cancel()
+        pulseAnimator = null
+        pingButton.clearAnimation()
+    }
+
+    fun resumeAnimations() {
+        heroRingOuter.resumeAnimation()
+        if (pulseRunning) startPulse()
+    }
+
     fun detach() {
         heroRingOuter.release()
         stopPulse()
@@ -269,6 +282,7 @@ class MainFragmentView(private val root: View) {
     }
 
     private fun startPulse() {
+        pulseRunning = true
         if (pulseAnimator?.isStarted == true) return
         heroPulse.visibility = View.VISIBLE
         heroPulse.scaleX = 1f
@@ -290,6 +304,7 @@ class MainFragmentView(private val root: View) {
     }
 
     private fun stopPulse() {
+        pulseRunning = false
         pulseAnimator?.cancel()
         pulseAnimator = null
         heroPulse.visibility = View.GONE
