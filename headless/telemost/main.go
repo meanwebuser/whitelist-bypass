@@ -30,7 +30,6 @@ const (
 
 var clientInstanceID = uuid.New().String()
 
-
 type ConnInfo struct {
 	ConferenceURI       string
 	RoomID              string
@@ -43,24 +42,27 @@ type ConnInfo struct {
 }
 
 type Bridge struct {
-	mu           sync.Mutex
-	ws           *websocket.Conn
-	relay        *SFURelay
-	connInfo     *ConnInfo
-	config       TMConfig
-	cookieStr    string
-	pubSeq       int
-	subSeq       int
-	peers        map[string]string
-	readBuf      int
-	activeBridge *tunnel.RelayBridge
-	selfName     string
+	mu            sync.Mutex
+	ws            *websocket.Conn
+	relay         *SFURelay
+	connInfo      *ConnInfo
+	config        TMConfig
+	cookieStr     string
+	pubSeq        int
+	subSeq        int
+	peers         map[string]string
+	readBuf       int
+	activeBridge  *tunnel.RelayBridge
+	selfName      string
+	upstreamSocks string
+	upstreamUser  string
+	upstreamPass  string
 
-	setSlotsKey     int
-	initBundleSent  bool
-	pendingKicks    map[string]chan struct{}
-	boundPeers      map[string]bool
-	unboundPeers    map[string]bool
+	setSlotsKey    int
+	initBundleSent bool
+	pendingKicks   map[string]chan struct{}
+	boundPeers     map[string]bool
+	unboundPeers   map[string]bool
 }
 
 func tmRequest(method, path string, body interface{}, cookieStr string, cfg TMConfig) ([]byte, int, error) {
@@ -197,13 +199,13 @@ func (b *Bridge) sendHello() {
 		"hello": map[string]interface{}{
 			"participantMeta":       map[string]interface{}{"name": "Headless", "role": "SPEAKER", "description": "", "sendAudio": false, "sendVideo": true},
 			"participantAttributes": map[string]interface{}{"name": "Headless", "role": "SPEAKER", "description": ""},
-			"sendAudio": false, "sendVideo": true, "sendSharing": false,
+			"sendAudio":             false, "sendVideo": true, "sendSharing": false,
 			"participantId": b.connInfo.PeerID, "roomId": b.connInfo.RoomID,
 			"serviceName": b.connInfo.ServiceName, "credentials": b.connInfo.Credentials,
-			"capabilitiesOffer": tmapi.CapabilitiesOffer,
-			"sdkInfo":           map[string]interface{}{"implementation": "browser", "version": b.config.SDKVersion, "userAgent": common.UserAgent, "hwConcurrency": 8},
+			"capabilitiesOffer":   tmapi.CapabilitiesOffer,
+			"sdkInfo":             map[string]interface{}{"implementation": "browser", "version": b.config.SDKVersion, "userAgent": common.UserAgent, "hwConcurrency": 8},
 			"sdkInitializationId": uuid.New().String(),
-			"disablePublisher": false, "disableSubscriber": false, "disableSubscriberAudio": false,
+			"disablePublisher":    false, "disableSubscriber": false, "disableSubscriberAudio": false,
 		},
 	})
 	log.Println("[tm-ws] -> hello")
@@ -246,7 +248,7 @@ func (b *Bridge) sendICE(cand *webrtc.ICECandidate, target string, pcSeq int) {
 		"webrtcIceCandidate": map[string]interface{}{
 			"candidate": c.Candidate, "sdpMid": mid,
 			"usernameFragment": extractUfrag(c.Candidate),
-			"sdpMlineIndex": idx, "target": target, "pcSeq": pcSeq,
+			"sdpMlineIndex":    idx, "target": target, "pcSeq": pcSeq,
 		},
 	})
 }
@@ -710,6 +712,7 @@ func (b *Bridge) initRelay() {
 			b.activeBridge.Reset()
 		}
 		b.activeBridge = tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
+		b.activeBridge.SetUpstreamSocks(b.upstreamSocks, b.upstreamUser, b.upstreamPass)
 		fmt.Print("\n  TUNNEL CONNECTED\n")
 	}
 	relay.OnPeerRestart = func() {
@@ -885,6 +888,9 @@ func main() {
 	customReadBuf := flag.Int("read-buf", 0, "read buffer size, used with -resources custom")
 	customMemLimit := flag.Int64("mem-limit", 0, "memory limit in bytes, used with -resources custom")
 	writeFile := flag.String("write-file", "", "path to file where active call link is appended")
+	upstreamSocks := flag.String("upstream-socks", "", "route tunneled egress through this SOCKS5 proxy (host:port), e.g. a local VPN client")
+	upstreamUser := flag.String("upstream-user", "", "upstream SOCKS5 username")
+	upstreamPass := flag.String("upstream-pass", "", "upstream SOCKS5 password")
 	flag.Parse()
 
 	var readBuf int
@@ -960,11 +966,14 @@ func main() {
 	}
 
 	bridge := &Bridge{
-		connInfo:  connInfo,
-		config:    cfg,
-		cookieStr: cookieStr,
-		peers:     make(map[string]string),
-		readBuf:   readBuf,
+		connInfo:      connInfo,
+		config:        cfg,
+		cookieStr:     cookieStr,
+		peers:         make(map[string]string),
+		readBuf:       readBuf,
+		upstreamSocks: *upstreamSocks,
+		upstreamUser:  *upstreamUser,
+		upstreamPass:  *upstreamPass,
 	}
 	bridge.run()
 }
