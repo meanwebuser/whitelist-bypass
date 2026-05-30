@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"whitelist-bypass/relay/common"
 )
 
 const (
@@ -466,6 +468,7 @@ func (b *bot) run() error {
 }
 
 func main() {
+	common.MaybePrintVersion()
 	token := flag.String("token", "", "VK community access token (required)")
 	groupID := flag.String("group-id", "", "VK community ID, digits only (required)")
 	userID := flag.String("user-id", "", "comma-separated VK user IDs allowed to issue commands (empty = anyone)")
