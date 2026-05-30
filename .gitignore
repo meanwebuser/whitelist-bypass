@@ -6,3 +6,10 @@ prebuilts/
 cookies*.json
 relay/relay
 whitelist-experiments/
+access-token.txt
+cookies-wbstream*.json
+*.bak.*
+bin/
+logs/
+run/
+src/

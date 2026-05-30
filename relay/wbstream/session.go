@@ -28,6 +28,11 @@ type peerEntry struct {
 const (
 	TunnelModeVideo = "video"
 	TunnelModeDC    = "dc"
+	// Safari/iOS can briefly create multiple LiveKit participants during PWA
+	// reload/revive. Kicking an active peer immediately on newcomer detection
+	// tears down in-flight TLS streams and surfaces as libcurl error 35.
+	// Give active peers a grace window; old zombie peers are still cleaned.
+	peerKickGrace = 60 * time.Second
 )
 
 type SessionConfig struct {
@@ -48,7 +53,6 @@ type SessionConfig struct {
 	ScreenShare    bool // when true, publish a second VP8 track as ScreenShare and shard outbound across both
 	IsJoiner       bool // when true, run the configPingPong loop; only the joiner sends VP8 config to the peer
 }
-
 
 type Session struct {
 	cfg SessionConfig
@@ -649,11 +653,18 @@ func (s *Session) onParticipantUpdate(updates []livekit.ParticipantInfo) {
 	var stale []peerEntry
 	staleSIDs := make(map[string]bool)
 	if len(newcomerSIDs) > 0 {
+		now := time.Now()
 		for _, e := range s.peersBySID {
-			if e.state == livekit.ParticipantStateActive && !newcomerSIDs[e.sid] {
-				stale = append(stale, e)
-				staleSIDs[e.sid] = true
+			if e.state != livekit.ParticipantStateActive || newcomerSIDs[e.sid] {
+				continue
 			}
+			age := now.Sub(e.firstSeen)
+			if age < peerKickGrace {
+				s.cfg.LogFn("[wb] keep active peer identity=%s sid=%s age=%s grace=%s", e.identity, e.sid, age.Truncate(time.Millisecond), peerKickGrace)
+				continue
+			}
+			stale = append(stale, e)
+			staleSIDs[e.sid] = true
 		}
 	}
 

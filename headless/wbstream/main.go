@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"whitelist-bypass/relay/common"
@@ -15,6 +16,7 @@ import (
 
 func main() {
 	cookiesPath := flag.String("cookies", "", "path to cookies-wbstream.json")
+	accessTokenFlag := flag.String("access-token", "", "WB Stream bearer access token; can also be set with WBSTREAM_ACCESS_TOKEN")
 	roomFlag := flag.String("room", "", "WB Stream room id, wbstream://<id>, or https://stream.wb.ru/room/<id> (empty = create new)")
 	displayName := flag.String("name", "Headless", "display name in the room")
 	resources := flag.String("resources", "default", "resource mode: default, moderate, unlimited, custom")
@@ -52,20 +54,35 @@ func main() {
 	}
 	log.Printf("[config] resources=%s read-buf=%d mem-limit=%d", *resources, readBuf, memLimit)
 
-	if *cookiesPath == "" {
-		log.Fatalf("[auth] --cookies is required")
+	accessTokenInput := strings.TrimSpace(*accessTokenFlag)
+	if accessTokenInput == "" {
+		accessTokenInput = strings.TrimSpace(os.Getenv("WBSTREAM_ACCESS_TOKEN"))
 	}
-	rawCookies := common.LoadCookies(*cookiesPath)
-	deviceID := common.CookieValue(rawCookies, "__wb_device_id")
-	if deviceID == "" {
-		log.Fatalf("[auth] cookies file is missing __wb_device_id; re-export via creator-app's 'Export Cookies' button")
+	accessTokenInput = strings.TrimPrefix(accessTokenInput, "Bearer ")
+
+	var cookieHeader string
+	var deviceID string
+	var bearer string
+	var err error
+	if accessTokenInput != "" {
+		bearer = accessTokenInput
+		log.Printf("[auth] bearer supplied via flag/env (len=%d)", len(bearer))
+	} else {
+		if *cookiesPath == "" {
+			log.Fatalf("[auth] --cookies or --access-token/WBSTREAM_ACCESS_TOKEN is required")
+		}
+		rawCookies := common.LoadCookies(*cookiesPath)
+		deviceID = common.CookieValue(rawCookies, "__wb_device_id")
+		if deviceID == "" {
+			log.Fatalf("[auth] cookies file is missing __wb_device_id; re-export via creator-app's 'Export Cookies' button")
+		}
+		cookieHeader = common.FilterCookies(rawCookies, wbstream.WBStreamCookieAllowlist)
+		bearer, err = wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
+		if err != nil {
+			log.Fatalf("[auth] slide-v3 refresh: %v", err)
+		}
+		log.Printf("[auth] bearer refreshed (len=%d)", len(bearer))
 	}
-	cookieHeader := common.FilterCookies(rawCookies, wbstream.WBStreamCookieAllowlist)
-	bearer, err := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
-	if err != nil {
-		log.Fatalf("[auth] slide-v3 refresh: %v", err)
-	}
-	log.Printf("[auth] bearer refreshed (len=%d)", len(bearer))
 	requestedRoom := wbstream.ParseRoomID(*roomFlag)
 	roomID, roomToken, accessToken, serverURL, err := wbstream.AuthAsLoggedIn(nil, cookieHeader, bearer, requestedRoom, *displayName)
 	if err != nil {
@@ -148,13 +165,15 @@ func main() {
 		}
 		time.Sleep(3 * time.Second)
 
-		newBearer, refreshErr := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
-		if refreshErr != nil {
-			log.Printf("[rejoin] slide-v3 refresh failed: %v, retrying in 5s", refreshErr)
-			time.Sleep(5 * time.Second)
-			continue
+		if accessTokenInput == "" {
+			newBearer, refreshErr := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
+			if refreshErr != nil {
+				log.Printf("[rejoin] slide-v3 refresh failed: %v, retrying in 5s", refreshErr)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			bearer = newBearer
 		}
-		bearer = newBearer
 		_, newRoomToken, newAccessToken, newServerURL, err := wbstream.AuthAsLoggedIn(nil, cookieHeader, bearer, roomID, *displayName)
 		if err != nil {
 			log.Printf("[rejoin] auth failed: %v, retrying in 5s", err)
