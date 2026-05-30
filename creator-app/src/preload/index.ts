@@ -26,6 +26,9 @@ import { IPC } from '../constants';
   setUpstreamProxy(proxy: any) {
     return ipcRenderer.invoke(IPC.SET_UPSTREAM_PROXY, proxy);
   },
+  clearCookies(platform: string) {
+    return ipcRenderer.invoke(IPC.CLEAR_COOKIES, platform);
+  },
   onCreateBotTab(cb: (data: any) => void) {
     ipcRenderer.on(IPC.CREATE_BOT_TAB, (_e, data) => cb(data));
   },

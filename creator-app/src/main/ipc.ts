@@ -90,6 +90,10 @@ export function registerIpcHandlers(tabManager: TabManager): void {
     tabManager.setUpstreamProxy(proxy);
   });
 
+  ipcMain.handle(IPC.CLEAR_COOKIES, (_e, platform: string) => {
+    return tabManager.clearPlatformCookies(platform as Platform);
+  });
+
   ipcMain.handle(IPC.SEND_BOT_CALL_LINK, (_e, tabId: string, link: string) => {
     tabManager.sendBotCallLink(tabId, link);
   });

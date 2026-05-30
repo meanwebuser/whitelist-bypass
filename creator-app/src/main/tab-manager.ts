@@ -410,6 +410,28 @@ export class TabManager {
     }
   }
 
+  async clearPlatformCookies(platform: Platform): Promise<number> {
+    const config = this.headlessConfig(platform);
+    if (!config) return 0;
+    const ses = session.fromPartition(SESSION_PARTITION);
+    const all = await ses.cookies.get({});
+    let removed = 0;
+    for (const cookie of all) {
+      if (!cookie.domain || !config.cookieDomains.some((d) => cookie.domain!.includes(d))) continue;
+      const host = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+      const url = `https://${host}${cookie.path || '/'}`;
+      try {
+        await ses.cookies.remove(url, cookie.name);
+        removed++;
+      } catch (err) {
+        console.log(`[COOKIES] failed to remove ${cookie.name} on ${url}:`, err);
+      }
+    }
+    await fs.unlink(path.join(app.getPath('userData'), `cookies-${platform}.json`)).catch(() => {});
+    console.log(`[COOKIES] cleared ${removed} cookies for ${platform}`);
+    return removed;
+  }
+
   private waitForLogin(cookieDomains: string[], authCookieName: string): Promise<void> {
     return new Promise((resolve) => {
       const ses = session.fromPartition(SESSION_PARTITION);
