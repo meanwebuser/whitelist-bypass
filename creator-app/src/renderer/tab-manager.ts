@@ -2,6 +2,7 @@ import {
   RendererTab,
   BotTabData,
   BotSettings,
+  UpstreamProxy,
   TunnelMode,
   Platform,
   Bridge,
@@ -18,6 +19,7 @@ export class RendererTabManager {
   private nextId = 1;
   botRunning = false;
   botSettings: BotSettings;
+  upstreamProxy: UpstreamProxy;
   private onRender: () => void;
 
   constructor(onRender: () => void) {
@@ -26,6 +28,10 @@ export class RendererTabManager {
     this.botSettings = saved
       ? JSON.parse(saved)
       : { token: '', groupId: '', userId: '' };
+    const savedProxy = localStorage.getItem('upstreamProxy');
+    this.upstreamProxy = savedProxy
+      ? JSON.parse(savedProxy)
+      : { socks: '', user: '', pass: '' };
   }
 
   createTab(): string {
@@ -234,6 +240,11 @@ export class RendererTabManager {
 
   saveBotSettings(): void {
     localStorage.setItem('botSettings', JSON.stringify(this.botSettings));
+  }
+
+  saveUpstreamProxy(): void {
+    localStorage.setItem('upstreamProxy', JSON.stringify(this.upstreamProxy));
+    window.bridge.setUpstreamProxy(this.upstreamProxy);
   }
 
   toggleBot(): void {

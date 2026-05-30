@@ -581,6 +581,9 @@ func main() {
 	customMaxDCBuf := flag.Int("max-dc-buf", 0, "max DC buffer size in bytes, used with -resources custom")
 	customMemLimit := flag.Int64("mem-limit", 0, "memory limit in bytes, used with -resources custom")
 	writeFile := flag.String("write-file", "", "path to file where active call link is appended")
+	upstreamSocks := flag.String("upstream-socks", "", "route tunneled egress through this SOCKS5 proxy (host:port), e.g. a local VPN client")
+	upstreamUser := flag.String("upstream-user", "", "upstream SOCKS5 username")
+	upstreamPass := flag.String("upstream-pass", "", "upstream SOCKS5 password")
 	flag.Parse()
 
 	var readBuf int
@@ -678,7 +681,8 @@ func main() {
 		ur.maxDCBuf = maxDCBuf
 		ur.SetObfuscator(obf)
 		ur.OnConnected = func(tun *tunnel.VP8DataTunnel) {
-			tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
+			rb := tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
+			rb.SetUpstreamSocks(*upstreamSocks, *upstreamUser, *upstreamPass)
 		}
 		return ur
 	}

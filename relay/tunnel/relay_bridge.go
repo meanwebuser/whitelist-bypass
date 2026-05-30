@@ -17,6 +17,41 @@ import (
 
 const verboseUDPLogging = false
 
+type creatorUDP struct {
+	direct *net.UDPConn
+	socks  *common.Socks5UDPSession
+}
+
+func (c *creatorUDP) writePacket(data []byte, dst string) error {
+	if c.socks != nil {
+		return c.socks.WriteTo(data, dst)
+	}
+	c.direct.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	_, err := c.direct.Write(data)
+	return err
+}
+
+func (c *creatorUDP) read(buf []byte) (int, error) {
+	if c.socks != nil {
+		return c.socks.Read(buf)
+	}
+	return c.direct.Read(buf)
+}
+
+func (c *creatorUDP) setReadDeadline(t time.Time) error {
+	if c.socks != nil {
+		return c.socks.SetReadDeadline(t)
+	}
+	return c.direct.SetReadDeadline(t)
+}
+
+func (c *creatorUDP) close() error {
+	if c.socks != nil {
+		return c.socks.Close()
+	}
+	return c.direct.Close()
+}
+
 type udpClient struct {
 	udpConn    *net.UDPConn
 	clientAddr *net.UDPAddr
@@ -39,6 +74,7 @@ type RelayBridge struct {
 	once        sync.Once
 	socksUser   string
 	socksPass   string
+	upstream    *common.Socks5Upstream
 
 	persistentListener atomic.Bool
 	listenerMu         sync.Mutex
@@ -88,6 +124,10 @@ func (rb *RelayBridge) SetPersistentListener(persistent bool) {
 	rb.persistentListener.Store(persistent)
 }
 
+func (rb *RelayBridge) SetUpstreamSocks(addr, user, pass string) {
+	rb.upstream = common.NewSocks5Upstream(addr, user, pass)
+}
+
 func (rb *RelayBridge) SwapTunnel(newTunnel DataTunnel) {
 	rb.tunnelMu.Lock()
 	rb.tunnel = newTunnel
@@ -130,8 +170,8 @@ func (rb *RelayBridge) closeAll() {
 	rb.udpClients.Range(func(key, value any) bool {
 		udpCount++
 		switch v := value.(type) {
-		case *net.UDPConn:
-			v.Close()
+		case *creatorUDP:
+			v.close()
 		case *udpClient:
 			v.udpConn.Close()
 		}
@@ -313,8 +353,8 @@ func (rb *RelayBridge) handleCreatorMessage(connID uint32, msgType byte, payload
 		if uval, ok := rb.udpClients.LoadAndDelete(connID); ok {
 			found = true
 			switch v := uval.(type) {
-			case *net.UDPConn:
-				v.Close()
+			case *creatorUDP:
+				v.close()
 			case *udpClient:
 				v.udpConn.Close()
 				rb.udpSessions.Delete(v.mapKey)
@@ -340,46 +380,41 @@ func (rb *RelayBridge) handleUDP(connID uint32, payload []byte) {
 	addr := string(payload[1 : 1+addrLen])
 	data := payload[1+addrLen:]
 
-	var conn *net.UDPConn
+	var egress *creatorUDP
 	if val, ok := rb.udpClients.Load(connID); ok {
-		existing, ok := val.(*net.UDPConn)
+		existing, ok := val.(*creatorUDP)
 		if !ok {
 			return
 		}
-		conn = existing
+		egress = existing
 	} else {
-		udpAddr, err := net.ResolveUDPAddr("udp", addr)
+		created, err := rb.dialCreatorUDP(addr)
 		if err != nil {
-			rb.logFn("relay[creator]: UDP %d resolve %s failed: %v", connID, addr, err)
+			rb.logFn("relay[creator]: UDP %d open %s failed: %v", connID, common.MaskAddr(addr), err)
 			return
 		}
-		dialed, err := net.DialUDP("udp", nil, udpAddr)
-		if err != nil {
-			rb.logFn("relay[creator]: UDP %d dial %s failed: %v", connID, udpAddr.String(), err)
-			return
-		}
-		if actual, loaded := rb.udpClients.LoadOrStore(connID, dialed); loaded {
-			dialed.Close()
-			existing, ok := actual.(*net.UDPConn)
+		if actual, loaded := rb.udpClients.LoadOrStore(connID, created); loaded {
+			created.close()
+			existing, ok := actual.(*creatorUDP)
 			if !ok {
 				return
 			}
-			conn = existing
+			egress = existing
 		} else {
-			conn = dialed
+			egress = created
 			if verboseUDPLogging {
-				rb.logFn("relay[creator]: UDP %d session opened -> %s payload=%dB", connID, udpAddr.String(), len(data))
+				rb.logFn("relay[creator]: UDP %d session opened -> %s payload=%dB", connID, addr, len(data))
 			}
-			go func(c *net.UDPConn, id uint32, target string) {
-				defer c.Close()
+			go func(e *creatorUDP, id uint32, target string) {
+				defer e.close()
 				defer rb.udpClients.Delete(id)
 				defer rb.send(id, MsgClose, nil)
 				buf := make([]byte, common.UDPBufSize)
 				var replies int
 				var totalIn int64
 				for {
-					c.SetReadDeadline(time.Now().Add(60 * time.Second))
-					n, err := c.Read(buf)
+					e.setReadDeadline(time.Now().Add(60 * time.Second))
+					n, err := e.read(buf)
 					if err != nil {
 						if verboseUDPLogging {
 							rb.logFn("relay[creator]: UDP %d session %s closed after %d replies, %dB in: %v", id, target, replies, totalIn, err)
@@ -393,28 +428,54 @@ func (rb *RelayBridge) handleUDP(connID uint32, payload []byte) {
 					}
 					rb.send(id, MsgUDPReply, buf[:n])
 				}
-			}(conn, connID, udpAddr.String())
+			}(egress, connID, addr)
 		}
 	}
 
-	conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	conn.Write(data)
+	if err := egress.writePacket(data, addr); err != nil {
+		rb.logFn("relay[creator]: UDP %d write %s failed: %v", connID, common.MaskAddr(addr), err)
+	}
+}
+
+func (rb *RelayBridge) dialCreatorUDP(addr string) (*creatorUDP, error) {
+	if rb.upstream != nil {
+		sess, err := rb.upstream.UDPAssociate(10 * time.Second)
+		if err != nil {
+			return nil, err
+		}
+		return &creatorUDP{socks: sess}, nil
+	}
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	dialed, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		return nil, err
+	}
+	return &creatorUDP{direct: dialed}, nil
 }
 
 func (rb *RelayBridge) connectTCP(connID uint32, addr string) {
 	rb.logFn("relay: CONNECT %d -> %s", connID, common.MaskAddr(addr))
-	if host, port, splitErr := net.SplitHostPort(addr); splitErr == nil && host != "" && net.ParseIP(host) == nil {
-		dnsStart := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		ips, dnsErr := net.DefaultResolver.LookupIPAddr(ctx, host)
-		cancel()
-		if dnsErr != nil {
-			rb.logFn("relay: DNS %d %s failed in %s: %v", connID, host, time.Since(dnsStart), dnsErr)
-		} else {
-			rb.logFn("relay: DNS %d %s -> %s port=%s took=%s", connID, host, ipAddrList(ips), port, time.Since(dnsStart))
+	var conn net.Conn
+	var err error
+	if rb.upstream != nil {
+		conn, err = rb.upstream.DialTCP(addr, 10*time.Second)
+	} else {
+		if host, port, splitErr := net.SplitHostPort(addr); splitErr == nil && host != "" && net.ParseIP(host) == nil {
+			dnsStart := time.Now()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ips, dnsErr := net.DefaultResolver.LookupIPAddr(ctx, host)
+			cancel()
+			if dnsErr != nil {
+				rb.logFn("relay: DNS %d %s failed in %s: %v", connID, host, time.Since(dnsStart), dnsErr)
+			} else {
+				rb.logFn("relay: DNS %d %s -> %s port=%s took=%s", connID, host, ipAddrList(ips), port, time.Since(dnsStart))
+			}
 		}
+		conn, err = net.DialTimeout("tcp", addr, 10*time.Second)
 	}
-	conn, err := net.DialTimeout("tcp", addr, 10e9)
 	if err != nil {
 		rb.logFn("relay: CONNECT %d failed: %s", connID, common.MaskError(err))
 		rb.send(connID, MsgConnectErr, []byte(common.MaskError(err)))
@@ -537,7 +598,7 @@ func (rb *RelayBridge) handleSOCKS(conn net.Conn) {
 	}
 	// Dial local/private addresses directly instead of tunneling to the creator,
 	// which cannot reach the joiner's local network. Disabled for now until
-	// there is a real use case for local network access through the proxy. So idk if 
+	// there is a real use case for local network access through the proxy. So idk if
 	// this is a bug or a feature
 	// if ip := net.ParseIP(hostOnly); ip != nil && !ip.IsGlobalUnicast() {
 	// 	rb.logFn("relay: SOCKS local dial %s", common.MaskAddr(host))

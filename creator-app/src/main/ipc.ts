@@ -4,7 +4,7 @@ import * as fs from 'fs/promises';
 import { TabManager } from './tab-manager';
 import { BotManager } from '../bot/bot-manager';
 import { IPC } from '../constants';
-import { TunnelMode, Platform, BotSettings, HeadlessStartArgs } from '../types';
+import { TunnelMode, Platform, BotSettings, HeadlessStartArgs, UpstreamProxy } from '../types';
 
 export function registerIpcHandlers(tabManager: TabManager): void {
   ipcMain.handle(IPC.GET_HOOK_CODE, async (_e, tabId: string, url: string) => {
@@ -84,6 +84,10 @@ export function registerIpcHandlers(tabManager: TabManager): void {
       tabManager.botManager = null;
     }
     return { success: true };
+  });
+
+  ipcMain.handle(IPC.SET_UPSTREAM_PROXY, (_e, proxy: UpstreamProxy) => {
+    tabManager.setUpstreamProxy(proxy);
   });
 
   ipcMain.handle(IPC.SEND_BOT_CALL_LINK, (_e, tabId: string, link: string) => {

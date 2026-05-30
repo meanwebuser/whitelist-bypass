@@ -22,6 +22,9 @@ func main() {
 	displayName := flag.String("name", "Headless", "display name in the room")
 	resources := flag.String("resources", "default", "resource mode: moderate, default, unlimited")
 	writeFile := flag.String("write-file", "", "path to file where active slug is appended")
+	upstreamSocks := flag.String("upstream-socks", "", "route tunneled egress through this SOCKS5 proxy (host:port), e.g. a local VPN client")
+	upstreamUser := flag.String("upstream-user", "", "upstream SOCKS5 username")
+	upstreamPass := flag.String("upstream-pass", "", "upstream SOCKS5 password")
 	flag.Parse()
 
 	var memLimit int64
@@ -111,6 +114,7 @@ func main() {
 				activeBridge.Reset()
 			}
 			activeBridge = tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
+			activeBridge.SetUpstreamSocks(*upstreamSocks, *upstreamUser, *upstreamPass)
 			activeBridge.MarkReady()
 			fmt.Println("")
 			fmt.Println("  TUNNEL CONNECTED")
@@ -165,4 +169,3 @@ func main() {
 		}
 	}
 }
-

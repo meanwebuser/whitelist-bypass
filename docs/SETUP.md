@@ -96,7 +96,27 @@
 | `--max-dc-buf <bytes>` | да | - | - | Порог `BufferedAmountLowThreshold` DC, только с `--resources custom` |
 | `--mem-limit <bytes>` | да | да | да | Soft memory limit Go рантайма, только с `--resources custom` |
 | `--write-file <path>` | да | да | да | Файл, куда записывается активная ссылка на звонок |
+| `--upstream-socks <host:port>` | да | да | да | Гнать трафик joiner-а через локальный SOCKS5 прокси, например VPN-клиент |
+| `--upstream-user <user>` | да | да | да | Логин для upstream SOCKS5 |
+| `--upstream-pass <pass>` | да | да | да | Пароль для upstream SOCKS5 |
 | `--version` | да | да | да | Вывести версию и выйти |
+
+### Выходной трафик через свой VPS
+
+По умолчанию creator открывает соединения joiner-а напрямую со своего IP. Флаг `--upstream-socks` заставляет creator отправлять **только трафик joiner-а** в локальный SOCKS5 прокси - обычно его поднимает VPN-клиент (xray / sing-box / v2ray и т.п.) рядом с creator. Получается цепочка:
+
+```
+joiner (цензура) -> creator (домашний ПК) -> VPN-клиент (тот же ПК) -> VPS -> интернет
+```
+
+SOCKS5-инбаунд VPN-клиента должен поддерживать UDP ASSOCIATE (xray / sing-box умеют).
+
+```sh
+./headless-telemost-creator \
+  --cookies cookies-yandex.json \
+  --tm-link https://telemost.yandex.ru/j/<id> \
+  --upstream-socks 127.0.0.1:1080
+```
 
 ### Режимы ресурсов
 
@@ -296,8 +316,13 @@ docker compose pull && docker compose up -d
 | `TM_COOKIES` | нет | `/data/cookies-yandex.json` если есть | `--tm-cookies` |
 | `WB_COOKIES` | нет | `/data/cookies-wbstream.json` если есть | `--wb-cookies` |
 | `DION_COOKIES` | нет | `/data/cookies-dion.json` если есть | `--dion-cookies` |
+| `UPSTREAM_SOCKS` | нет | - | `--upstream-socks` |
+| `UPSTREAM_USER` | нет | - | `--upstream-user` |
+| `UPSTREAM_PASS` | нет | - | `--upstream-pass` |
 
 > Если WebRTC-туннель не доходит через сетевой бридж Docker (UDP может отбрасываться), добавьте в `docker-compose.yml` строку `network_mode: host` под сервисом `bot`.
+
+> `UPSTREAM_SOCKS` гонит трафик joiner-а через локальный SOCKS5 (VPN-клиент), см. [Выходной трафик через свой VPS](#выходной-трафик-через-свой-vps). Внутри контейнера `127.0.0.1` - это сам контейнер, а не хост: чтобы дотянуться до VPN-клиента на хосте, используйте `host.docker.internal:<порт>` и раскомментируйте `extra_hosts` в `docker-compose.yml`, либо поднимите VPN-клиент отдельным сервисом и укажите его имя.
 
 ### Команды
 

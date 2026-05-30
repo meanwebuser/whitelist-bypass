@@ -70,6 +70,10 @@ type bot struct {
 	sessionsDir string
 	resources   string
 
+	upstreamSocks string
+	upstreamUser  string
+	upstreamPass  string
+
 	server, key, ts string
 
 	mu           sync.Mutex
@@ -357,6 +361,15 @@ func (b *bot) spawn(platform, joinTarget string) (*session, error) {
 	if joinTarget != "" {
 		args = append(args, joinFlag, joinTarget)
 	}
+	if b.upstreamSocks != "" {
+		args = append(args, "--upstream-socks", b.upstreamSocks)
+		if b.upstreamUser != "" {
+			args = append(args, "--upstream-user", b.upstreamUser)
+		}
+		if b.upstreamPass != "" {
+			args = append(args, "--upstream-pass", b.upstreamPass)
+		}
+	}
 	cmd := exec.Command(bin, args...)
 	if logF != nil {
 		cmd.Stdout = logF
@@ -479,6 +492,9 @@ func main() {
 	dionCookies := flag.String("dion-cookies", "", "path to DION cookies JSON")
 	sessionsDir := flag.String("sessions-dir", "", "directory for per-session creator logs (optional)")
 	resources := flag.String("resources", "default", "resource mode forwarded to spawned creators: default, moderate, unlimited")
+	upstreamSocks := flag.String("upstream-socks", "", "forward to spawned creators: route tunneled egress through this SOCKS5 proxy (host:port), e.g. a local VPN client")
+	upstreamUser := flag.String("upstream-user", "", "upstream SOCKS5 username forwarded to spawned creators")
+	upstreamPass := flag.String("upstream-pass", "", "upstream SOCKS5 password forwarded to spawned creators")
 	flag.Parse()
 
 	switch *resources {
@@ -500,18 +516,21 @@ func main() {
 	}
 
 	b := &bot{
-		token:        *token,
-		groupID:      *groupID,
-		userIDs:      allowedUsers,
-		binsDir:      *binsDir,
-		vkCookies:    *vkCookies,
-		tmCookies:    *tmCookies,
-		wbCookies:    *wbCookies,
-		dionCookies:  *dionCookies,
-		sessionsDir:  *sessionsDir,
-		resources:    *resources,
-		sessions:     map[string]*session{},
-		awaitingJoin: map[int64]bool{},
+		token:         *token,
+		groupID:       *groupID,
+		userIDs:       allowedUsers,
+		binsDir:       *binsDir,
+		vkCookies:     *vkCookies,
+		tmCookies:     *tmCookies,
+		wbCookies:     *wbCookies,
+		dionCookies:   *dionCookies,
+		sessionsDir:   *sessionsDir,
+		resources:     *resources,
+		upstreamSocks: *upstreamSocks,
+		upstreamUser:  *upstreamUser,
+		upstreamPass:  *upstreamPass,
+		sessions:      map[string]*session{},
+		awaitingJoin:  map[int64]bool{},
 	}
 
 	sig := make(chan os.Signal, 1)
