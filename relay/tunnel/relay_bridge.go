@@ -414,7 +414,7 @@ func (rb *RelayBridge) connectTCP(connID uint32, addr string) {
 			rb.logFn("relay: DNS %d %s -> %s port=%s took=%s", connID, host, ipAddrList(ips), port, time.Since(dnsStart))
 		}
 	}
-	conn, err := net.DialTimeout("tcp", addr, 10e9)
+	conn, err := dialTCPOutbound(addr, 10*time.Second)
 	if err != nil {
 		rb.logFn("relay: CONNECT %d failed: %s", connID, common.MaskError(err))
 		rb.send(connID, MsgConnectErr, []byte(common.MaskError(err)))
@@ -537,7 +537,7 @@ func (rb *RelayBridge) handleSOCKS(conn net.Conn) {
 	}
 	// Dial local/private addresses directly instead of tunneling to the creator,
 	// which cannot reach the joiner's local network. Disabled for now until
-	// there is a real use case for local network access through the proxy. So idk if 
+	// there is a real use case for local network access through the proxy. So idk if
 	// this is a bug or a feature
 	// if ip := net.ParseIP(hostOnly); ip != nil && !ip.IsGlobalUnicast() {
 	// 	rb.logFn("relay: SOCKS local dial %s", common.MaskAddr(host))
