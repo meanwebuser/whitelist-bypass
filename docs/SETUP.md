@@ -23,6 +23,8 @@
 
 > **Рекомендуется headless с обеих сторон** - там есть обфускация траффика, настраиваемый VP8 pacing и WB Stream. Старый браузерный путь (Android `WebView` против Electron-creator с JS-хуками) ещё работает, но медленнее, без обфускации и постепенно выводится из эксплуатации.
 
+> **Рекомендация: лучше запускать Creator на домашнем ПК.** Некоторые операторы и платформы могут заметить, что звонок идёт с IP дата-центра (VPS / хостинг), и заблокировать аккаунт. На VPS всё работает - но если дорожите аккаунтом, запускайте Creator с домашнего интернета либо используйте отдельный / одноразовый аккаунт. Касается обоих серверных вариантов - headless и десктопного Creator под XPRA.
+
 ## Creator (десктоп)
 
 ![Интерфейс](res/desktop_interface.png)
@@ -268,7 +270,7 @@ mkdir wlb-bot && cd wlb-bot
 curl -O https://raw.githubusercontent.com/kulikov0/whitelist-bypass/main/headless/docker/docker-compose.yml
 curl -L https://raw.githubusercontent.com/kulikov0/whitelist-bypass/main/headless/docker/.env.example -o .env
 # отредактируйте .env: VK_TOKEN, VK_GROUP_ID, VK_USER_IDS
-# положите рядом cookies-vk.json, cookies-telemost.json, cookies-wbstream.json, cookies-dion.json
+# положите рядом cookies-vk.json, cookies-yandex.json, cookies-wbstream.json, cookies-dion.json
 # (для платформ, которые не используете - создайте файл с содержимым `[]`)
 docker compose up -d
 docker compose logs -f
@@ -289,7 +291,7 @@ docker compose pull && docker compose up -d
 | `BINS_DIR` | нет | `/opt/wlb/bin` | `--bins-dir` |
 | `SESSIONS_DIR` | нет | `/data/sessions` | `--sessions-dir` |
 | `VK_COOKIES` | нет | `/data/cookies-vk.json` если есть | `--vk-cookies` |
-| `TM_COOKIES` | нет | `/data/cookies-telemost.json` если есть | `--tm-cookies` |
+| `TM_COOKIES` | нет | `/data/cookies-yandex.json` если есть | `--tm-cookies` |
 | `WB_COOKIES` | нет | `/data/cookies-wbstream.json` если есть | `--wb-cookies` |
 | `DION_COOKIES` | нет | `/data/cookies-dion.json` если есть | `--dion-cookies` |
 
