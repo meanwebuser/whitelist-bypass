@@ -170,7 +170,7 @@ Six binaries are produced - three creators, two Linux joiners, and the VK bot:
 
 ```sh
 ./headless/vk/headless-vk-creator               --cookies cookies-vk.json
-./headless/telemost/headless-telemost-creator   --cookies cookies-telemost.json
+./headless/telemost/headless-telemost-creator   --cookies cookies-yandex.json
 ./headless/wbstream/headless-wbstream-creator
 ./headless/wbstream-joiner/headless-wbstream-joiner --room <link> --socks-port 1080
 ./headless/telemost-joiner/headless-telemost-joiner --tm-link <link> --socks-port 1080

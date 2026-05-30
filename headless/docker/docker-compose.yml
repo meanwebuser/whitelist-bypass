@@ -9,7 +9,7 @@ services:
       # Cookies for spawned creators. Create empty `[]` files for platforms you
       # don't use, or remove the corresponding line.
       - ./cookies-vk.json:/data/cookies-vk.json:ro
-      - ./cookies-telemost.json:/data/cookies-telemost.json:ro
+      - ./cookies-yandex.json:/data/cookies-yandex.json:ro
       - ./cookies-wbstream.json:/data/cookies-wbstream.json:ro
       - ./cookies-dion.json:/data/cookies-dion.json:ro
       # Per-session creator logs persist here.

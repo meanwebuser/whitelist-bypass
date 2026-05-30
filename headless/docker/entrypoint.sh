@@ -9,7 +9,7 @@ SESSIONS_DIR="${SESSIONS_DIR:-/data/sessions}"
 RESOURCES="${RESOURCES:-default}"
 
 VK_COOKIES_DEFAULT="/data/cookies-vk.json"
-TM_COOKIES_DEFAULT="/data/cookies-telemost.json"
+TM_COOKIES_DEFAULT="/data/cookies-yandex.json"
 WB_COOKIES_DEFAULT="/data/cookies-wbstream.json"
 DION_COOKIES_DEFAULT="/data/cookies-dion.json"
 VK_COOKIES="${VK_COOKIES:-}"
