@@ -47,6 +47,29 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
 
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("System VPN / PacketTunnel")
+                            .font(.headline)
+                        Text(proxyManager.vpnStatusText)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        HStack {
+                            Button("Install VPN") { proxyManager.installSystemVPNProfile() }
+                                .buttonStyle(.bordered)
+                            Button("Start VPN") { proxyManager.startSystemVPN() }
+                                .buttonStyle(.borderedProminent)
+                            Button("Stop") { proxyManager.stopSystemVPN() }
+                                .buttonStyle(.bordered)
+                                .tint(.red)
+                        }
+                        Text("MVP: creates a real PacketTunnel VPN profile. Packet forwarding is intentionally disabled until packetFlow → tun2socks is wired, so it will not blackhole the phone.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+
                     if proxyManager.status == .tunnelConnected {
                         ProxyInfoView(proxyUrl: proxyManager.socksUrl, onCopy: proxyManager.copyProxyUrl)
 
@@ -108,6 +131,7 @@ struct ContentView: View {
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
+        .onAppear { proxyManager.refreshSystemVPNStatus() }
     }
 }
 
