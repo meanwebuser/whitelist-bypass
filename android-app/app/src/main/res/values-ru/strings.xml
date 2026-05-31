@@ -189,4 +189,6 @@
     <string name="update_allow_unknown_title">Разрешить обновления</string>
     <string name="update_allow_unknown_message">Android требует разрешение на установку APK из этого приложения. Откройте настройки и разрешите установку для BEZаботный-NET.</string>
     <string name="update_open_settings">Открыть настройки</string>
+    <string name="settings_row_copy_socks">Скопировать SOCKS5 URL</string>
+    <string name="settings_row_copy_socks_sub">Скопировать локальный proxy URL</string>
 </resources>

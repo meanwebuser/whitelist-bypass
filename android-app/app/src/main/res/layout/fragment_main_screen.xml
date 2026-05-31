@@ -173,7 +173,7 @@
                 android:layout_height="wrap_content"
                 android:fontFamily="monospace"
                 android:letterSpacing="0.08"
-                android:text="@string/copy_socks_url"
+                android:text="@string/ping_run"
                 android:textAllCaps="true"
                 android:textColor="@color/accent_emerald"
                 android:textSize="11sp"
