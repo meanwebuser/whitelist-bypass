@@ -343,11 +343,12 @@ class MainActivity :
                     mainFragment()?.onStatusTextChanged("Найдено свободных: ${configs.size}")
                     appendLog("Discovery scan finished: free=${configs.size}, method=${result.method}, source=${result.source ?: "none"}")
                     if (configs.isNotEmpty()) {
-                        val merged = (configs + Prefs.savedDestinations).distinctBy { it.url }
-                        Prefs.savedDestinations = merged
-                        Prefs.activeDestinationId = configs.first().id
+                        val picked = configs.first()
+                        Prefs.autoDestination = picked
+                        Prefs.activeDestinationId = picked.id
                         mainFragment()?.onDestinationsChanged()
-                        startJoinFor(configs.first())
+                        appendLog("Discovery picked auto room: slot=${picked.slotId ?: "?"} lease=${picked.leaseId ?: "?"}")
+                        startJoinFor(picked)
                     }
                 }
             }
@@ -770,6 +771,10 @@ class MainActivity :
         }
         val url = config.url.trim()
         if (url.isEmpty()) return
+        if (config.autoDiscovered) {
+            Prefs.autoDestination = config
+            appendLog("Auto room grace refreshed for 60s")
+        }
 
         val platform = config.platform
         if (Prefs.activeTunnelMode == TunnelMode.DC &&
@@ -835,6 +840,7 @@ class MainActivity :
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
         mainFragment()?.onStatusChanged(VpnStatus.CALL_DISCONNECTED)
+        Prefs.extendAutoDestinationGrace()
     }
 
     private fun fullReset() {
@@ -905,6 +911,7 @@ class MainActivity :
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
         mainFragment()?.onStatusChanged(VpnStatus.CALL_DISCONNECTED)
+        Prefs.extendAutoDestinationGrace()
         val pendingConfig = pendingConnectConfig
         pendingConnectConfig = null
         if (pendingConfig != null) {

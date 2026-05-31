@@ -18,7 +18,6 @@ import bypass.whitelist.tunnel.CallConfig
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 object VkDiscoveryScanner {
@@ -35,16 +34,28 @@ object VkDiscoveryScanner {
 
     data class Result(val configs: List<CallConfig>, val source: String?, val method: String = "http")
 
+    private data class Event(
+        val slotId: String,
+        val leaseId: String?,
+        val status: String,
+        val room: String?,
+        val creator: String?,
+        val createdAt: Long,
+        val expiresAt: Long,
+        val seq: Long,
+    ) {
+        val order: Long get() = if (seq > 0) seq else createdAt
+    }
+
     fun scan(): Result {
-        val merged = linkedMapOf<String, CallConfig>()
         var source: String? = null
         for (url in urls) {
             val html = fetch(url) ?: continue
             source = url
-            parseConfigs(html).forEach { cfg -> merged[cfg.url] = cfg }
-            if (merged.isNotEmpty()) break
+            val configs = parseConfigs(html)
+            if (configs.isNotEmpty()) return Result(configs, source, "http")
         }
-        return Result(merged.values.toList(), source, "http")
+        return Result(emptyList(), source, "http")
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -108,12 +119,8 @@ object VkDiscoveryScanner {
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? = null
-            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                onProgress("VK page loading…")
-            }
-            override fun onPageFinished(view: WebView, url: String?) {
-                handler.postDelayed({ inspect(url) }, 2500)
-            }
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) { onProgress("VK page loading…") }
+            override fun onPageFinished(view: WebView, url: String?) { handler.postDelayed({ inspect(url) }, 2500) }
         }
         handler.postDelayed(timeout, 30000)
         loadNext()
@@ -121,28 +128,48 @@ object VkDiscoveryScanner {
 
     fun parseConfigs(raw: String): List<CallConfig> {
         val html = normalize(raw)
-        val byUrl = linkedMapOf<String, CallConfig>()
-        payloadRegex.findAll(html).forEach { match ->
-            val payload = decodeJson(match.groupValues[1]) ?: return@forEach
-            val status = payload.optString("status")
-            val room = payload.optString("room").takeIf { it.startsWith("wbstream://") } ?: return@forEach
-            if (status.isNotBlank() && status != "free") return@forEach
-            val streamId = payload.optString("stream_id").ifBlank { room }
-            byUrl[room] = CallConfig(
-                id = UUID.nameUUIDFromBytes(streamId.toByteArray()).toString(),
-                name = payload.optString("creator").ifBlank { "VK discovery" },
-                url = room,
-            )
+        val events = payloadRegex.findAll(html).mapNotNull { decodeJson(it.groupValues[1])?.toEvent() }.toList()
+        if (events.isNotEmpty()) {
+            val newestBySlot = events.groupBy { it.slotId }.mapValues { (_, list) -> list.maxBy { it.order } }
+            val now = System.currentTimeMillis() / 1000L
+            return newestBySlot.values
+                .filter { it.status == "free" && it.expiresAt > now && it.room?.startsWith("wbstream://") == true }
+                .sortedByDescending { it.order }
+                .map { event ->
+                    CallConfig.autoWith(
+                        name = event.creator?.ifBlank { null } ?: "VK discovery",
+                        url = event.room!!,
+                        slotId = event.slotId,
+                        leaseId = event.leaseId,
+                        expiresAt = event.expiresAt,
+                    )
+                }
         }
-        roomRegex.findAll(html).forEach { match ->
+        return roomRegex.findAll(html).map { match ->
             val room = match.value
-            byUrl[room] = CallConfig(
-                id = UUID.nameUUIDFromBytes(room.toByteArray()).toString(),
-                name = "VK discovery",
-                url = room,
-            )
-        }
-        return byUrl.values.toList()
+            CallConfig.autoWith(name = "VK discovery", url = room, slotId = room, leaseId = null, expiresAt = null)
+        }.distinctBy { it.url }.toList()
+    }
+
+    private fun JSONObject.toEvent(): Event? {
+        val status = optString("status").ifBlank { "free" }
+        val room = optString("room").takeIf { it.isNotBlank() && it != "null" }
+        val streamId = optString("stream_id").takeIf { it.isNotBlank() }
+        val slotId = optString("slot_id").takeIf { it.isNotBlank() } ?: streamId ?: room ?: return null
+        val leaseId = optString("lease_id").takeIf { it.isNotBlank() } ?: streamId
+        val createdAt = optLong("created_at", 0L)
+        val expiresAt = optLong("expires_at", Long.MAX_VALUE / 4)
+        val seq = optLong("seq", 0L)
+        return Event(
+            slotId = slotId,
+            leaseId = leaseId,
+            status = status,
+            room = room,
+            creator = optString("creator").takeIf { it.isNotBlank() },
+            createdAt = createdAt,
+            expiresAt = expiresAt,
+            seq = seq,
+        )
     }
 
     private fun normalize(raw: String): String {

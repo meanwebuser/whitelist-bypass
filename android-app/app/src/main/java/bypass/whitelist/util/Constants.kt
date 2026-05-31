@@ -78,6 +78,8 @@ object PrefsKeys {
     const val DUAL_TRACK = "dual_track"
     const val SAVED_DESTINATIONS = "saved_destinations"
     const val ACTIVE_DESTINATION_ID = "active_destination_id"
+    const val AUTO_DESTINATION = "auto_destination"
+    const val AUTO_DESTINATION_EXPIRES_MS = "auto_destination_expires_ms"
     const val THEME_MODE = "theme_mode"
     const val ACCENT_MODE = "accent_mode"
     const val LANGUAGE_MODE = "language_mode"
