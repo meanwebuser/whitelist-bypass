@@ -7,9 +7,17 @@ final class SystemVPNManager {
     private let description = "Whitelist Bypass System VPN"
     private let providerBundleIdentifier = "bypass.whitelist.whitelist-bypass-proxy.PacketTunnel"
 
+    var isPacketTunnelBundled: Bool {
+        Bundle.main.url(forResource: "PacketTunnel", withExtension: "appex", subdirectory: "PlugIns") != nil
+    }
+
     private init() {}
 
     func install(callURL: String, completion: @escaping (Result<String, Error>) -> Void) {
+        guard isPacketTunnelBundled else {
+            completion(.failure(SystemVPNError.packetTunnelExtensionMissing))
+            return
+        }
         loadOrCreateManager { result in
             switch result {
             case .failure(let error): completion(.failure(error))
@@ -121,6 +129,18 @@ private extension NEVPNStatus {
         case .reasserting: return "reasserting"
         case .disconnecting: return "disconnecting"
         @unknown default: return "unknown"
+        }
+    }
+}
+
+
+enum SystemVPNError: LocalizedError {
+    case packetTunnelExtensionMissing
+
+    var errorDescription: String? {
+        switch self {
+        case .packetTunnelExtensionMissing:
+            return "PacketTunnel extension is not bundled in this build. Install the VPN build signed with NetworkExtension entitlement."
         }
     }
 }

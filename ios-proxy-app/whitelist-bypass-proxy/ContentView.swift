@@ -49,23 +49,31 @@ struct ContentView: View {
 
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("System VPN / PacketTunnel")
-                            .font(.headline)
-                        Text(proxyManager.vpnStatusText)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        HStack {
-                            Button("Install VPN") { proxyManager.installSystemVPNProfile() }
-                                .buttonStyle(.bordered)
-                            Button("Start VPN") { proxyManager.startSystemVPN() }
-                                .buttonStyle(.borderedProminent)
-                            Button("Stop") { proxyManager.stopSystemVPN() }
-                                .buttonStyle(.bordered)
-                                .tint(.red)
+                        if proxyManager.vpnAvailable {
+                            Text("System VPN / PacketTunnel")
+                                .font(.headline)
+                            Text(proxyManager.vpnStatusText)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            HStack {
+                                Button("Install VPN") { proxyManager.installSystemVPNProfile() }
+                                    .buttonStyle(.bordered)
+                                Button("Start VPN") { proxyManager.startSystemVPN() }
+                                    .buttonStyle(.borderedProminent)
+                                Button("Stop") { proxyManager.stopSystemVPN() }
+                                    .buttonStyle(.bordered)
+                                    .tint(.red)
+                            }
+                            Text("MVP: creates a real PacketTunnel VPN profile. Packet forwarding is intentionally disabled until packetFlow → tun2socks is wired, so it will not blackhole the phone.")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Proxy-only build")
+                                .font(.headline)
+                            Text("PacketTunnel extension is not included. This build does not create iOS VPN settings and should install with normal sideload signing.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
-                        Text("MVP: creates a real PacketTunnel VPN profile. Packet forwarding is intentionally disabled until packetFlow → tun2socks is wired, so it will not blackhole the phone.")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 8)
