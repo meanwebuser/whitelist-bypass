@@ -13,7 +13,11 @@ case "$MODE" in
   *) echo "usage: $0 [proxy|vpn]" >&2; exit 2 ;;
 esac
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration "$CONFIG" -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
-APP="$(find "$HOME/Library/Developer/Xcode/DerivedData" /var/root/Library/Developer/Xcode/DerivedData -path "*/Build/Products/${CONFIG}-iphoneos/whitelist-bypass-proxy.app" -type d 2>/dev/null | head -n 1)"
+SEARCH_ROOTS=("/var/root/Library/Developer/Xcode/DerivedData" "/Users/user/Library/Developer/Xcode/DerivedData")
+if [[ -n "${HOME:-}" ]]; then
+  SEARCH_ROOTS=("$HOME/Library/Developer/Xcode/DerivedData" "${SEARCH_ROOTS[@]}")
+fi
+APP="$(find "${SEARCH_ROOTS[@]}" -path "*/Build/Products/${CONFIG}-iphoneos/whitelist-bypass-proxy.app" -type d 2>/dev/null | head -n 1)"
 if [[ -z "$APP" ]]; then echo "app product not found" >&2; exit 1; fi
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
