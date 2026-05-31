@@ -1,0 +1,52 @@
+{
+  "name": "Whitelist Bypass",
+  "subtitle": "Experimental iOS builds for whitelist-bypass",
+  "description": "Unsigned proxy-only iOS builds for AltStore/SideStore. The proxy-only build does not include PacketTunnel, so it does not require NetworkExtension signing. The VPN/PacketTunnel variant is kept as source code and requires a paid Apple Developer profile with NetworkExtension entitlement.",
+  "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-1/icon.png",
+  "headerURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-1/icon.png",
+  "website": "https://github.com/megamen32/whitelist-bypass/tree/ios-packet-tunnel-scaffold",
+  "tintColor": "#6D5DF6",
+  "featuredApps": [
+    "bypass.whitelist.whitelist-bypass-proxy"
+  ],
+  "apps": [
+    {
+      "name": "Whitelist Bypass Proxy",
+      "bundleIdentifier": "bypass.whitelist.whitelist-bypass-proxy",
+      "developerName": "megamen32",
+      "subtitle": "SOCKS proxy over call transport",
+      "localizedDescription": "Experimental iOS proxy-only build for whitelist-bypass. Supports WB room URL normalization, for example https://stream.wb.ru/room/<room> is converted to wbstream://<room>. This AltStore build is proxy-only and does not include the PacketTunnel VPN extension.",
+      "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-1/icon.png",
+      "tintColor": "#6D5DF6",
+      "category": "utilities",
+      "versions": [
+        {
+          "version": "0.3.5",
+          "buildVersion": "1",
+          "marketingVersion": "0.3.5-altstore.1",
+          "date": "2026-05-31T12:26:40Z",
+          "localizedDescription": "Proxy-only AltStore build. Adds automatic WB stream URL normalization and a refreshed card-based UI.",
+          "downloadURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-1/whitelist-bypass-proxy-only-unsigned.ipa",
+          "size": 9777021,
+          "sha256": "853a87bae4ca28cb21673c18fb95b119feb557d9e59129099a01ccebb99e1fbf",
+          "minOSVersion": "16.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": [
+    {
+      "title": "AltStore source added",
+      "identifier": "altstore-source-0.3.5-altstore-1",
+      "caption": "Proxy-only iOS build with WB room URL normalization and refreshed UI.",
+      "date": "2026-05-31T12:26:40Z",
+      "tintColor": "#6D5DF6",
+      "url": "https://github.com/megamen32/whitelist-bypass/releases/tag/ios-proxy-v0.3.5-altstore-1",
+      "appID": "bypass.whitelist.whitelist-bypass-proxy"
+    }
+  ]
+}
