@@ -10,7 +10,7 @@
 "btn_done" = "Done";
 "btn_open_in_happ" = "Copy v2ray URL";
 "btn_open_in_telegram" = "Open in Telegram";
-"hint_call_link" = "VK / Telemost link, wbstream://<room>, or dion://<room>";
+"hint_call_link" = "VK / Telemost link, https://stream.wb.ru/room/<room>, wbstream://<room>, or dion://<room>";
 "hint_username" = "Username";
 "hint_password" = "Password";
 "hint_display_name" = "Display Name";

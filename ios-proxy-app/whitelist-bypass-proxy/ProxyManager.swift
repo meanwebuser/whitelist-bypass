@@ -123,37 +123,58 @@ enum CallPlatform: String {
     case dion = "dion"
 
     static let wbstreamPrefix = "wbstream://"
+    static let wbstreamRoomURLInfix = "stream.wb.ru/room/"
     static let dionPrefix = "dion://"
     static let dionEventInfix = "dion.vc/event/"
 
+    static func normalize(url: String) -> String {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let roomId = extractWBStreamRoomId(from: trimmed) {
+            return "\(wbstreamPrefix)\(roomId)"
+        }
+        return trimmed
+    }
+
     static func detect(url: String) -> CallPlatform {
-        if url.hasPrefix(dionPrefix) || url.contains(dionEventInfix) {
+        let normalized = normalize(url: url)
+        if normalized.hasPrefix(dionPrefix) || normalized.contains(dionEventInfix) {
             return .dion
         }
-        if url.hasPrefix(wbstreamPrefix) {
+        if normalized.hasPrefix(wbstreamPrefix) {
             return .wbstream
         }
-        if url.contains("telemost.yandex") {
+        if normalized.contains("telemost.yandex") {
             return .telemost
         }
         return .vk
     }
 
     static func extractRoomId(url: String) -> String {
-        let trimmed = url.trimmingCharacters(in: .whitespaces)
+        let trimmed = normalize(url: url)
         if trimmed.hasPrefix(wbstreamPrefix) {
-            return String(trimmed.dropFirst(wbstreamPrefix.count)).trimmingCharacters(in: .whitespaces)
+            return String(trimmed.dropFirst(wbstreamPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         if trimmed.hasPrefix(dionPrefix) {
-            return String(trimmed.dropFirst(dionPrefix.count)).trimmingCharacters(in: .whitespaces)
+            return String(trimmed.dropFirst(dionPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         if let range = trimmed.range(of: dionEventInfix) {
             var slug = String(trimmed[range.upperBound...])
             if let qmark = slug.firstIndex(of: "?") { slug = String(slug[..<qmark]) }
+            if let hash = slug.firstIndex(of: "#") { slug = String(slug[..<hash]) }
             if let slash = slug.firstIndex(of: "/") { slug = String(slug[..<slash]) }
-            return slug.trimmingCharacters(in: .whitespaces)
+            return slug.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return trimmed
+    }
+
+    private static func extractWBStreamRoomId(from url: String) -> String? {
+        guard let range = url.range(of: wbstreamRoomURLInfix) else { return nil }
+        var roomId = String(url[range.upperBound...])
+        if let qmark = roomId.firstIndex(of: "?") { roomId = String(roomId[..<qmark]) }
+        if let hash = roomId.firstIndex(of: "#") { roomId = String(roomId[..<hash]) }
+        if let slash = roomId.firstIndex(of: "/") { roomId = String(roomId[..<slash]) }
+        roomId = roomId.trimmingCharacters(in: .whitespacesAndNewlines)
+        return roomId.isEmpty ? nil : roomId
     }
 }
 
@@ -168,7 +189,16 @@ class ProxyManager: ObservableObject {
     @Published var vpnAvailable: Bool = SystemVPNManager.shared.isPacketTunnelBundled
     var detectedPlatform: CallPlatform = .vk
 
-    @Published var callUrl: String = AppDefaults.lastUrl { didSet { AppDefaults.lastUrl = callUrl } }
+    @Published var callUrl: String = AppDefaults.lastUrl {
+        didSet {
+            let normalized = CallPlatform.normalize(url: callUrl)
+            if normalized != callUrl {
+                callUrl = normalized
+                return
+            }
+            AppDefaults.lastUrl = callUrl
+        }
+    }
     @Published var socksPort: Int = AppDefaults.socksPort { didSet { AppDefaults.socksPort = socksPort } }
     @Published var tunnelMode: TunnelMode = AppDefaults.tunnelMode { didSet { AppDefaults.tunnelMode = tunnelMode } }
     @Published var displayName: String = AppDefaults.displayName { didSet { AppDefaults.displayName = displayName } }
@@ -226,6 +256,11 @@ class ProxyManager: ObservableObject {
     }
 
     func connect() {
+        let normalizedCallUrl = CallPlatform.normalize(url: callUrl)
+        if normalizedCallUrl != callUrl {
+            callUrl = normalizedCallUrl
+            appendLog("Normalized link: \(normalizedCallUrl)")
+        }
         guard !callUrl.isEmpty else { return }
 
         if !isPortAvailable(socksPort) {
