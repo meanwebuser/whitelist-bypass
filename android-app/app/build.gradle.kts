@@ -1,7 +1,38 @@
+import java.io.File
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
 }
+
+
+fun loadBrandDotEnv(file: File): Map<String, String> {
+    if (!file.isFile) return emptyMap()
+    return file.readLines().mapNotNull { raw ->
+        val line = raw.trim()
+        if (line.isEmpty() || line.startsWith("#") || !line.contains("=")) return@mapNotNull null
+        val key = line.substringBefore("=").trim()
+        val value = line.substringAfter("=").trim()
+        key to value
+    }.toMap()
+}
+
+fun brandEnvValue(dotEnv: Map<String, String>, vararg names: String): String? {
+    for (name in names) {
+        val fromProcess = System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }
+        if (fromProcess != null) return fromProcess
+        val fromFile = dotEnv[name]?.trim()?.takeIf { it.isNotEmpty() }
+        if (fromFile != null) return fromFile
+    }
+    return null
+}
+
+val brandDotEnv = listOf(
+    rootProject.file(".env"),
+    rootProject.file("../.env")
+).firstOrNull { it.isFile }?.let(::loadBrandDotEnv) ?: emptyMap()
+
+val appBrandName = brandEnvValue(brandDotEnv, "APP_BRAND", "BRANDING", "BRAND_NAME", "APP_NAME") ?: "whitelistbypass"
 
 val versionMajor = 0
 val versionMinor = 3
@@ -22,6 +53,9 @@ android {
         versionName = "$versionMajor.$versionMinor.$versionPatch"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        resValue("string", "app_name", appBrandName)
+        manifestPlaceholders["appLabel"] = appBrandName
+        manifestPlaceholders["tileLabel"] = appBrandName
     }
 
     signingConfigs {

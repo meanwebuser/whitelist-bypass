@@ -28,6 +28,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
     interface Host {
         fun onConnectPressed(config: CallConfig)
         fun onDisconnectPressed()
+        fun onDiscoveryConnectPressed()
         fun onPingPressed(callback: (success: Boolean, rttMs: Int) -> Unit)
         fun isTunnelActive(): Boolean
         fun currentStatus(): VpnStatus?
@@ -50,6 +51,9 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
                 val active = Prefs.activeDestination
                 if (active != null) {
                     host()?.onConnectPressed(active)
+                } else {
+                    content?.bindStatusText("Сканирование VK…")
+                    host()?.onDiscoveryConnectPressed()
                 }
             }
         }
