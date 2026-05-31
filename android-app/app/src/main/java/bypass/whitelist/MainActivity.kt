@@ -375,7 +375,7 @@ class MainActivity :
         thread {
             val started = System.nanoTime()
             val ok = try {
-                probeHttpsViaSocks5(host = "t.me", path = "/bezrabotnyi/1249?embed=true")
+                probeHttpsViaSocks5(host = "t.me", path = "/Kuplinov_Telegram/1032")
             } catch (_: Exception) {
                 false
             }
