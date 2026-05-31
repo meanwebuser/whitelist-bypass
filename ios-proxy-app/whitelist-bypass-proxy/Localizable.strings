@@ -9,6 +9,8 @@
 "btn_go" = "Go";
 "btn_done" = "Done";
 "btn_open_in_happ" = "Copy v2ray URL";
+"btn_add_to_happ" = "Add to Happ";
+"btn_add_to_streisand" = "Copy for Streisand";
 "btn_open_in_telegram" = "Open in Telegram";
 "hint_call_link" = "VK / Telemost link, https://stream.wb.ru/room/<room>, wbstream://<room>, or dion://<room>";
 "hint_username" = "Username";
@@ -31,5 +33,8 @@
 "vp8_dual_track_title" = "Dual track";
 "vp8_dual_track_sub" = "Publish a second VP8 track as screen-share and shard outbound across both.";
 "proxy_url_copied" = "Proxy URL copied";
-"toast_happ_params_copied" = "v2ray URL copied";
+"toast_happ_params_copied" = "Proxy profile copied";
+"toast_happ_opened" = "Opened Happ with proxy profile";
+"toast_streisand_params_copied" = "Proxy profile copied. In Streisand tap + → Import from Clipboard.";
+"toast_streisand_clipboard" = "Copied. In Streisand tap + → Import from Clipboard.";
 "dc_mode_not_supported" = "DC mode not supported - falling back to video";

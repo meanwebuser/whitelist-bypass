@@ -532,12 +532,38 @@ class ProxyManager: ObservableObject {
         }
     }
 
-    func openHappProxy() {
+    var xrayProxyUri: String {
         let creds = "\(activeSocksUser):\(activeSocksPass)"
         let credsB64 = Data(creds.utf8).base64EncodedString()
-        let proxyUri = "socks://\(credsB64)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
-        UIPasteboard.general.string = proxyUri
-        showToast(NSLocalizedString("toast_happ_params_copied", comment: ""))
+        return "socks://\(credsB64)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
+    }
+
+    func openHappProxy() {
+        UIPasteboard.general.string = xrayProxyUri
+        guard let encoded = xrayProxyUri.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "happ://add/\(encoded)") else {
+            showToast(NSLocalizedString("toast_happ_params_copied", comment: ""))
+            return
+        }
+        UIApplication.shared.open(url) { [weak self] opened in
+            DispatchQueue.main.async {
+                self?.showToast(opened ? NSLocalizedString("toast_happ_opened", comment: "") : NSLocalizedString("toast_happ_params_copied", comment: ""))
+            }
+        }
+    }
+
+    func openStreisandProxy() {
+        UIPasteboard.general.string = xrayProxyUri
+        // Streisand does not publish a stable import deep link; most guides use Import from Clipboard.
+        if let url = URL(string: "streisand://") {
+            UIApplication.shared.open(url) { [weak self] opened in
+                DispatchQueue.main.async {
+                    self?.showToast(opened ? NSLocalizedString("toast_streisand_clipboard", comment: "") : NSLocalizedString("toast_streisand_params_copied", comment: ""))
+                }
+            }
+        } else {
+            showToast(NSLocalizedString("toast_streisand_params_copied", comment: ""))
+        }
     }
 
 }
