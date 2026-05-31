@@ -24,11 +24,11 @@
           "version": "0.3.5",
           "buildVersion": "2",
           "marketingVersion": "0.3.5-altstore.2",
-          "date": "2026-05-31T12:26:40Z",
+          "date": "2026-05-31T13:36:00Z",
           "localizedDescription": "Proxy-only AltStore build. Adds automatic WB stream URL normalization, refreshed UI, Add to Happ, and Copy for Streisand actions.",
           "downloadURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-2/whitelist-bypass-proxy-only-unsigned.ipa",
           "size": 9780414,
-          "sha256": "e9f6c78636cd544478ca1225919aff1093636a63a795bf37c07caec64df96fe0",
+          "sha256": "d3572f255b42deed3bc152bf57f17a539894a47aed954f76ecd059412938b924",
           "minOSVersion": "16.0"
         }
       ],
@@ -43,7 +43,7 @@
       "title": "AltStore source added",
       "identifier": "altstore-source-0.3.5-altstore-2",
       "caption": "Proxy-only iOS build with WB room URL normalization, Happ and Streisand helper actions.",
-      "date": "2026-05-31T12:26:40Z",
+      "date": "2026-05-31T13:36:00Z",
       "tintColor": "#6D5DF6",
       "url": "https://github.com/megamen32/whitelist-bypass/releases/tag/ios-proxy-v0.3.5-altstore-2",
       "appID": "bypass.whitelist.whitelist-bypass-proxy"
