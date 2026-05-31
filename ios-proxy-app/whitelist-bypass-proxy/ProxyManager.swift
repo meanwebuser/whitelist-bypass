@@ -165,6 +165,7 @@ class ProxyManager: ObservableObject {
     @Published var toastMessage: String?
     @Published var statusText: String?
     @Published var vpnStatusText: String = "VPN: not configured"
+    @Published var vpnAvailable: Bool = SystemVPNManager.shared.isPacketTunnelBundled
     var detectedPlatform: CallPlatform = .vk
 
     @Published var callUrl: String = AppDefaults.lastUrl { didSet { AppDefaults.lastUrl = callUrl } }
@@ -463,6 +464,11 @@ class ProxyManager: ObservableObject {
     }
 
     func refreshSystemVPNStatus() {
+        vpnAvailable = SystemVPNManager.shared.isPacketTunnelBundled
+        guard vpnAvailable else {
+            vpnStatusText = "VPN extension is not included in this build"
+            return
+        }
         SystemVPNManager.shared.status { [weak self] status in
             DispatchQueue.main.async {
                 self?.vpnStatusText = status
