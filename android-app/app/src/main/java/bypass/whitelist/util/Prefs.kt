@@ -148,6 +148,10 @@ object Prefs {
         }
         set(value) = prefs.edit { putString(PrefsKeys.LANGUAGE_MODE, value.name) }
 
+    var showNotificationStatusText: Boolean
+        get() = prefs.getBoolean(PrefsKeys.SHOW_NOTIFICATION_STATUS_TEXT, false)
+        set(value) = prefs.edit { putBoolean(PrefsKeys.SHOW_NOTIFICATION_STATUS_TEXT, value) }
+
     val activeDestination: CallConfig?
         get() {
             val id = activeDestinationId

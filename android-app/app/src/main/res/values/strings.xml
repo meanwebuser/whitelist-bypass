@@ -39,11 +39,17 @@
     <string name="vp8_batch_label">Batch</string>
     <string name="vp8_dual_track_title">Dual track</string>
     <string name="vp8_dual_track_sub">Publish a second VP8 track as screen-share and shard outbound across both.</string>
-    <string name="notification_vpn_title">VPN active</string>
-    <string name="notification_proxy_title">Proxy active</string>
+    <string name="notification_vpn_title">On</string>
+    <string name="notification_proxy_title">Proxy on</string>
     <string name="notification_session_connecting">Starting headless session</string>
     <string name="error_no_destination">Add and select a destination first</string>
     <string name="notification_disconnect">Disconnect</string>
+
+    <string name="notification_title">BEZаботный-NET</string>
+    <string name="status_on">On</string>
+    <string name="status_off">Off</string>
+    <string name="status_proxy_on">Proxy on</string>
+    <string name="status_connecting_short">Connecting…</string>
     <string name="dc_mode_not_supported">DC mode not supported - falling back to video</string>
     <string name="tile_requires_headless_destination">Select a headless destination first</string>
     <string name="tile_vpn_permission_required">Open the app once and grant VPN permission</string>
@@ -112,6 +118,8 @@
     <string name="settings_row_headless_sub">Skip the visible browser join</string>
     <string name="settings_row_reconnect">Reconnect on app start</string>
     <string name="settings_row_reconnect_sub">Restore the last session automatically</string>
+    <string name="settings_row_notification_status_text">Notification text</string>
+    <string name="settings_row_notification_status_text_sub">Show On / Off / Connecting in the notification</string>
 
     <string name="settings_toast_destinations_cleared">All calls removed</string>
     <string name="settings_toast_reset_done">Settings reset</string>

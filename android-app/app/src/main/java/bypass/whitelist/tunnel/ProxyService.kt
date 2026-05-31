@@ -13,6 +13,7 @@ import android.util.Log
 import bypass.whitelist.MainActivity
 import bypass.whitelist.util.Callback
 import bypass.whitelist.R
+import bypass.whitelist.util.Prefs
 
 class ProxyService : Service() {
 
@@ -128,7 +129,7 @@ class ProxyService : Service() {
             nm.createNotificationChannel(channel)
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.notification_proxy_title)))
+        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.status_proxy_on)))
     }
 
     private fun buildNotification(text: String): Notification {
@@ -151,8 +152,8 @@ class ProxyService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle(getString(R.string.notification_proxy_title))
-            .setContentText(text)
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(if (Prefs.showNotificationStatusText) text else "")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
             .setContentIntent(openPending)

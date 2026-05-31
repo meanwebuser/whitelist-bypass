@@ -174,6 +174,9 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         addSwitchRow(card, R.drawable.ic_setting_reconnect, getString(R.string.settings_row_reconnect), getString(R.string.settings_row_reconnect_sub), Prefs.connectOnStart) { checked ->
             Prefs.connectOnStart = checked
         }
+        addSwitchRow(card, R.drawable.ic_nav_activity, getString(R.string.settings_row_notification_status_text), getString(R.string.settings_row_notification_status_text_sub), Prefs.showNotificationStatusText) { checked ->
+            Prefs.showNotificationStatusText = checked
+        }
         return section
     }
 

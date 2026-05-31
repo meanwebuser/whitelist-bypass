@@ -29,11 +29,17 @@
     <string name="vp8_batch_label">Пакет</string>
     <string name="vp8_dual_track_title">Две дорожки</string>
     <string name="vp8_dual_track_sub">Публиковать вторую VP8-дорожку как демонстрацию экрана и делить исходящий поток.</string>
-    <string name="notification_vpn_title">VPN активен</string>
-    <string name="notification_proxy_title">Прокси активен</string>
+    <string name="notification_vpn_title">Вкл</string>
+    <string name="notification_proxy_title">Прокси вкл</string>
     <string name="notification_session_connecting">Запуск фоновой сессии</string>
     <string name="error_no_destination">Сначала добавьте и выберите сервер</string>
     <string name="notification_disconnect">Отключить</string>
+
+    <string name="notification_title">BEZаботный-NET</string>
+    <string name="status_on">Вкл</string>
+    <string name="status_off">Выкл</string>
+    <string name="status_proxy_on">Прокси вкл</string>
+    <string name="status_connecting_short">Подключение…</string>
     <string name="dc_mode_not_supported">DC-режим не поддержан — fallback на video</string>
     <string name="tile_requires_headless_destination">Сначала выберите фоновый сервер</string>
     <string name="tile_vpn_permission_required">Откройте приложение и разрешите VPN</string>
@@ -108,6 +114,8 @@
     <string name="settings_row_headless_sub">Не показывать браузер подключения</string>
     <string name="settings_row_reconnect">Подключаться при запуске</string>
     <string name="settings_row_reconnect_sub">Автоматически восстановить последнюю сессию</string>
+    <string name="settings_row_notification_status_text">Текст уведомления</string>
+    <string name="settings_row_notification_status_text_sub">Показывать Вкл / Выкл / Подключение в уведомлении</string>
     <string name="settings_toast_destinations_cleared">Все серверы удалены</string>
     <string name="settings_toast_reset_done">Настройки сброшены</string>
     <string name="settings_section_danger">Опасная зона</string>
