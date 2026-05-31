@@ -1,6 +1,8 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <string name="share_logs">Share logs</string>
     <string name="copy_logs_toast">Logs copied to clipboard</string>
+    <string name="copy_socks_url">Copy SOCKS5 URL</string>
+    <string name="copy_socks_url_toast">SOCKS5 URL copied</string>
     <string name="autofill_settings_title">Autofill settings</string>
     <string name="autofill_name_input_hint">Autofill name</string>
     <string name="autofill_generate_random">Random</string>

@@ -29,6 +29,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         fun onConnectPressed(config: CallConfig)
         fun onDisconnectPressed()
         fun onDiscoveryConnectPressed()
+        fun onCopySocksPressed()
         fun onPingPressed(callback: (success: Boolean, rttMs: Int) -> Unit)
         fun isTunnelActive(): Boolean
         fun currentStatus(): VpnStatus?
@@ -57,6 +58,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
                 }
             }
         }
+        container.onCopySocksPressed = { host()?.onCopySocksPressed() }
         container.onPingPressed = {
             container.showPingRunning()
             host()?.onPingPressed { success, rttMs ->

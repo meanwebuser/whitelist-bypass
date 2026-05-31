@@ -32,6 +32,7 @@ class MainFragmentView(private val root: View) {
     private val statusDot: View = root.findViewById(R.id.statusDot)
     private val statusDetail: TextView = root.findViewById(R.id.statusDetail)
     private val callsList: LinearLayout = root.findViewById(R.id.callsList)
+    private val copySocksButton: View = root.findViewById(R.id.copySocksButton)
     private val emptyCta: View = root.findViewById(R.id.emptyCta)
     private val statsCard: View = root.findViewById(R.id.statsCard)
     private val pingRow: LinearLayout = root.findViewById(R.id.pingRow)
@@ -46,6 +47,7 @@ class MainFragmentView(private val root: View) {
     var onAddCallClicked: Callback? = null
     var onHeroPressed: Callback? = null
     var onPingPressed: Callback? = null
+    var onCopySocksPressed: Callback? = null
     var onCallSelected: ParamCallback<CallConfig>? = null
     var onCallLongPressed: ParamCallback<CallConfig>? = null
 
@@ -57,6 +59,7 @@ class MainFragmentView(private val root: View) {
     init {
         emptyCta.clipToOutline = true
         pingButton.clipToOutline = true
+        copySocksButton.clipToOutline = true
         addButton.setOnClickListener { onAddCallClicked?.invoke() }
         emptyCta.setOnClickListener { onAddCallClicked?.invoke() }
         hero.setOnTouchListener { v, event ->
@@ -88,6 +91,7 @@ class MainFragmentView(private val root: View) {
             }
         }
         pingButton.setOnClickListener { onPingPressed?.invoke() }
+        copySocksButton.setOnClickListener { onCopySocksPressed?.invoke() }
     }
 
     fun bindCalls(calls: List<CallConfig>, activeId: String) {
@@ -108,6 +112,7 @@ class MainFragmentView(private val root: View) {
             headerSub.text = context.getString(R.string.main_sub_live)
             statsCard.visibility = View.VISIBLE
             pingRow.visibility = View.VISIBLE
+            copySocksButton.visibility = View.VISIBLE
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTED)
             heroRingMid.setBackgroundResource(R.drawable.bg_hero_ring_dashed_active)
             statusDot.setBackgroundResource(R.drawable.bg_status_dot_active)
@@ -122,6 +127,7 @@ class MainFragmentView(private val root: View) {
             statusHeadline.text = context.getString(if (status == VpnStatus.STOPPING) R.string.status_headline_disconnected else R.string.status_headline_connecting)
             statsCard.visibility = View.GONE
             pingRow.visibility = View.GONE
+            copySocksButton.visibility = View.GONE
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTING)
             heroRingMid.setBackgroundResource(R.drawable.bg_hero_ring_dashed)
             statusDot.setBackgroundResource(R.drawable.bg_status_dot_warn)
@@ -142,6 +148,7 @@ class MainFragmentView(private val root: View) {
             }
             statsCard.visibility = View.GONE
             pingRow.visibility = View.GONE
+            copySocksButton.visibility = View.GONE
             heroRingOuter.applyState(HeroRingOuterView.State.IDLE)
             heroRingMid.setBackgroundResource(R.drawable.bg_hero_ring_dashed)
             collapsedToActive = false
