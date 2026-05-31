@@ -320,8 +320,8 @@ class TunnelVpnService : VpnService() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle(getString(R.string.notification_vpn_title))
-            .setContentText(text)
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(if (Prefs.showNotificationStatusText) text else "")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
             .setContentIntent(openPending)

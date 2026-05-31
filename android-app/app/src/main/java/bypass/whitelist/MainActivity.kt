@@ -4,7 +4,9 @@ import android.animation.ArgbEvaluator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.graphics.Color
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -105,6 +107,7 @@ class MainActivity :
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyTransparentSystemBars()
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
@@ -633,6 +636,15 @@ class MainActivity :
         label.scaleX = 1f + (0.06f * emphasis)
         label.scaleY = 1f + (0.06f * emphasis)
         label.paint.isFakeBoldText = emphasis > 0.92f
+    }
+
+    private fun applyTransparentSystemBars() {
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
     }
 
     private fun mainFragment(): MainFragment? =

@@ -204,8 +204,8 @@ class HeadlessSessionService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(text)
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(if (Prefs.showNotificationStatusText) text else "")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
             .setContentIntent(openPending)
