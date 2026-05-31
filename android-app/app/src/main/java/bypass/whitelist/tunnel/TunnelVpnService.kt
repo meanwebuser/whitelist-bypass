@@ -154,8 +154,11 @@ class TunnelVpnService : VpnService() {
         val builder = Builder()
             .setSession(Vpn.SESSION_NAME)
             .addAddress(Vpn.ADDRESS, Vpn.PREFIX_LENGTH)
+            .addAddress(Vpn.ADDRESS_V6, Vpn.PREFIX_LENGTH_V6)
             .addRoute(Vpn.ROUTE, 0)
+            .addRoute(Vpn.ROUTE_V6, 0)
             .setMtu(Vpn.MTU)
+        TunnelServiceState.logCallback?.invoke("VPN builder: full IPv4+IPv6 route via TUN")
 
         when (Prefs.dnsMode) {
             DnsMode.SYSTEM -> {
@@ -221,6 +224,7 @@ class TunnelVpnService : VpnService() {
         val fd = vpnFd!!.detachFd()
         vpnFd = null
         Log.i(TAG, "VPN established, fd=$fd, SOCKS5 ${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort}")
+        TunnelServiceState.logCallback?.invoke("VPN established; starting tun2socks -> ${Prefs.socksHost}:${Prefs.socksPort}")
         updateStatus(VpnStatus.TUNNEL_ACTIVE)
         val startGeneration = bumpTunGeneration()
 
@@ -230,7 +234,16 @@ class TunnelVpnService : VpnService() {
                 return@Thread
             }
             try {
+                TunnelServiceState.logCallback?.invoke("tun2socks starting")
                 Androidbind.startTun2Socks(fd.toLong(), Vpn.MTU.toLong(), Prefs.socksPort, SocksAuth.user, SocksAuth.pass)
+                if (isRunning && !stopInProgress && isTunGenerationCurrent(startGeneration)) {
+                    Log.w(TAG, "tun2socks exited unexpectedly")
+                    TunnelServiceState.logCallback?.invoke("tun2socks exited unexpectedly")
+                    isRunning = false
+                    TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.TUNNEL_LOST)
+                } else {
+                    TunnelServiceState.logCallback?.invoke("tun2socks stopped")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "tun2socks error: ${e.message}")
                 isRunning = false

@@ -95,7 +95,10 @@ const val DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleW
 object Vpn {
     const val ADDRESS = "10.0.0.2"
     const val PREFIX_LENGTH = 32
+    const val ADDRESS_V6 = "fd00:1:fd00:1::2"
+    const val PREFIX_LENGTH_V6 = 128
     const val ROUTE = "0.0.0.0"
+    const val ROUTE_V6 = "::"
     const val MTU = 1500
     const val DNS_PRIMARY = "8.8.8.8"
     const val DNS_SECONDARY = "8.8.4.4"

@@ -356,6 +356,14 @@ class MainActivity :
         fullReset()
     }
 
+    override fun onCopySocksPressed() {
+        val url = "socks5://${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort}"
+        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("SOCKS5 URL", url))
+        Toast.makeText(this, R.string.copy_socks_url_toast, Toast.LENGTH_SHORT).show()
+        appendLog("SOCKS5 URL copied: socks5://<auth>@${Prefs.socksHost}:${Prefs.socksPort}")
+    }
+
     override fun onPingPressed(callback: (Boolean, Int) -> Unit) {
         thread {
             val started = System.nanoTime()
