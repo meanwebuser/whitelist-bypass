@@ -6,114 +6,43 @@ struct ContentView: View {
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                VStack(spacing: 12) {
-                    HStack {
-                        ZStack(alignment: .trailing) {
-                            TextField(NSLocalizedString("hint_call_link", comment: ""), text: $proxyManager.callUrl)
-                                .textFieldStyle(.roundedBorder)
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
-                                .keyboardType(.URL)
-                                .padding(.trailing, proxyManager.callUrl.isEmpty ? 0 : 24)
+            ScrollView {
+                VStack(spacing: 14) {
+                    HeaderCard()
 
-                            if !proxyManager.callUrl.isEmpty {
-                                Button(action: { proxyManager.callUrl = "" }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.gray)
-                                }
-                                .padding(.trailing, 6)
-                            }
-                        }
-
-                        Button(action: {
-                            if proxyManager.isRunning {
-                                proxyManager.resetAll()
-                            } else {
-                                proxyManager.connect()
-                            }
-                        }) {
-                            Text(proxyManager.isRunning ? NSLocalizedString("btn_stop", comment: "") : NSLocalizedString("btn_go", comment: ""))
-                                .fontWeight(.bold)
-                                .frame(width: 60)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(proxyManager.isRunning ? .red : .green)
-                    }
-                    .padding(.horizontal)
+                    LinkCard()
+                        .environmentObject(proxyManager)
 
                     if let captchaURL = proxyManager.captchaURL, let url = URL(string: captchaURL) {
                         CaptchaWebView(url: url)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(minHeight: 320)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .padding(.horizontal)
                     }
-
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        if proxyManager.vpnAvailable {
-                            Text("System VPN / PacketTunnel")
-                                .font(.headline)
-                            Text(proxyManager.vpnStatusText)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            HStack {
-                                Button("Install VPN") { proxyManager.installSystemVPNProfile() }
-                                    .buttonStyle(.bordered)
-                                Button("Start VPN") { proxyManager.startSystemVPN() }
-                                    .buttonStyle(.borderedProminent)
-                                Button("Stop") { proxyManager.stopSystemVPN() }
-                                    .buttonStyle(.bordered)
-                                    .tint(.red)
-                            }
-                            Text("MVP: creates a real PacketTunnel VPN profile. Packet forwarding is intentionally disabled until packetFlow → tun2socks is wired, so it will not blackhole the phone.")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("Proxy-only build")
-                                .font(.headline)
-                            Text("PacketTunnel extension is not included. This build does not create iOS VPN settings and should install with normal sideload signing.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
 
                     if proxyManager.status == .tunnelConnected {
-                        ProxyInfoView(proxyUrl: proxyManager.socksUrl, onCopy: proxyManager.copyProxyUrl)
+                        ProxyCard()
+                            .environmentObject(proxyManager)
+                    }
 
-                        Button(action: { proxyManager.openHappProxy() }) {
-                            Label(NSLocalizedString("btn_open_in_happ", comment: ""), systemImage: "globe")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.purple)
-                        .padding(.horizontal)
+                    VPNCard()
+                        .environmentObject(proxyManager)
 
-                        Button(action: { proxyManager.openTelegramProxy() }) {
-                            Label(NSLocalizedString("btn_open_in_telegram", comment: ""), systemImage: "paperplane.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.blue)
-                        .padding(.horizontal)
+                    if proxyManager.showLogs && proxyManager.captchaURL == nil {
+                        LogsCard(logs: proxyManager.logs)
                     }
                 }
-                .padding(.vertical, 12)
-
-                if proxyManager.showLogs && proxyManager.captchaURL == nil {
-                    LogView(logs: proxyManager.logs)
-                }
-
-                Spacer(minLength: 0)
+                .padding(.vertical, 16)
             }
+            .background(Color(.systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    StatusIndicator(status: proxyManager.status, errorMessage: proxyManager.errorMessage, statusText: proxyManager.statusText, tunnelMode: proxyManager.tunnelMode)
+                ToolbarItem(placement: .principal) {
+                    StatusChip(status: proxyManager.status, errorMessage: proxyManager.errorMessage, statusText: proxyManager.statusText, tunnelMode: proxyManager.tunnelMode)
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: { showSettings = true }) {
-                        Image(systemName: "gearshape")
+                        Image(systemName: "slider.horizontal.3")
                     }
                 }
             }
@@ -123,16 +52,10 @@ struct ContentView: View {
             }
             .overlay(alignment: .bottom) {
                 if let toast = proxyManager.toastMessage {
-                    Text(toast)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(.ultraThinMaterial)
-                        .cornerRadius(20)
-                        .padding(.bottom, 40)
+                    ToastView(text: toast)
+                        .padding(.bottom, 28)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .animation(.easeInOut(duration: 0.3), value: proxyManager.toastMessage)
+                        .animation(.easeInOut(duration: 0.25), value: proxyManager.toastMessage)
                 }
             }
         }
@@ -143,7 +66,152 @@ struct ContentView: View {
     }
 }
 
-struct StatusIndicator: View {
+struct HeaderCard: View {
+    var body: some View {
+        CardView {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LinearGradient(colors: [.purple, .blue], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "point.3.connected.trianglepath.dotted")
+                        .foregroundColor(.white)
+                        .font(.title3)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Whitelist Bypass")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    Text("SOCKS proxy over call transport")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+        }
+    }
+}
+
+struct LinkCard: View {
+    @EnvironmentObject var proxyManager: ProxyManager
+
+    var body: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Call room")
+                    .font(.headline)
+                ZStack(alignment: .trailing) {
+                    TextField(NSLocalizedString("hint_call_link", comment: ""), text: $proxyManager.callUrl)
+                        .textFieldStyle(.plain)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .keyboardType(.URL)
+                        .padding(12)
+                        .padding(.trailing, proxyManager.callUrl.isEmpty ? 0 : 28)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                    if !proxyManager.callUrl.isEmpty {
+                        Button(action: { proxyManager.callUrl = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.trailing, 10)
+                    }
+                }
+                Text("WB room links are converted to wbstream:// automatically.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button(action: {
+                    if proxyManager.isRunning {
+                        proxyManager.resetAll()
+                    } else {
+                        proxyManager.connect()
+                    }
+                }) {
+                    Label(proxyManager.isRunning ? NSLocalizedString("btn_stop", comment: "") : NSLocalizedString("btn_go", comment: ""), systemImage: proxyManager.isRunning ? "stop.fill" : "play.fill")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(proxyManager.isRunning ? .red : .green)
+            }
+        }
+    }
+}
+
+struct ProxyCard: View {
+    @EnvironmentObject var proxyManager: ProxyManager
+
+    var body: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Proxy ready", systemImage: "checkmark.seal.fill")
+                    .font(.headline)
+                    .foregroundColor(.green)
+                ProxyInfoView(proxyUrl: proxyManager.socksUrl, onCopy: proxyManager.copyProxyUrl)
+                HStack {
+                    Button(action: { proxyManager.openHappProxy() }) {
+                        Label(NSLocalizedString("btn_open_in_happ", comment: ""), systemImage: "globe")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.purple)
+
+                    Button(action: { proxyManager.openTelegramProxy() }) {
+                        Label("Telegram", systemImage: "paperplane.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.blue)
+                }
+            }
+        }
+    }
+}
+
+struct VPNCard: View {
+    @EnvironmentObject var proxyManager: ProxyManager
+
+    var body: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label(proxyManager.vpnAvailable ? "VPN extension" : "Proxy-only build", systemImage: proxyManager.vpnAvailable ? "shield.lefthalf.filled" : "bolt.horizontal.circle")
+                        .font(.headline)
+                    Spacer()
+                    Text(proxyManager.vpnAvailable ? "optional" : "AltStore friendly")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .clipShape(Capsule())
+                }
+                Text(proxyManager.vpnAvailable ? proxyManager.vpnStatusText : "This build does not include PacketTunnel, so iOS VPN settings will not appear.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                if proxyManager.vpnAvailable {
+                    HStack {
+                        Button("Install") { proxyManager.installSystemVPNProfile() }
+                            .buttonStyle(.bordered)
+                        Button("Start") { proxyManager.startSystemVPN() }
+                            .buttonStyle(.borderedProminent)
+                        Button("Stop") { proxyManager.stopSystemVPN() }
+                            .buttonStyle(.bordered)
+                            .tint(.red)
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct StatusChip: View {
     let status: ProxyStatus
     let errorMessage: String
     let statusText: String?
@@ -152,10 +220,8 @@ struct StatusIndicator: View {
     var statusColor: Color {
         if statusText != nil { return .yellow }
         switch status {
-        case .idle: return .gray
-        case .ready: return .gray
-        case .connecting: return .yellow
-        case .reconnecting: return .yellow
+        case .idle, .ready: return .gray
+        case .connecting, .reconnecting: return .yellow
         case .tunnelConnected: return .green
         case .tunnelLost: return .orange
         case .error: return .red
@@ -167,7 +233,7 @@ struct StatusIndicator: View {
         if let text = statusText { statusLabel = text }
         else if !errorMessage.isEmpty { statusLabel = errorMessage }
         else { statusLabel = status.displayLabel }
-        return "\(tunnelMode.label) | \(statusLabel)"
+        return "\(tunnelMode.label) · \(statusLabel)"
     }
 
     var body: some View {
@@ -180,6 +246,10 @@ struct StatusIndicator: View {
                 .fontWeight(.medium)
                 .lineLimit(1)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(Capsule())
     }
 }
 
@@ -188,20 +258,63 @@ struct ProxyInfoView: View {
     let onCopy: () -> Void
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             Text(proxyUrl)
                 .font(.system(.caption, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
+            Spacer()
             Button(action: onCopy) {
                 Image(systemName: "doc.on.doc")
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 6)
-        .background(Color.green.opacity(0.1))
-        .cornerRadius(8)
-        .padding(.horizontal)
+        .padding(10)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+struct LogsCard: View {
+    let logs: [String]
+
+    var body: some View {
+        CardView {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Logs")
+                    .font(.headline)
+                LogView(logs: logs)
+                    .frame(minHeight: 140, maxHeight: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+}
+
+struct CardView<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.systemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
+            .padding(.horizontal)
+    }
+}
+
+struct ToastView: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline)
+            .fontWeight(.medium)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial)
+            .clipShape(Capsule())
     }
 }
 
@@ -217,12 +330,13 @@ struct LogView: View {
                         Text(logs[index])
                             .font(.system(.caption2, design: .monospaced))
                             .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id(index)
                     }
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(8)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Color(.secondarySystemGroupedBackground))
             .simultaneousGesture(DragGesture().onChanged { _ in
                 userScrolledUp = true
             })
@@ -258,10 +372,7 @@ struct SettingsView: View {
                     if proxyManager.socksAuthMode == .manual {
                         TextField(NSLocalizedString("hint_username", comment: ""), text: $proxyManager.manualSocksUser)
                             .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                        TextField(NSLocalizedString("hint_password", comment: ""), text: $proxyManager.manualSocksPass)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
+                        SecureField(NSLocalizedString("hint_password", comment: ""), text: $proxyManager.manualSocksPass)
                     }
                 }
 
@@ -271,22 +382,8 @@ struct SettingsView: View {
                 }
 
                 Section(NSLocalizedString("settings_vp8_pacing", comment: "")) {
-                    HStack {
-                        Text(NSLocalizedString("settings_vp8_fps", comment: ""))
-                        Spacer()
-                        TextField("", value: $proxyManager.vp8Fps, format: .number)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 80)
-                    }
-                    HStack {
-                        Text(NSLocalizedString("settings_vp8_batch", comment: ""))
-                        Spacer()
-                        TextField("", value: $proxyManager.vp8Batch, format: .number)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(width: 80)
-                    }
+                    Stepper("\(NSLocalizedString("settings_vp8_fps", comment: "")): \(proxyManager.vp8Fps)", value: $proxyManager.vp8Fps, in: 1...30)
+                    Stepper("\(NSLocalizedString("settings_vp8_batch", comment: "")): \(proxyManager.vp8Batch)", value: $proxyManager.vp8Batch, in: 1...16)
                     Toggle(isOn: $proxyManager.dualTrack) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(NSLocalizedString("vp8_dual_track_title", comment: ""))
@@ -296,12 +393,10 @@ struct SettingsView: View {
                         }
                     }
                 }
-
             }
             .navigationTitle(NSLocalizedString("settings_title", comment: ""))
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button(NSLocalizedString("btn_done", comment: "")) { dismiss() }
                 }
             }
