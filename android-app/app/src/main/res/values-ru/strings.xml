@@ -171,4 +171,7 @@
     <string name="activity_empty">Пока нет событий</string>
     <string name="activity_copy">Копировать raw</string>
     <string name="activity_share">Поделиться файлом</string>
+    <string name="settings_section_about">О приложении</string>
+    <string name="settings_row_app_version">Версия приложения</string>
+    <string name="settings_row_app_version_sub">Сборка, установленная на устройстве</string>
 </resources>
