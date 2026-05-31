@@ -164,6 +164,7 @@ class ProxyManager: ObservableObject {
     @Published var isRunning: Bool = false
     @Published var toastMessage: String?
     @Published var statusText: String?
+    @Published var vpnStatusText: String = "VPN: not configured"
     var detectedPlatform: CallPlatform = .vk
 
     @Published var callUrl: String = AppDefaults.lastUrl { didSet { AppDefaults.lastUrl = callUrl } }
@@ -412,6 +413,60 @@ class ProxyManager: ObservableObject {
         pendingLogs.removeAll()
         if logs.count > 100 {
             logs.removeFirst(logs.count - 100)
+        }
+    }
+
+
+    func installSystemVPNProfile() {
+        SystemVPNManager.shared.install(callURL: callUrl) { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let message):
+                    self?.vpnStatusText = message
+                    self?.appendLog(message)
+                case .failure(let error):
+                    self?.vpnStatusText = "VPN install error: \(error.localizedDescription)"
+                    self?.appendLog("VPN install error: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func startSystemVPN() {
+        SystemVPNManager.shared.start(callURL: callUrl) { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let message):
+                    self?.vpnStatusText = message
+                    self?.appendLog(message)
+                case .failure(let error):
+                    self?.vpnStatusText = "VPN start error: \(error.localizedDescription)"
+                    self?.appendLog("VPN start error: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func stopSystemVPN() {
+        SystemVPNManager.shared.stop { [weak self] result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let message):
+                    self?.vpnStatusText = message
+                    self?.appendLog(message)
+                case .failure(let error):
+                    self?.vpnStatusText = "VPN stop error: \(error.localizedDescription)"
+                    self?.appendLog("VPN stop error: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func refreshSystemVPNStatus() {
+        SystemVPNManager.shared.status { [weak self] status in
+            DispatchQueue.main.async {
+                self?.vpnStatusText = status
+            }
         }
     }
 

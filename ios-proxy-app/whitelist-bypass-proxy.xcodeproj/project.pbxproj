@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		CE000002BBBBBBBB00000002 /* Mobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE000003BBBBBBBB00000003 /* Mobile.xcframework */; };
 		CE000004BBBBBBBB00000004 /* Mobile.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = CE000003BBBBBBBB00000003 /* Mobile.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		PT000001AAAAAAAA00000001 /* PacketTunnel.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = PT000002AAAAAAAA00000002 /* PacketTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -23,11 +24,23 @@
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		PT000012AAAAAAAA00000012 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				PT000001AAAAAAAA00000001 /* PacketTunnel.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		CE000003BBBBBBBB00000003 /* Mobile.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Mobile.xcframework; sourceTree = "<group>"; };
 		CEDE375E2F8ED25300A1D4A8 /* whitelist-bypass-proxy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "whitelist-bypass-proxy.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		PT000002AAAAAAAA00000002 /* PacketTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PacketTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -38,6 +51,13 @@
 			);
 			target = CEDE375D2F8ED25300A1D4A8 /* whitelist-bypass-proxy */;
 		};
+		PT000004AAAAAAAA00000004 /* Exceptions for "PacketTunnel" folder in "PacketTunnel" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = PT000008AAAAAAAA00000008 /* PacketTunnel */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -47,6 +67,14 @@
 				CE000001AAAAAAAA00000001 /* Exceptions for "whitelist-bypass-proxy" folder in "whitelist-bypass-proxy" target */,
 			);
 			path = "whitelist-bypass-proxy";
+			sourceTree = "<group>";
+		};
+		PT000003AAAAAAAA00000003 /* PacketTunnel */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				PT000004AAAAAAAA00000004 /* Exceptions for "PacketTunnel" folder in "PacketTunnel" target */,
+			);
+			path = PacketTunnel;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -60,6 +88,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		PT000006AAAAAAAA00000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -68,6 +103,7 @@
 			children = (
 				CE000003BBBBBBBB00000003 /* Mobile.xcframework */,
 				CEDE37602F8ED25300A1D4A8 /* whitelist-bypass-proxy */,
+				PT000003AAAAAAAA00000003 /* PacketTunnel */,
 				CEDE375F2F8ED25300A1D4A8 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -76,11 +112,22 @@
 			isa = PBXGroup;
 			children = (
 				CEDE375E2F8ED25300A1D4A8 /* whitelist-bypass-proxy.app */,
+				PT000002AAAAAAAA00000002 /* PacketTunnel.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
+
+/* Begin PBXContainerItemProxy section */
+		PT000013AAAAAAAA00000013 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CEDE37562F8ED25300A1D4A8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = PT000008AAAAAAAA00000008;
+			remoteInfo = PacketTunnel;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXNativeTarget section */
 		CEDE375D2F8ED25300A1D4A8 /* whitelist-bypass-proxy */ = {
@@ -91,10 +138,12 @@
 				CEDE375B2F8ED25300A1D4A8 /* Frameworks */,
 				CEDE375C2F8ED25300A1D4A8 /* Resources */,
 				CE000005BBBBBBBB00000005 /* Embed Frameworks */,
+				PT000012AAAAAAAA00000012 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				PT000014AAAAAAAA00000014 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				CEDE37602F8ED25300A1D4A8 /* whitelist-bypass-proxy */,
@@ -105,6 +154,28 @@
 			productName = "whitelist-bypass-proxy";
 			productReference = CEDE375E2F8ED25300A1D4A8 /* whitelist-bypass-proxy.app */;
 			productType = "com.apple.product-type.application";
+		};
+		PT000008AAAAAAAA00000008 /* PacketTunnel */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = PT000011AAAAAAAA00000011 /* Build configuration list for PBXNativeTarget "PacketTunnel" */;
+			buildPhases = (
+				PT000005AAAAAAAA00000005 /* Sources */,
+				PT000006AAAAAAAA00000006 /* Frameworks */,
+				PT000007AAAAAAAA00000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				PT000003AAAAAAAA00000003 /* PacketTunnel */,
+			);
+			name = PacketTunnel;
+			packageProductDependencies = (
+			);
+			productName = PacketTunnel;
+			productReference = PT000002AAAAAAAA00000002 /* PacketTunnel.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -148,6 +219,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		PT000007AAAAAAAA00000007 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -158,7 +236,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		PT000005AAAAAAAA00000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		PT000014AAAAAAAA00000014 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = PT000008AAAAAAAA00000008 /* PacketTunnel */;
+			targetProxy = PT000013AAAAAAAA00000013 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		CEDE37672F8ED25400A1D4A8 /* Debug */ = {
@@ -285,6 +378,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "whitelist-bypass-proxy/whitelist_bypass_proxy.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -322,6 +416,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "whitelist-bypass-proxy/whitelist_bypass_proxy.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -354,6 +449,56 @@
 			};
 			name = Release;
 		};
+		PT000009AAAAAAAA00000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PacketTunnel/PacketTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PacketTunnel/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "bypass.whitelist.whitelist-bypass-proxy.PacketTunnel";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		PT000010AAAAAAAA00000010 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = PacketTunnel/PacketTunnel.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = PacketTunnel/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "bypass.whitelist.whitelist-bypass-proxy.PacketTunnel";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -371,6 +516,15 @@
 			buildConfigurations = (
 				CEDE376A2F8ED25400A1D4A8 /* Debug */,
 				CEDE376B2F8ED25400A1D4A8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		PT000011AAAAAAAA00000011 /* Build configuration list for PBXNativeTarget "PacketTunnel" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				PT000009AAAAAAAA00000009 /* Debug */,
+				PT000010AAAAAAAA00000010 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
