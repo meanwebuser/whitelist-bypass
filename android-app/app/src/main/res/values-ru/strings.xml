@@ -174,4 +174,19 @@
     <string name="settings_section_about">О приложении</string>
     <string name="settings_row_app_version">Версия приложения</string>
     <string name="settings_row_app_version_sub">Сборка, установленная на устройстве</string>
+    <string name="settings_row_check_updates">Проверить обновления</string>
+    <string name="settings_row_check_updates_sub">Скачать и установить новый APK</string>
+    <string name="update_checking">Проверяю обновления…</string>
+    <string name="update_no_update">Уже актуальная версия: %1$s</string>
+    <string name="update_failed">Ошибка обновления: %1$s</string>
+    <string name="update_available_title">Доступно обновление %1$s</string>
+    <string name="update_available_message">Готова новая сборка BEZаботный-NET.
+
+%1$s</string>
+    <string name="update_install">Скачать и установить</string>
+    <string name="update_later">Позже</string>
+    <string name="update_downloading">Скачиваю обновление…</string>
+    <string name="update_allow_unknown_title">Разрешить обновления</string>
+    <string name="update_allow_unknown_message">Android требует разрешение на установку APK из этого приложения. Откройте настройки и разрешите установку для BEZаботный-NET.</string>
+    <string name="update_open_settings">Открыть настройки</string>
 </resources>

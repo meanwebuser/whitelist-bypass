@@ -152,6 +152,10 @@ object Prefs {
         get() = prefs.getBoolean(PrefsKeys.SHOW_NOTIFICATION_STATUS_TEXT, false)
         set(value) = prefs.edit { putBoolean(PrefsKeys.SHOW_NOTIFICATION_STATUS_TEXT, value) }
 
+    var lastUpdateCheckMs: Long
+        get() = prefs.getLong(PrefsKeys.LAST_UPDATE_CHECK_MS, 0L)
+        set(value) = prefs.edit { putLong(PrefsKeys.LAST_UPDATE_CHECK_MS, value) }
+
     val activeDestination: CallConfig?
         get() {
             val id = activeDestinationId

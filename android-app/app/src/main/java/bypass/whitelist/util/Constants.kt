@@ -82,6 +82,7 @@ object PrefsKeys {
     const val ACCENT_MODE = "accent_mode"
     const val LANGUAGE_MODE = "language_mode"
     const val SHOW_NOTIFICATION_STATUS_TEXT = "show_notification_status_text"
+    const val LAST_UPDATE_CHECK_MS = "last_update_check_ms"
 }
 
 object VP8Defaults {
