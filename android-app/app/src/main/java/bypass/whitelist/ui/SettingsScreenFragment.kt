@@ -36,6 +36,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         root.addView(buildTunnelSection())
         root.addView(buildNetworkSection())
         root.addView(buildBehaviorSection())
+        root.addView(buildAboutSection())
         root.addView(buildDangerSection())
     }
 
@@ -180,6 +181,20 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         return section
     }
 
+
+    private fun buildAboutSection(): View {
+        val section = newSection(R.string.settings_section_about)
+        val card = section.findViewById<LinearLayout>(R.id.sectionCard)
+        addStaticRow(
+            card = card,
+            iconRes = R.drawable.ic_nav_settings,
+            title = getString(R.string.settings_row_app_version),
+            sub = getString(R.string.settings_row_app_version_sub),
+            trail = appVersionLabel(),
+        )
+        return section
+    }
+
     private fun buildDangerSection(): View {
         val section = newSection(R.string.settings_section_danger)
         val card = section.findViewById<LinearLayout>(R.id.sectionCard)
@@ -244,6 +259,30 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         card.addView(row)
     }
 
+
+    private fun addStaticRow(
+        card: LinearLayout,
+        iconRes: Int,
+        title: String,
+        sub: String?,
+        trail: String?,
+    ) {
+        val row = layoutInflater.inflate(R.layout.item_settings_row, card, false)
+        row.findViewById<ImageView>(R.id.rowIcon).setImageResource(iconRes)
+        row.findViewById<ImageView>(R.id.rowIcon).setColorFilter(UiColors.accent(requireContext()))
+        row.findViewById<TextView>(R.id.rowTitle).text = title
+        row.findViewById<TextView>(R.id.rowSub).apply {
+            if (sub.isNullOrBlank()) { visibility = View.GONE } else { text = sub; visibility = View.VISIBLE }
+        }
+        row.findViewById<TextView>(R.id.rowTrail).apply {
+            if (trail.isNullOrBlank()) { visibility = View.GONE } else { text = trail; visibility = View.VISIBLE }
+        }
+        row.findViewById<ImageView>(R.id.rowChev).visibility = View.GONE
+        row.isClickable = false
+        if (card.isNotEmpty()) addDividerTo(card)
+        card.addView(row)
+    }
+
     private fun addSwitchRow(
         card: LinearLayout,
         iconRes: Int,
@@ -296,6 +335,18 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
     private fun languageLabel(mode: LanguageMode): String = when (mode) {
         LanguageMode.SYSTEM -> getString(R.string.settings_language_system)
         LanguageMode.RU -> getString(R.string.settings_language_ru)
+    }
+
+
+    @Suppress("DEPRECATION")
+    private fun appVersionLabel(): String {
+        return try {
+            val info = requireContext().packageManager.getPackageInfo(requireContext().packageName, 0)
+            val code = if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+            "${info.versionName} ($code)"
+        } catch (_: Exception) {
+            "unknown"
+        }
     }
 
     private fun rebuild() {

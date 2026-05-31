@@ -237,10 +237,8 @@ class TunnelVpnService : VpnService() {
                 TunnelServiceState.logCallback?.invoke("tun2socks starting")
                 Androidbind.startTun2Socks(fd.toLong(), Vpn.MTU.toLong(), Prefs.socksPort, SocksAuth.user, SocksAuth.pass)
                 if (isRunning && !stopInProgress && isTunGenerationCurrent(startGeneration)) {
-                    Log.w(TAG, "tun2socks exited unexpectedly")
-                    TunnelServiceState.logCallback?.invoke("tun2socks exited unexpectedly")
-                    isRunning = false
-                    TunnelServiceState.vpnStatusCallback?.invoke(VpnStatus.TUNNEL_LOST)
+                    Log.i(TAG, "tun2socks native start returned; keeping VPN active")
+                    TunnelServiceState.logCallback?.invoke("tun2socks native start returned; VPN remains active")
                 } else {
                     TunnelServiceState.logCallback?.invoke("tun2socks stopped")
                 }
