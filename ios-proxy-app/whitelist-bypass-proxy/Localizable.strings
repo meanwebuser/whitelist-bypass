@@ -10,8 +10,12 @@
 "btn_done" = "Done";
 "btn_open_in_happ" = "Copy v2ray URL";
 "btn_add_to_happ" = "Add to Happ";
-"btn_add_to_streisand" = "Copy for Streisand";
 "btn_open_in_telegram" = "Open in Telegram";
+"menu_proxy_actions" = "Add / Copy Profile";
+"menu_add_to_happ" = "Happ";
+"menu_add_to_telegram" = "Telegram";
+"menu_copy_profile" = "Copy profile";
+"vpn_profile_hint" = "Copy the profile and import it into any VPN app that supports SOCKS/Xray links.";
 "hint_call_link" = "VK / Telemost link, https://stream.wb.ru/room/<room>, wbstream://<room>, or dion://<room>";
 "hint_username" = "Username";
 "hint_password" = "Password";
@@ -35,6 +39,5 @@
 "proxy_url_copied" = "Proxy URL copied";
 "toast_happ_params_copied" = "Proxy profile copied";
 "toast_happ_opened" = "Opened Happ with proxy profile";
-"toast_streisand_params_copied" = "Proxy profile copied. In Streisand tap + → Import from Clipboard.";
-"toast_streisand_clipboard" = "Copied. In Streisand tap + → Import from Clipboard.";
+"toast_proxy_profile_copied" = "Proxy profile copied. Paste it into any VPN app.";
 "dc_mode_not_supported" = "DC mode not supported - falling back to video";

@@ -552,18 +552,9 @@ class ProxyManager: ObservableObject {
         }
     }
 
-    func openStreisandProxy() {
+    func copyProxyProfile() {
         UIPasteboard.general.string = xrayProxyUri
-        // Streisand does not publish a stable import deep link; most guides use Import from Clipboard.
-        if let url = URL(string: "streisand://") {
-            UIApplication.shared.open(url) { [weak self] opened in
-                DispatchQueue.main.async {
-                    self?.showToast(opened ? NSLocalizedString("toast_streisand_clipboard", comment: "") : NSLocalizedString("toast_streisand_params_copied", comment: ""))
-                }
-            }
-        } else {
-            showToast(NSLocalizedString("toast_streisand_params_copied", comment: ""))
-        }
+        showToast(NSLocalizedString("toast_proxy_profile_copied", comment: ""))
     }
 
 }

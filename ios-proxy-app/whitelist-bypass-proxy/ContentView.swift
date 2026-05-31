@@ -153,28 +153,30 @@ struct ProxyCard: View {
                     .font(.headline)
                     .foregroundColor(.green)
                 ProxyInfoView(proxyUrl: proxyManager.socksUrl, onCopy: proxyManager.copyProxyUrl)
-                HStack {
+                Text(NSLocalizedString("vpn_profile_hint", comment: ""))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Menu {
                     Button(action: { proxyManager.openHappProxy() }) {
-                        Label(NSLocalizedString("btn_add_to_happ", comment: ""), systemImage: "plus.circle.fill")
-                            .frame(maxWidth: .infinity)
+                        Label(NSLocalizedString("menu_add_to_happ", comment: ""), systemImage: "plus.circle.fill")
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.purple)
-
-                    Button(action: { proxyManager.openStreisandProxy() }) {
-                        Label(NSLocalizedString("btn_add_to_streisand", comment: ""), systemImage: "square.and.arrow.down")
-                            .frame(maxWidth: .infinity)
+                    Button(action: { proxyManager.openTelegramProxy() }) {
+                        Label(NSLocalizedString("menu_add_to_telegram", comment: ""), systemImage: "paperplane.fill")
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.orange)
-                }
-
-                Button(action: { proxyManager.openTelegramProxy() }) {
-                    Label("Telegram SOCKS", systemImage: "paperplane.fill")
+                    Divider()
+                    Button(action: { proxyManager.copyProxyProfile() }) {
+                        Label(NSLocalizedString("menu_copy_profile", comment: ""), systemImage: "doc.on.doc")
+                    }
+                } label: {
+                    Label(NSLocalizedString("menu_proxy_actions", comment: ""), systemImage: "square.and.arrow.up")
+                        .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
                 }
-                .buttonStyle(.bordered)
-                .tint(.blue)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.purple)
             }
         }
     }
