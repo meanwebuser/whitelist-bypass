@@ -47,6 +47,7 @@ import bypass.whitelist.ui.LogsFragment
 import bypass.whitelist.ui.MainActivityHost
 import bypass.whitelist.ui.MainFragment
 import bypass.whitelist.ui.SettingsScreenFragment
+import bypass.whitelist.update.AppUpdater
 import bypass.whitelist.util.LogWriter
 import bypass.whitelist.util.Net
 import bypass.whitelist.util.Prefs
@@ -215,6 +216,7 @@ class MainActivity :
         }
 
         handleIntent(intent)
+        AppUpdater.check(this, manual = false) { appendLog(it) }
     }
 
     override fun onResume() {
@@ -403,6 +405,10 @@ class MainActivity :
         mainFragment()?.onDestinationsChanged()
         Toast.makeText(this, R.string.settings_toast_destinations_cleared, Toast.LENGTH_SHORT)
             .show()
+    }
+
+    override fun onCheckForUpdates() {
+        AppUpdater.check(this, manual = true) { appendLog(it) }
     }
 
     override fun onResetAllSettings() {

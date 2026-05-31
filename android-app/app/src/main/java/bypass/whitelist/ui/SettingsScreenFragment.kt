@@ -27,6 +27,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         fun onTunnelModeChanged(mode: TunnelMode)
         fun onForgetAllDestinations()
         fun onResetAllSettings()
+        fun onCheckForUpdates()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -192,6 +193,13 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
             sub = getString(R.string.settings_row_app_version_sub),
             trail = appVersionLabel(),
         )
+        addRow(
+            card,
+            R.drawable.ic_nav_settings,
+            getString(R.string.settings_row_check_updates),
+            getString(R.string.settings_row_check_updates_sub),
+            null,
+        ) { host()?.onCheckForUpdates() }
         return section
     }
 
