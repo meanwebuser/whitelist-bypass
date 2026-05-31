@@ -16,6 +16,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import bypass.whitelist.R
 import bypass.whitelist.tunnel.CallConfig
 import bypass.whitelist.util.Prefs
+import bypass.whitelist.util.UiColors
 
 class AddDestinationSheet : BottomSheetDialogFragment() {
 
@@ -68,7 +69,7 @@ class AddDestinationSheet : BottomSheetDialogFragment() {
 
     private fun flashChip(chip: LinearLayout, label: TextView) {
         chip.setBackgroundResource(R.drawable.bg_paste_chip_flash)
-        label.setTextColor(requireContext().getColor(R.color.accent_emerald))
+        label.setTextColor(UiColors.accent(requireContext()))
         chip.postDelayed({
             if (isAdded) {
                 chip.setBackgroundResource(R.drawable.bg_paste_chip)

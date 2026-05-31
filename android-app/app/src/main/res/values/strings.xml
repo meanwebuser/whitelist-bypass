@@ -140,6 +140,15 @@
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_row_theme">Theme</string>
     <string name="settings_row_theme_sub">Light, dark, or follow system</string>
+
+    <string name="settings_row_accent">Accent color</string>
+    <string name="settings_row_accent_sub">Neon blue or classic red</string>
+    <string name="settings_accent_blue">Neon blue</string>
+    <string name="settings_accent_red">Classic red</string>
+    <string name="settings_row_language">Language</string>
+    <string name="settings_row_language_sub">Follow system or force Russian</string>
+    <string name="settings_language_system">System</string>
+    <string name="settings_language_ru">Russian</string>
     <string name="settings_section_danger">Danger zone</string>
     <string name="settings_forget_all_destinations">Forget all calls</string>
     <string name="settings_forget_all_destinations_sub">Removes saved call links. Settings stay.</string>
