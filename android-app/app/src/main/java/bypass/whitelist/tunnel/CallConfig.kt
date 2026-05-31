@@ -12,6 +12,10 @@ data class CallConfig(
     val vp8Fps: Int? = null,
     val vp8Batch: Int? = null,
     val dualTrack: Boolean? = null,
+    val autoDiscovered: Boolean = false,
+    val slotId: String? = null,
+    val leaseId: String? = null,
+    val expiresAt: Long? = null,
 ) {
     val platform: CallPlatform get() = CallPlatform.fromUrl(url)
 
@@ -37,11 +41,34 @@ data class CallConfig(
         vp8Fps?.let { put("vp8Fps", it) }
         vp8Batch?.let { put("vp8Batch", it) }
         dualTrack?.let { put("dualTrack", it) }
+        if (autoDiscovered) put("autoDiscovered", true)
+        slotId?.let { put("slotId", it) }
+        leaseId?.let { put("leaseId", it) }
+        expiresAt?.let { put("expiresAt", it) }
     }
 
     companion object {
         fun newWith(name: String, url: String): CallConfig =
             CallConfig(id = UUID.randomUUID().toString(), name = name, url = url)
+
+        fun autoWith(
+            name: String,
+            url: String,
+            slotId: String?,
+            leaseId: String?,
+            expiresAt: Long?,
+        ): CallConfig {
+            val stable = listOfNotNull(slotId, leaseId).joinToString(":").ifBlank { url }
+            return CallConfig(
+                id = UUID.nameUUIDFromBytes(stable.toByteArray()).toString(),
+                name = name,
+                url = url,
+                autoDiscovered = true,
+                slotId = slotId,
+                leaseId = leaseId,
+                expiresAt = expiresAt,
+            )
+        }
 
         fun fromJson(obj: JSONObject): CallConfig = CallConfig(
             id = obj.getString("id"),
@@ -51,6 +78,10 @@ data class CallConfig(
             vp8Fps = if (obj.has("vp8Fps")) obj.getInt("vp8Fps") else null,
             vp8Batch = if (obj.has("vp8Batch")) obj.getInt("vp8Batch") else null,
             dualTrack = if (obj.has("dualTrack")) obj.getBoolean("dualTrack") else null,
+            autoDiscovered = obj.optBoolean("autoDiscovered", false),
+            slotId = obj.optString("slotId").takeIf { it.isNotBlank() },
+            leaseId = obj.optString("leaseId").takeIf { it.isNotBlank() },
+            expiresAt = if (obj.has("expiresAt")) obj.optLong("expiresAt") else null,
         )
 
         fun listToJson(items: List<CallConfig>): String {
@@ -73,13 +104,12 @@ data class CallConfig(
 
         fun suggestNameFor(url: String): String {
             val platform = CallPlatform.fromUrl(url)
-            val label = when (platform) {
+            return when (platform) {
                 CallPlatform.VK -> "VK call"
                 CallPlatform.TELEMOST -> "Telemost"
                 CallPlatform.WBSTREAM -> "WB Stream"
                 CallPlatform.DION -> "DION"
             }
-            return label
         }
     }
 }

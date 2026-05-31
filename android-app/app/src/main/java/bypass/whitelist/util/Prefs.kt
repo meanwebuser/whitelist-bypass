@@ -10,6 +10,8 @@ import bypass.whitelist.tunnel.TunnelMode
 
 object Prefs {
 
+    const val AUTO_DESTINATION_GRACE_MS = 60_000L
+
     private lateinit var prefs: SharedPreferences
 
     fun init(context: Context) {
@@ -170,6 +172,43 @@ object Prefs {
         get() = prefs.getString(PrefsKeys.ACTIVE_DESTINATION_ID, "") ?: ""
         set(value) = prefs.edit { putString(PrefsKeys.ACTIVE_DESTINATION_ID, value) }
 
+
+    var autoDestination: CallConfig?
+        get() {
+            val expires = prefs.getLong(PrefsKeys.AUTO_DESTINATION_EXPIRES_MS, 0L)
+            if (expires <= System.currentTimeMillis()) {
+                clearAutoDestination()
+                return null
+            }
+            val raw = prefs.getString(PrefsKeys.AUTO_DESTINATION, "") ?: ""
+            return raw.takeIf { it.isNotBlank() }?.let {
+                try { CallConfig.fromJson(org.json.JSONObject(it)) } catch (_: Exception) { null }
+            }
+        }
+        set(value) {
+            if (value == null) {
+                clearAutoDestination()
+            } else {
+                prefs.edit {
+                    putString(PrefsKeys.AUTO_DESTINATION, value.toJson().toString())
+                    putLong(PrefsKeys.AUTO_DESTINATION_EXPIRES_MS, System.currentTimeMillis() + AUTO_DESTINATION_GRACE_MS)
+                }
+            }
+        }
+
+    fun extendAutoDestinationGrace() {
+        if (prefs.getString(PrefsKeys.AUTO_DESTINATION, "").orEmpty().isNotBlank()) {
+            prefs.edit { putLong(PrefsKeys.AUTO_DESTINATION_EXPIRES_MS, System.currentTimeMillis() + AUTO_DESTINATION_GRACE_MS) }
+        }
+    }
+
+    fun clearAutoDestination() {
+        prefs.edit {
+            remove(PrefsKeys.AUTO_DESTINATION)
+            remove(PrefsKeys.AUTO_DESTINATION_EXPIRES_MS)
+        }
+    }
+
     var themeMode: ThemeMode
         get() {
             val name = prefs.getString(PrefsKeys.THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
@@ -203,6 +242,7 @@ object Prefs {
         get() {
             val id = activeDestinationId
             if (id.isEmpty()) return null
+            autoDestination?.let { if (it.id == id) return it }
             return savedDestinations.firstOrNull { it.id == id }
         }
 
