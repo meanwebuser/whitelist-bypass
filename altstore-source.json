@@ -2,8 +2,8 @@
   "name": "Whitelist Bypass",
   "subtitle": "Experimental iOS builds for whitelist-bypass",
   "description": "Unsigned proxy-only iOS builds for AltStore/SideStore. Install Happ, Telegram, Streisand or any VPN app that supports SOCKS/Xray links. Start this app, open Add / Copy Profile, then add to Happ/Telegram or copy the generated proxy profile and import it into your VPN app. The proxy-only build does not include PacketTunnel, so it does not require NetworkExtension signing.",
-  "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-2/icon.png",
-  "headerURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-2/icon.png",
+  "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
+  "headerURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
   "website": "https://github.com/megamen32/whitelist-bypass/tree/ios-packet-tunnel-scaffold",
   "tintColor": "#6D5DF6",
   "featuredApps": [
@@ -16,19 +16,19 @@
       "developerName": "megamen32",
       "subtitle": "SOCKS proxy over call transport",
       "localizedDescription": "Experimental iOS proxy-only build for whitelist-bypass. Supports WB room URL normalization, for example https://stream.wb.ru/room/<room> is converted to wbstream://<room>. Install Happ, Telegram, Streisand or any VPN app that supports SOCKS/Xray links. Start this app, open Add / Copy Profile, then add to Happ/Telegram or copy the generated proxy profile and import it into your VPN app. This AltStore build is proxy-only and does not include the PacketTunnel VPN extension.",
-      "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-2/icon.png",
+      "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
       "tintColor": "#6D5DF6",
       "category": "utilities",
       "versions": [
         {
           "version": "0.3.5",
-          "buildVersion": "2",
-          "marketingVersion": "0.3.5-altstore.2",
-          "date": "2026-05-31T13:36:00Z",
-          "localizedDescription": "Proxy-only AltStore build. Adds automatic WB stream URL normalization, refreshed UI, a clean Add / Copy Profile menu.",
-          "downloadURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-2/whitelist-bypass-proxy-only-unsigned.ipa",
-          "size": 9780414,
-          "sha256": "d3572f255b42deed3bc152bf57f17a539894a47aed954f76ecd059412938b924",
+          "buildVersion": "3",
+          "marketingVersion": "0.3.5-altstore.3",
+          "date": "2026-05-31T13:46:00Z",
+          "localizedDescription": "Proxy-only AltStore build. Replaces separate Streisand button with a clean Add / Copy Profile menu for Happ, Telegram and generic VPN app import.",
+          "downloadURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/whitelist-bypass-proxy-only-unsigned.ipa",
+          "size": 9780126,
+          "sha256": "f5b624b9248e5074383cbd77682a2a76fe1edcf5af82d2d078891350479fa064",
           "minOSVersion": "16.0"
         }
       ],
@@ -41,11 +41,11 @@
   "news": [
     {
       "title": "AltStore source added",
-      "identifier": "altstore-source-0.3.5-altstore-2",
-      "caption": "Proxy-only iOS build with WB room URL normalization, a clean Add / Copy Profile menu.",
-      "date": "2026-05-31T13:36:00Z",
+      "identifier": "altstore-source-0.3.5-altstore-3",
+      "caption": "Proxy-only iOS build with Add / Copy Profile menu.",
+      "date": "2026-05-31T13:46:00Z",
       "tintColor": "#6D5DF6",
-      "url": "https://github.com/megamen32/whitelist-bypass/releases/tag/ios-proxy-v0.3.5-altstore-2",
+      "url": "https://github.com/megamen32/whitelist-bypass/releases/tag/ios-proxy-v0.3.5-altstore-3",
       "appID": "bypass.whitelist.whitelist-bypass-proxy"
     }
   ]
