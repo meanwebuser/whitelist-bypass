@@ -36,7 +36,7 @@ val appBrandName = brandEnvValue(brandDotEnv, "APP_BRAND", "BRANDING", "BRAND_NA
 
 val versionMajor = 0
 val versionMinor = 3
-val versionPatch = 6
+val versionPatch = 7
 val versionBuild = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 0
 
 android {
