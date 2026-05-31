@@ -25,6 +25,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
+import bypass.whitelist.discovery.VkDiscoveryScanner
 import bypass.whitelist.tunnel.CallConfig
 import bypass.whitelist.tunnel.CallPlatform
 import bypass.whitelist.tunnel.HeadlessJoinController
@@ -311,6 +312,30 @@ class MainActivity :
             return
         }
         startJoinFor(config)
+    }
+
+    override fun onDiscoveryConnectPressed() {
+        if (resetInProgress || TunnelServiceState.isAnyTunnelComponentRunning(this)) {
+            mainFragment()?.onStatusTextChanged("Остановите текущую сессию перед сканированием")
+            return
+        }
+        mainFragment()?.onStatusTextChanged("Сканирование VK…")
+        appendLog("Discovery scan started: VK group 237416141")
+        thread {
+            val result = VkDiscoveryScanner.scan()
+            runOnUiThread {
+                val configs = result.configs
+                mainFragment()?.onStatusTextChanged("Найдено свободных: ${configs.size}")
+                appendLog("Discovery scan finished: free=${configs.size}, source=${result.source ?: "none"}")
+                if (configs.isNotEmpty()) {
+                    val merged = (configs + Prefs.savedDestinations).distinctBy { it.url }
+                    Prefs.savedDestinations = merged
+                    Prefs.activeDestinationId = configs.first().id
+                    mainFragment()?.onDestinationsChanged()
+                    startJoinFor(configs.first())
+                }
+            }
+        }
     }
 
     override fun onDisconnectPressed() {

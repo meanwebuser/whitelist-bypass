@@ -1,5 +1,4 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <string name="app_name">whitelistbypass</string>
     <string name="share_logs">Share logs</string>
     <string name="copy_logs_toast">Logs copied to clipboard</string>
     <string name="autofill_settings_title">Autofill settings</string>
@@ -66,8 +65,8 @@
     <string name="hero_disconnect">Disconnect</string>
 
     <string name="status_headline_disconnected">Disconnected</string>
-    <string name="status_detail_no_calls">Add a call to get started</string>
-    <string name="status_detail_pick_call">Pick a call and tap connect</string>
+    <string name="status_detail_no_calls">Сканирование VK при включении</string>
+    <string name="status_detail_pick_call">Нажмите Connect или выберите сервер</string>
     <string name="status_headline_connecting">Connecting</string>
     <string name="status_headline_connected">Connected</string>
 
