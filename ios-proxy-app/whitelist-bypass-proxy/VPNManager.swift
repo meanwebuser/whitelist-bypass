@@ -19,7 +19,18 @@ final class SystemVPNManager {
                 proto.serverAddress = "whitelist-bypass"
                 proto.providerConfiguration = [
                     "callURL": callURL,
-                    "mode": "packet-tunnel-scaffold"
+                    "mode": "packet-tunnel-scaffold",
+                    "tunnelAddress": "10.64.0.2",
+                    "tunnelSubnetMask": "255.255.255.0",
+                    "remoteAddress": "10.64.0.1",
+                    "mtu": NSNumber(value: 1500),
+                    "dnsServers": "1.1.1.1,8.8.8.8",
+                    "socksHost": "127.0.0.1",
+                    "socksPort": NSNumber(value: 1080),
+                    "socksUser": "",
+                    "socksPass": "",
+                    "routeAllTraffic": NSNumber(value: false),
+                    "forwardingEnabled": NSNumber(value: false)
                 ]
                 proto.disconnectOnSleep = false
 
@@ -47,7 +58,11 @@ final class SystemVPNManager {
                     case .failure(let error): completion(.failure(error))
                     case .success(let manager):
                         do {
-                            try manager.connection.startVPNTunnel(options: ["callURL": callURL as NSString])
+                            try manager.connection.startVPNTunnel(options: [
+                                "callURL": callURL as NSString,
+                                "routeAllTraffic": NSNumber(value: false),
+                                "forwardingEnabled": NSNumber(value: false)
+                            ])
                             completion(.success("VPN start requested"))
                         } catch {
                             completion(.failure(error))
