@@ -16,6 +16,7 @@ import bypass.whitelist.tunnel.VpnStatus
 import bypass.whitelist.util.Callback
 import bypass.whitelist.util.ParamCallback
 import bypass.whitelist.util.Prefs
+import bypass.whitelist.util.UiColors
 
 class MainFragmentView(private val root: View) {
 
@@ -116,8 +117,8 @@ class MainFragmentView(private val root: View) {
         } else if (status == VpnStatus.CONNECTING || status == VpnStatus.STARTING || status == VpnStatus.STOPPING || status == VpnStatus.CALL_CONNECTED || status == VpnStatus.DATACHANNEL_OPEN) {
             heroLabel.text = context.getString(R.string.hero_cancel)
             hero.setBackgroundResource(R.drawable.bg_hero_active)
-            heroLabel.setTextColor(context.getColor(R.color.accent_emerald))
-            heroPowerIcon.setColorFilter(context.getColor(R.color.accent_emerald))
+            heroLabel.setTextColor(UiColors.accent(context))
+            heroPowerIcon.setColorFilter(UiColors.accent(context))
             statusHeadline.text = context.getString(if (status == VpnStatus.STOPPING) R.string.status_headline_disconnected else R.string.status_headline_connecting)
             statsCard.visibility = View.GONE
             pingRow.visibility = View.GONE
@@ -186,8 +187,8 @@ class MainFragmentView(private val root: View) {
         val host = "ya.ru"
         if (success) {
             pingResult.setBackgroundResource(R.drawable.bg_ping_result_ok)
-            pingResultHost.setTextColor(root.context.getColor(R.color.accent_emerald))
-            pingResultRtt.setTextColor(root.context.getColor(R.color.accent_emerald))
+            pingResultHost.setTextColor(UiColors.accent(root.context))
+            pingResultRtt.setTextColor(UiColors.accent(root.context))
             pingResultHost.text = root.context.getString(R.string.ping_ok, host)
             pingResultRtt.text = root.context.getString(R.string.ping_ms, rttMs)
         } else {

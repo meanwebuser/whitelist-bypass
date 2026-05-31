@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.fragment.app.FragmentManager
 import bypass.whitelist.R
+import bypass.whitelist.util.UiColors
 import bypass.whitelist.util.Callback
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
@@ -40,8 +41,8 @@ class ConfirmActionSheet : BottomSheetDialogFragment() {
 
         if (destructive) {
             val context = requireContext()
-            titleView.setTextColor(context.getColor(R.color.accent_emerald))
-            confirm.backgroundTintList = ColorStateList.valueOf(context.getColor(R.color.accent_emerald))
+            titleView.setTextColor(UiColors.accent(context))
+            confirm.backgroundTintList = ColorStateList.valueOf(UiColors.accent(context))
             confirm.setTextColor(context.getColor(R.color.panel_bg))
         }
 

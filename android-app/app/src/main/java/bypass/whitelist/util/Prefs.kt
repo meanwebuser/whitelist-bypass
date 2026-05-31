@@ -134,6 +134,20 @@ object Prefs {
         }
         set(value) = prefs.edit { putString(PrefsKeys.THEME_MODE, value.name) }
 
+    var accentMode: AccentMode
+        get() {
+            val name = prefs.getString(PrefsKeys.ACCENT_MODE, AccentMode.BLUE.name) ?: AccentMode.BLUE.name
+            return try { AccentMode.valueOf(name) } catch (_: IllegalArgumentException) { AccentMode.BLUE }
+        }
+        set(value) = prefs.edit { putString(PrefsKeys.ACCENT_MODE, value.name) }
+
+    var languageMode: LanguageMode
+        get() {
+            val name = prefs.getString(PrefsKeys.LANGUAGE_MODE, LanguageMode.SYSTEM.name) ?: LanguageMode.SYSTEM.name
+            return try { LanguageMode.valueOf(name) } catch (_: IllegalArgumentException) { LanguageMode.SYSTEM }
+        }
+        set(value) = prefs.edit { putString(PrefsKeys.LANGUAGE_MODE, value.name) }
+
     val activeDestination: CallConfig?
         get() {
             val id = activeDestinationId

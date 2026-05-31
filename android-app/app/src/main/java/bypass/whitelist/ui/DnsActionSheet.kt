@@ -13,6 +13,7 @@ import bypass.whitelist.R
 import bypass.whitelist.util.Callback
 import bypass.whitelist.util.DnsMode
 import bypass.whitelist.util.Prefs
+import bypass.whitelist.util.UiColors
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 
@@ -78,7 +79,7 @@ class DnsActionSheet : BottomSheetDialogFragment() {
                 row.setBackgroundResource(R.drawable.bg_destination_card_active)
                 checkBox.setBackgroundResource(R.drawable.bg_action_check_active)
                 checkIcon.visibility = View.VISIBLE
-                titleView.setTextColor(context.getColor(R.color.accent_emerald))
+                titleView.setTextColor(UiColors.accent(context))
             } else {
                 row.setBackgroundResource(R.drawable.bg_destination_card)
                 checkBox.setBackgroundResource(R.drawable.bg_action_check_idle)

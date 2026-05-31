@@ -13,6 +13,7 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
 import androidx.core.content.ContextCompat
+import bypass.whitelist.util.UiColors
 import bypass.whitelist.R
 
 class HeroRingOuterView @JvmOverloads constructor(
@@ -29,8 +30,8 @@ class HeroRingOuterView @JvmOverloads constructor(
     private var spinAnimator: ValueAnimator? = null
     private var currentState: State = State.IDLE
 
-    private val accent = ContextCompat.getColor(context, R.color.accent_emerald)
-    private val accentSoft = ContextCompat.getColor(context, R.color.accent_emerald_soft)
+    private val accent: Int get() = UiColors.accent(context)
+    private val accentSoft: Int get() = UiColors.accentSoft(context)
     private val transparent = 0
 
     private var cachedGradient: SweepGradient? = null

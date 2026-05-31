@@ -15,6 +15,9 @@ import bypass.whitelist.tunnel.TunnelMode
 import bypass.whitelist.util.Callback
 import bypass.whitelist.util.ParamCallback
 import bypass.whitelist.util.Prefs
+import bypass.whitelist.util.UiColors
+import bypass.whitelist.util.LanguageMode
+import bypass.whitelist.util.AccentMode
 import bypass.whitelist.util.ThemeMode
 import com.google.android.material.materialswitch.MaterialSwitch
 
@@ -50,12 +53,12 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
     private fun buildAppearanceSection(): View {
         val section = newSection(R.string.settings_section_appearance)
         val card = section.findViewById<LinearLayout>(R.id.sectionCard)
-        addRow(card, R.drawable.ic_setting_theme, getString(R.string.settings_row_theme), getString(R.string.settings_row_theme_sub), Prefs.themeMode.label) {
+        addRow(card, R.drawable.ic_setting_theme, getString(R.string.settings_row_theme), getString(R.string.settings_row_theme_sub), themeLabel(Prefs.themeMode)) {
             ChoiceActionSheet.show(
                 manager = parentFragmentManager,
                 title = getString(R.string.settings_row_theme),
                 subtitle = getString(R.string.settings_row_theme_sub),
-                options = ThemeMode.entries.map { ChoiceActionSheet.Option(it.name, it.label) },
+                options = ThemeMode.entries.map { ChoiceActionSheet.Option(it.name, themeLabel(it)) },
                 selectedId = Prefs.themeMode.name,
             ) { picked ->
                 val mode = ThemeMode.valueOf(picked.id)
@@ -63,6 +66,37 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
                     Prefs.themeMode = mode
                     App.applyTheme(mode)
                     rebuild()
+                }
+            }
+        }
+        addRow(card, R.drawable.ic_setting_theme, getString(R.string.settings_row_accent), getString(R.string.settings_row_accent_sub), accentLabel(Prefs.accentMode)) {
+            ChoiceActionSheet.show(
+                manager = parentFragmentManager,
+                title = getString(R.string.settings_row_accent),
+                subtitle = getString(R.string.settings_row_accent_sub),
+                options = AccentMode.entries.map { ChoiceActionSheet.Option(it.name, accentLabel(it)) },
+                selectedId = Prefs.accentMode.name,
+            ) { picked ->
+                val mode = AccentMode.valueOf(picked.id)
+                if (mode != Prefs.accentMode) {
+                    Prefs.accentMode = mode
+                    activity?.recreate()
+                }
+            }
+        }
+        addRow(card, R.drawable.ic_nav_settings, getString(R.string.settings_row_language), getString(R.string.settings_row_language_sub), languageLabel(Prefs.languageMode)) {
+            ChoiceActionSheet.show(
+                manager = parentFragmentManager,
+                title = getString(R.string.settings_row_language),
+                subtitle = getString(R.string.settings_row_language_sub),
+                options = LanguageMode.entries.map { ChoiceActionSheet.Option(it.name, languageLabel(it)) },
+                selectedId = Prefs.languageMode.name,
+            ) { picked ->
+                val mode = LanguageMode.valueOf(picked.id)
+                if (mode != Prefs.languageMode) {
+                    Prefs.languageMode = mode
+                    App.applyLanguage(mode)
+                    activity?.recreate()
                 }
             }
         }
@@ -188,6 +222,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
     ) {
         val row = layoutInflater.inflate(R.layout.item_settings_row, card, false)
         row.findViewById<ImageView>(R.id.rowIcon).setImageResource(iconRes)
+        row.findViewById<ImageView>(R.id.rowIcon).setColorFilter(UiColors.accent(requireContext()))
         if (danger) {
             row.findViewById<View>(R.id.rowIconBox).setBackgroundResource(R.drawable.bg_settings_row_icon_danger)
             row.findViewById<ImageView>(R.id.rowIcon).setColorFilter(requireContext().getColor(R.color.error_red))
@@ -216,6 +251,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
     ) {
         val row = layoutInflater.inflate(R.layout.item_settings_row, card, false)
         row.findViewById<ImageView>(R.id.rowIcon).setImageResource(iconRes)
+        row.findViewById<ImageView>(R.id.rowIcon).setColorFilter(UiColors.accent(requireContext()))
         row.findViewById<TextView>(R.id.rowTitle).text = title
         row.findViewById<TextView>(R.id.rowSub).apply {
             if (sub.isNullOrBlank()) { visibility = View.GONE } else { text = sub; visibility = View.VISIBLE }
@@ -240,6 +276,23 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
             setBackgroundColor(requireContext().getColor(R.color.hair))
         }
         card.addView(divider)
+    }
+
+
+    private fun themeLabel(mode: ThemeMode): String = when (mode) {
+        ThemeMode.SYSTEM -> getString(R.string.settings_language_system)
+        ThemeMode.LIGHT -> if (resources.configuration.locales.get(0).language == "ru") "Светлая" else "Light"
+        ThemeMode.DARK -> if (resources.configuration.locales.get(0).language == "ru") "Тёмная" else "Dark"
+    }
+
+    private fun accentLabel(mode: AccentMode): String = when (mode) {
+        AccentMode.BLUE -> getString(R.string.settings_accent_blue)
+        AccentMode.RED -> getString(R.string.settings_accent_red)
+    }
+
+    private fun languageLabel(mode: LanguageMode): String = when (mode) {
+        LanguageMode.SYSTEM -> getString(R.string.settings_language_system)
+        LanguageMode.RU -> getString(R.string.settings_language_ru)
     }
 
     private fun rebuild() {

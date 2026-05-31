@@ -48,6 +48,7 @@ import bypass.whitelist.ui.SettingsScreenFragment
 import bypass.whitelist.util.LogWriter
 import bypass.whitelist.util.Net
 import bypass.whitelist.util.Prefs
+import bypass.whitelist.util.UiColors
 import bypass.whitelist.util.SocksAuth
 import bypass.whitelist.util.maskUrl
 import java.net.InetSocketAddress
@@ -396,6 +397,7 @@ class MainActivity :
     override fun onResetAllSettings() {
         Prefs.resetAllSettings()
         App.applyTheme(Prefs.themeMode)
+        App.applyLanguage(Prefs.languageMode)
         settingsFragment()?.refresh()
         Toast.makeText(this, R.string.settings_toast_reset_done, Toast.LENGTH_SHORT).show()
     }
@@ -613,7 +615,7 @@ class MainActivity :
     }
 
     private fun applyNavVisual(icon: ImageView, label: TextView, emphasis: Float) {
-        val accent = getColor(R.color.accent_emerald)
+        val accent = UiColors.accent(this)
         val ink = getColor(R.color.ink_3)
         val blended = navColorEvaluator.evaluate(emphasis, ink, accent) as Int
         icon.setColorFilter(blended)

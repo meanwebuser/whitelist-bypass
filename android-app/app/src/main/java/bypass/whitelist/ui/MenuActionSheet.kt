@@ -9,6 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.fragment.app.FragmentManager
 import bypass.whitelist.R
+import bypass.whitelist.util.UiColors
 import bypass.whitelist.util.ParamCallback
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 
@@ -64,9 +65,9 @@ class MenuActionSheet : BottomSheetDialogFragment() {
             }
             icon.setImageResource(item.iconRes)
             if (item.danger) {
-                label.setTextColor(requireContext().getColor(R.color.accent_emerald))
+                label.setTextColor(UiColors.accent(requireContext()))
                 iconBox.setBackgroundResource(R.drawable.bg_settings_row_icon_danger)
-                icon.setColorFilter(requireContext().getColor(R.color.accent_emerald))
+                icon.setColorFilter(UiColors.accent(requireContext()))
             }
             row.setOnClickListener {
                 onSelect?.invoke(item)
