@@ -190,6 +190,9 @@
 					CEDE375D2F8ED25300A1D4A8 = {
 						CreatedOnToolsVersion = 26.4;
 					};
+					PT000008AAAAAAAA00000008 = {
+						CreatedOnToolsVersion = 26.4;
+					};
 				};
 			};
 			buildConfigurationList = CEDE37592F8ED25300A1D4A8 /* Build configuration list for PBXProject "whitelist-bypass-proxy" */;
@@ -207,6 +210,7 @@
 			projectRoot = "";
 			targets = (
 				CEDE375D2F8ED25300A1D4A8 /* whitelist-bypass-proxy */,
+				PT000008AAAAAAAA00000008 /* PacketTunnel */,
 			);
 		};
 /* End PBXProject section */
@@ -465,7 +469,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "bypass.whitelist.whitelist-bypass-proxy.PacketTunnel";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -490,7 +494,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 0.1.0;
+				MARKETING_VERSION = 0.3.5;
 				PRODUCT_BUNDLE_IDENTIFIER = "bypass.whitelist.whitelist-bypass-proxy.PacketTunnel";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
