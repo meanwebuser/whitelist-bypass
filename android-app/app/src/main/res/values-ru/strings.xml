@@ -67,7 +67,7 @@
     <string name="status_headline_connected">Подключено</string>
     <string name="stat_uptime">Время</string>
     <string name="stat_mode">Режим</string>
-    <string name="ping_run">Проверить через туннель</string>
+    <string name="ping_run">Проверить Telegram через туннель</string>
     <string name="ping_running">Проверка&#8230;</string>
     <string name="ping_ok">%1$s доступен через туннель</string>
     <string name="ping_fail">%1$s недоступен через туннель</string>

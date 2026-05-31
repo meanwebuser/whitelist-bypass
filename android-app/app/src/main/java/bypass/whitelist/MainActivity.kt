@@ -56,6 +56,8 @@ import bypass.whitelist.util.SocksAuth
 import bypass.whitelist.util.maskUrl
 import java.net.InetSocketAddress
 import java.net.Socket
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 import kotlin.concurrent.thread
 
 class MainActivity :
@@ -373,7 +375,7 @@ class MainActivity :
         thread {
             val started = System.nanoTime()
             val ok = try {
-                probeViaSocks5(host = "ya.ru", port = 443)
+                probeHttpsViaSocks5(host = "t.me", path = "/bezrabotnyi/1249?embed=true")
             } catch (_: Exception) {
                 false
             }
@@ -662,10 +664,10 @@ class MainActivity :
     private fun logsFragment(): LogsFragment? =
         supportFragmentManager.fragments.firstOrNull { it is LogsFragment } as? LogsFragment
 
-    private fun probeViaSocks5(host: String, port: Int): Boolean {
+    private fun probeHttpsViaSocks5(host: String, path: String): Boolean {
         Socket().use { socket ->
-            socket.connect(InetSocketAddress(Net.LOCALHOST, Prefs.socksPort.toInt()), 5000)
-            socket.soTimeout = 15000
+            socket.connect(InetSocketAddress(Net.LOCALHOST, Prefs.socksPort.toInt()), 3000)
+            socket.soTimeout = 8000
             val output = socket.getOutputStream()
             val input = socket.getInputStream()
 
@@ -693,12 +695,43 @@ class MainActivity :
             request[3] = 0x03
             request[4] = hostBytes.size.toByte()
             System.arraycopy(hostBytes, 0, request, 5, hostBytes.size)
-            request[5 + hostBytes.size] = ((port shr 8) and 0xff).toByte()
-            request[6 + hostBytes.size] = (port and 0xff).toByte()
+            request[5 + hostBytes.size] = 0x01 // 443 high byte
+            request[6 + hostBytes.size] = 0xbb.toByte() // 443 low byte
             output.write(request)
             output.flush()
 
-            return input.read() == 0x05 && input.read() == 0x00
+            if (input.read() != 0x05 || input.read() != 0x00) return false
+            if (input.read() != 0x00) return false
+            when (input.read()) {
+                0x01 -> readFully(input, 4)
+                0x03 -> readFully(input, input.read())
+                0x04 -> readFully(input, 16)
+                else -> return false
+            }
+            readFully(input, 2)
+
+            val sslSocket = (SSLSocketFactory.getDefault() as SSLSocketFactory)
+                .createSocket(socket, host, 443, true) as SSLSocket
+            sslSocket.soTimeout = 8000
+            sslSocket.startHandshake()
+            val tlsOutput = sslSocket.getOutputStream()
+            val tlsInput = sslSocket.getInputStream()
+            val httpRequest = "GET $path HTTP/1.1\r\nHost: $host\r\nUser-Agent: BEZabotny-NET ping\r\nAccept: text/html,*/*\r\nConnection: close\r\n\r\n"
+            tlsOutput.write(httpRequest.toByteArray(Charsets.US_ASCII))
+            tlsOutput.flush()
+            val status = tlsInput.bufferedReader(Charsets.US_ASCII).readLine() ?: return false
+            appendLog("Ping target $host$path -> $status")
+            return status.contains(" 2") || status.contains(" 3")
+        }
+    }
+
+    private fun readFully(input: java.io.InputStream, count: Int) {
+        var remaining = count
+        val buffer = ByteArray(256)
+        while (remaining > 0) {
+            val n = input.read(buffer, 0, minOf(buffer.size, remaining))
+            if (n < 0) throw java.io.EOFException()
+            remaining -= n
         }
     }
 

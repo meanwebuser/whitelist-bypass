@@ -191,7 +191,7 @@ class MainFragmentView(private val root: View) {
         pingButton.clearAnimation()
         pingButtonLabel.text = root.context.getString(R.string.ping_run)
         pingResult.visibility = View.VISIBLE
-        val host = "ya.ru"
+        val host = "t.me/bezrabotnyi/1249"
         if (success) {
             pingResult.setBackgroundResource(R.drawable.bg_ping_result_ok)
             pingResultHost.setTextColor(UiColors.accent(root.context))

@@ -81,7 +81,7 @@
     <string name="stat_uptime">Uptime</string>
     <string name="stat_mode">Mode</string>
 
-    <string name="ping_run">Ping through tunnel</string>
+    <string name="ping_run">Check Telegram through tunnel</string>
     <string name="ping_running">Pinging&#8230;</string>
     <string name="ping_ok">%1$s reached via tunnel</string>
     <string name="ping_fail">%1$s not reachable via tunnel</string>
