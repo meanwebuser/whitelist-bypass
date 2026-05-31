@@ -155,19 +155,26 @@ struct ProxyCard: View {
                 ProxyInfoView(proxyUrl: proxyManager.socksUrl, onCopy: proxyManager.copyProxyUrl)
                 HStack {
                     Button(action: { proxyManager.openHappProxy() }) {
-                        Label(NSLocalizedString("btn_open_in_happ", comment: ""), systemImage: "globe")
+                        Label(NSLocalizedString("btn_add_to_happ", comment: ""), systemImage: "plus.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.purple)
 
-                    Button(action: { proxyManager.openTelegramProxy() }) {
-                        Label("Telegram", systemImage: "paperplane.fill")
+                    Button(action: { proxyManager.openStreisandProxy() }) {
+                        Label(NSLocalizedString("btn_add_to_streisand", comment: ""), systemImage: "square.and.arrow.down")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .tint(.blue)
+                    .tint(.orange)
                 }
+
+                Button(action: { proxyManager.openTelegramProxy() }) {
+                    Label("Telegram SOCKS", systemImage: "paperplane.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.blue)
             }
         }
     }
