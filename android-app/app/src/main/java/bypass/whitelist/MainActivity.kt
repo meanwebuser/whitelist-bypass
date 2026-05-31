@@ -321,21 +321,29 @@ class MainActivity :
         }
         mainFragment()?.onStatusTextChanged("Сканирование VK…")
         appendLog("Discovery scan started: VK group 237416141")
-        thread {
-            val result = VkDiscoveryScanner.scan()
-            runOnUiThread {
-                val configs = result.configs
-                mainFragment()?.onStatusTextChanged("Найдено свободных: ${configs.size}")
-                appendLog("Discovery scan finished: free=${configs.size}, source=${result.source ?: "none"}")
-                if (configs.isNotEmpty()) {
-                    val merged = (configs + Prefs.savedDestinations).distinctBy { it.url }
-                    Prefs.savedDestinations = merged
-                    Prefs.activeDestinationId = configs.first().id
-                    mainFragment()?.onDestinationsChanged()
-                    startJoinFor(configs.first())
+        VkDiscoveryScanner.scanWithWebView(
+            activity = this,
+            onProgress = { step ->
+                runOnUiThread {
+                    mainFragment()?.onStatusTextChanged(step)
+                    appendLog("Discovery: $step")
+                }
+            },
+            onDone = { result ->
+                runOnUiThread {
+                    val configs = result.configs
+                    mainFragment()?.onStatusTextChanged("Найдено свободных: ${configs.size}")
+                    appendLog("Discovery scan finished: free=${configs.size}, method=${result.method}, source=${result.source ?: "none"}")
+                    if (configs.isNotEmpty()) {
+                        val merged = (configs + Prefs.savedDestinations).distinctBy { it.url }
+                        Prefs.savedDestinations = merged
+                        Prefs.activeDestinationId = configs.first().id
+                        mainFragment()?.onDestinationsChanged()
+                        startJoinFor(configs.first())
+                    }
                 }
             }
-        }
+        )
     }
 
     override fun onDisconnectPressed() {
