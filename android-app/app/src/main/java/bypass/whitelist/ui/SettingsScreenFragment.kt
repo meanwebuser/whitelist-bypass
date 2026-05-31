@@ -28,6 +28,7 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
         fun onForgetAllDestinations()
         fun onResetAllSettings()
         fun onCheckForUpdates()
+        fun onCopySocksPressed()
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -157,6 +158,10 @@ class SettingsScreenFragment : Fragment(R.layout.fragment_settings_screen) {
 
         addRow(card, R.drawable.ic_setting_proxy, getString(R.string.settings_row_proxy), getString(R.string.settings_row_proxy_sub, Prefs.socksPort), null) {
             ProxyActionSheet.show(parentFragmentManager) { rebuild() }
+        }
+
+        addRow(card, R.drawable.ic_setting_proxy, getString(R.string.settings_row_copy_socks), getString(R.string.settings_row_copy_socks_sub), null) {
+            host()?.onCopySocksPressed()
         }
 
         addRow(card, R.drawable.ic_setting_dns, getString(R.string.settings_row_dns), Prefs.dnsMode.label, null) {

@@ -208,4 +208,6 @@
     <string name="update_allow_unknown_title">Allow app updates</string>
     <string name="update_allow_unknown_message">Android requires permission to install APK updates from this app. Open settings and allow installs for BEZаботный-NET.</string>
     <string name="update_open_settings">Open settings</string>
+    <string name="settings_row_copy_socks">Copy SOCKS5 URL</string>
+    <string name="settings_row_copy_socks_sub">Copy local proxy URL to clipboard</string>
 </resources>

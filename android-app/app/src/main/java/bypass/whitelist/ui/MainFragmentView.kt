@@ -33,6 +33,7 @@ class MainFragmentView(private val root: View) {
     private val statusDetail: TextView = root.findViewById(R.id.statusDetail)
     private val callsList: LinearLayout = root.findViewById(R.id.callsList)
     private val copySocksButton: View = root.findViewById(R.id.copySocksButton)
+    private val copySocksButtonLabel: TextView = root.findViewById(R.id.copySocksButtonLabel)
     private val emptyCta: View = root.findViewById(R.id.emptyCta)
     private val statsCard: View = root.findViewById(R.id.statsCard)
     private val pingRow: LinearLayout = root.findViewById(R.id.pingRow)
@@ -47,7 +48,7 @@ class MainFragmentView(private val root: View) {
     var onAddCallClicked: Callback? = null
     var onHeroPressed: Callback? = null
     var onPingPressed: Callback? = null
-    var onCopySocksPressed: Callback? = null
+    var onQuickTelegramCheckPressed: Callback? = null
     var onCallSelected: ParamCallback<CallConfig>? = null
     var onCallLongPressed: ParamCallback<CallConfig>? = null
 
@@ -91,7 +92,7 @@ class MainFragmentView(private val root: View) {
             }
         }
         pingButton.setOnClickListener { onPingPressed?.invoke() }
-        copySocksButton.setOnClickListener { onCopySocksPressed?.invoke() }
+        copySocksButton.setOnClickListener { onQuickTelegramCheckPressed?.invoke() }
     }
 
     fun bindCalls(calls: List<CallConfig>, activeId: String) {
@@ -111,7 +112,7 @@ class MainFragmentView(private val root: View) {
             statusHeadline.text = context.getString(R.string.status_headline_connected)
             headerSub.text = context.getString(R.string.main_sub_live)
             statsCard.visibility = View.VISIBLE
-            pingRow.visibility = View.VISIBLE
+            pingRow.visibility = View.GONE
             copySocksButton.visibility = View.VISIBLE
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTED)
             heroRingMid.setBackgroundResource(R.drawable.bg_hero_ring_dashed_active)
@@ -179,17 +180,21 @@ class MainFragmentView(private val root: View) {
 
     fun showPingRunning() {
         pingButtonLabel.text = root.context.getString(R.string.ping_running)
+        copySocksButtonLabel.text = root.context.getString(R.string.ping_running)
         val anim = AlphaAnimation(0.5f, 1.0f).apply {
             duration = 450
             repeatMode = AlphaAnimation.REVERSE
             repeatCount = AlphaAnimation.INFINITE
         }
         pingButton.startAnimation(anim)
+        copySocksButton.startAnimation(anim)
     }
 
     fun showPingResult(success: Boolean, rttMs: Int) {
         pingButton.clearAnimation()
+        copySocksButton.clearAnimation()
         pingButtonLabel.text = root.context.getString(R.string.ping_run)
+        copySocksButtonLabel.text = root.context.getString(R.string.ping_run)
         pingResult.visibility = View.VISIBLE
         val host = "t.me/Kuplinov_Telegram/1032"
         if (success) {
@@ -308,7 +313,9 @@ class MainFragmentView(private val root: View) {
 
     private fun resetPingState() {
         pingButton.clearAnimation()
+        copySocksButton.clearAnimation()
         pingButtonLabel.text = root.context.getString(R.string.ping_run)
+        copySocksButtonLabel.text = root.context.getString(R.string.ping_run)
         pingResult.visibility = View.GONE
     }
 }

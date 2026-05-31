@@ -1,6 +1,7 @@
 package bypass.whitelist.util
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import bypass.whitelist.tunnel.CallConfig
@@ -13,7 +14,49 @@ object Prefs {
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        initializeDefaultSplitTunnel(context)
     }
+
+    private fun initializeDefaultSplitTunnel(context: Context) {
+        if (prefs.contains(PrefsKeys.SPLIT_TUNNELING_MODE) || prefs.contains(PrefsKeys.SPLIT_TUNNELING_PACKAGES)) return
+        val installed = defaultSplitTunnelPackages.filter { isPackageInstalled(context, it) }.toSet()
+        if (installed.isNotEmpty()) {
+            prefs.edit {
+                putString(PrefsKeys.SPLIT_TUNNELING_MODE, SplitTunnelingMode.ONLY.name)
+                putStringSet(PrefsKeys.SPLIT_TUNNELING_PACKAGES, installed)
+            }
+        }
+    }
+
+    private fun isPackageInstalled(context: Context, packageName: String): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
+    }
+
+    private val defaultSplitTunnelPackages = listOf(
+        "com.instagram.android",
+        "com.google.android.youtube",
+        "com.facebook.katana",
+        "com.facebook.lite",
+        "org.telegram.messenger",
+        "org.telegram.messenger.web",
+        "org.thunderdog.challegram",
+        "com.whatsapp",
+        "com.whatsapp.w4b",
+        "com.openai.chatgpt",
+        "ai.x.grok",
+        "com.xai.grok",
+        "com.x.grok",
+        "com.twitter.android",
+        "com.android.chrome",
+        "com.chrome.beta",
+        "com.chrome.dev",
+        "com.chrome.canary",
+    )
 
     var connectOnStart: Boolean
         get() = prefs.getBoolean(PrefsKeys.CONNECT_ON_START, false)
