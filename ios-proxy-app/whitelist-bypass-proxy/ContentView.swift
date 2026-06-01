@@ -399,6 +399,7 @@ struct SettingsView: View {
 
                 Section(NSLocalizedString("settings_proxy", comment: "")) {
                     Picker(NSLocalizedString("settings_auth_mode", comment: ""), selection: $proxyManager.socksAuthMode) {
+                        Text(NSLocalizedString("settings_auth_none", comment: "")).tag(SocksAuthMode.none)
                         Text(NSLocalizedString("settings_auth_auto", comment: "")).tag(SocksAuthMode.auto)
                         Text(NSLocalizedString("settings_auth_manual", comment: "")).tag(SocksAuthMode.manual)
                     }
