@@ -37,7 +37,27 @@ object VkDiscoveryScanner {
     private val payloadRegex = Regex("wt1\\.([A-Za-z0-9_-]{24,})")
     private val roomRegex = Regex("wbstream://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+")
 
-    data class Result(val configs: List<CallConfig>, val source: String?, val method: String = "http")
+    data class Stats(
+        val encryptedEvents: Int = 0,
+        val legacyEvents: Int = 0,
+        val slots: Int = 0,
+        val free: Int = 0,
+        val busy: Int = 0,
+        val closed: Int = 0,
+        val expired: Int = 0,
+        val roomLinks: Int = 0,
+    ) {
+        fun summary(): String = "events=${encryptedEvents + legacyEvents} encrypted=$encryptedEvents legacy=$legacyEvents slots=$slots free=$free busy=$busy closed=$closed expired=$expired raw_rooms=$roomLinks"
+    }
+
+    data class Result(
+        val configs: List<CallConfig>,
+        val source: String?,
+        val method: String = "http",
+        val stats: Stats = Stats(),
+    )
+
+    private data class ParsedConfigs(val configs: List<CallConfig>, val stats: Stats)
 
     private data class Event(
         val slotId: String,
@@ -195,15 +215,16 @@ object VkDiscoveryScanner {
             webView.evaluateJavascript(js) { encoded ->
                 if (done.get()) return@evaluateJavascript
                 val raw = decodeJsString(encoded)
-                val configs = parseConfigs(raw)
-                if (configs.isNotEmpty()) {
-                    finish(Result(configs, url ?: webView.url, "webview"))
+                val parsed = parseConfigsDetailed(raw)
+                if (parsed.configs.isNotEmpty()) {
+                    onProgress("VK page parsed: ${parsed.configs.size} free room(s); ${parsed.stats.summary()}")
+                    finish(Result(parsed.configs, url ?: webView.url, "webview", parsed.stats))
                 } else {
                     handler.postDelayed({ loadNext() }, 500)
                 }
             }
         }
-        val timeout = Runnable { finish(Result(emptyList(), webView.url, "webview-timeout")) }
+        val timeout = Runnable { finish(Result(emptyList(), webView.url, "webview-timeout", Stats())) }
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
@@ -220,17 +241,31 @@ object VkDiscoveryScanner {
         loadNext()
     }
 
-    fun parseConfigs(raw: String): List<CallConfig> {
+    fun parseConfigs(raw: String): List<CallConfig> = parseConfigsDetailed(raw).configs
+
+    private fun parseConfigsDetailed(raw: String): ParsedConfigs {
         val html = normalize(raw)
         val encryptedEvents = encryptedPayloadRegex.findAll(html).mapNotNull { match ->
             WtBusCrypto.decryptEnvelope(match.groupValues[1], match.groupValues[2], match.groupValues[3])?.toEvent()
-        }
-        val legacyEvents = payloadRegex.findAll(html).mapNotNull { decodeJson(it.groupValues[1])?.toEvent() }
-        val events = (encryptedEvents + legacyEvents).toList()
+        }.toList()
+        val legacyEvents = payloadRegex.findAll(html).mapNotNull { decodeJson(it.groupValues[1])?.toEvent() }.toList()
+        val events = encryptedEvents + legacyEvents
+        val roomLinks = roomRegex.findAll(html).map { it.value }.distinct().toList()
         if (events.isNotEmpty()) {
             val newestBySlot = events.groupBy { it.slotId }.mapValues { (_, list) -> list.maxBy { it.order } }
             val now = System.currentTimeMillis() / 1000L
-            return newestBySlot.values
+            val newest = newestBySlot.values
+            val stats = Stats(
+                encryptedEvents = encryptedEvents.size,
+                legacyEvents = legacyEvents.size,
+                slots = newestBySlot.size,
+                free = newest.count { it.status == "free" && it.room?.startsWith("wbstream://") == true && it.expiresAt > now },
+                busy = newest.count { it.status == "busy" },
+                closed = newest.count { it.status == "closed" },
+                expired = newest.count { it.expiresAt <= now },
+                roomLinks = roomLinks.size,
+            )
+            val configs = newest
                 .filter { it.status == "free" && it.expiresAt > now && it.room?.startsWith("wbstream://") == true }
                 .sortedByDescending { it.order }
                 .map { event ->
@@ -242,11 +277,12 @@ object VkDiscoveryScanner {
                         expiresAt = event.expiresAt,
                     )
                 }
+            return ParsedConfigs(configs, stats)
         }
-        return roomRegex.findAll(html).map { match ->
-            val room = match.value
+        val configs = roomLinks.map { room ->
             CallConfig.autoWith(name = "VK discovery", url = room, slotId = room, leaseId = null, expiresAt = null)
-        }.distinctBy { it.url }.toList()
+        }
+        return ParsedConfigs(configs, Stats(roomLinks = roomLinks.size, free = configs.size))
     }
 
     private fun JSONObject.toEvent(): Event? {

@@ -335,7 +335,7 @@ class MainActivity :
             return
         }
         mainFragment()?.onStatusTextChanged("Сканирование VK…")
-        appendLog("Discovery scan started: VK group 237416141")
+        appendLog("Discovery scan started: private-bus first, then public VK fallback; group=237416141")
         VkDiscoveryScanner.scanWithWebView(
             activity = this,
             onProgress = { step ->
