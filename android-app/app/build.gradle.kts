@@ -40,7 +40,7 @@ val vkBotPeerId = brandEnvValue(brandDotEnv, "VK_BOT_PEER_ID") ?: ""
 
 val versionMajor = 0
 val versionMinor = 3
-val versionPatch = 12
+val versionPatch = 13
 val versionBuild = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 0
 
 android {

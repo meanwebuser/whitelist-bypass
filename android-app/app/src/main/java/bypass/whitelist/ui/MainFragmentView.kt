@@ -34,6 +34,8 @@ class MainFragmentView(private val root: View) {
     private val callsList: LinearLayout = root.findViewById(R.id.callsList)
     private val copySocksButton: View = root.findViewById(R.id.copySocksButton)
     private val copySocksButtonLabel: TextView = root.findViewById(R.id.copySocksButtonLabel)
+    private val speedTestButton: View = root.findViewById(R.id.speedTestButton)
+    private val speedTestButtonLabel: TextView = root.findViewById(R.id.speedTestButtonLabel)
     private val emptyCta: View = root.findViewById(R.id.emptyCta)
     private val statsCard: View = root.findViewById(R.id.statsCard)
     private val pingRow: LinearLayout = root.findViewById(R.id.pingRow)
@@ -48,6 +50,7 @@ class MainFragmentView(private val root: View) {
     var onAddCallClicked: Callback? = null
     var onHeroPressed: Callback? = null
     var onPingPressed: Callback? = null
+    var onTunnelDiagnosticsPressed: Callback? = null
     var onSpeedTestPressed: Callback? = null
     var onCallSelected: ParamCallback<CallConfig>? = null
     var onCallLongPressed: ParamCallback<CallConfig>? = null
@@ -62,6 +65,7 @@ class MainFragmentView(private val root: View) {
         emptyCta.clipToOutline = true
         pingButton.clipToOutline = true
         copySocksButton.clipToOutline = true
+        speedTestButton.clipToOutline = true
         addButton.setOnClickListener { onAddCallClicked?.invoke() }
         emptyCta.setOnClickListener { onAddCallClicked?.invoke() }
         hero.setOnTouchListener { v, event ->
@@ -93,7 +97,8 @@ class MainFragmentView(private val root: View) {
             }
         }
         pingButton.setOnClickListener { onPingPressed?.invoke() }
-        copySocksButton.setOnClickListener { onSpeedTestPressed?.invoke() }
+        copySocksButton.setOnClickListener { onTunnelDiagnosticsPressed?.invoke() }
+        speedTestButton.setOnClickListener { onSpeedTestPressed?.invoke() }
     }
 
     fun bindCalls(calls: List<CallConfig>, activeId: String) {
@@ -115,7 +120,9 @@ class MainFragmentView(private val root: View) {
             statsCard.visibility = View.VISIBLE
             pingRow.visibility = View.GONE
             copySocksButton.visibility = View.VISIBLE
-            copySocksButtonLabel.text = context.getString(R.string.speedtest_run)
+            speedTestButton.visibility = View.VISIBLE
+            copySocksButtonLabel.text = context.getString(R.string.ping_run)
+            speedTestButtonLabel.text = context.getString(R.string.speedtest_run)
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTED)
             heroRingMid.setBackgroundResource(R.drawable.bg_hero_ring_dashed_active)
             statusDot.setBackgroundResource(R.drawable.bg_status_dot_active)
@@ -131,6 +138,8 @@ class MainFragmentView(private val root: View) {
             statsCard.visibility = View.GONE
             pingRow.visibility = View.GONE
             copySocksButton.visibility = View.GONE
+            speedTestButton.visibility = View.GONE
+            speedTestButton.visibility = View.GONE
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTING)
             heroRingMid.setBackgroundResource(R.drawable.bg_hero_ring_dashed)
             statusDot.setBackgroundResource(R.drawable.bg_status_dot_warn)
@@ -211,8 +220,8 @@ class MainFragmentView(private val root: View) {
     }
 
 
-    fun showSpeedRunning() {
-        copySocksButtonLabel.text = root.context.getString(R.string.speedtest_running)
+    fun showTunnelDiagnosticsRunning() {
+        copySocksButtonLabel.text = root.context.getString(R.string.diag_ping)
         val anim = AlphaAnimation(0.5f, 1.0f).apply {
             duration = 450
             repeatMode = AlphaAnimation.REVERSE
@@ -221,21 +230,51 @@ class MainFragmentView(private val root: View) {
         copySocksButton.startAnimation(anim)
     }
 
-    fun showSpeedResult(text: String, ok: Boolean) {
+    fun showTunnelDiagnosticsProgress(text: String) {
+        copySocksButtonLabel.text = text
+        pingResult.visibility = View.VISIBLE
+        pingResult.setBackgroundResource(R.drawable.bg_ping_result_ok)
+        pingResultHost.setTextColor(UiColors.accent(root.context))
+        pingResultRtt.setTextColor(UiColors.accent(root.context))
+        pingResultHost.text = root.context.getString(R.string.diag_result_title)
+        pingResultRtt.text = text
+    }
+
+    fun showTunnelDiagnosticsResult(text: String, ok: Boolean) {
         copySocksButton.clearAnimation()
-        copySocksButtonLabel.text = root.context.getString(R.string.speedtest_run)
+        copySocksButtonLabel.text = root.context.getString(R.string.ping_run)
+        showResult(text, ok, root.context.getString(R.string.diag_result_title))
+    }
+
+    fun showSpeedRunning() {
+        speedTestButtonLabel.text = root.context.getString(R.string.speedtest_running)
+        val anim = AlphaAnimation(0.5f, 1.0f).apply {
+            duration = 450
+            repeatMode = AlphaAnimation.REVERSE
+            repeatCount = AlphaAnimation.INFINITE
+        }
+        speedTestButton.startAnimation(anim)
+    }
+
+    fun showSpeedResult(text: String, ok: Boolean) {
+        speedTestButton.clearAnimation()
+        speedTestButtonLabel.text = root.context.getString(R.string.speedtest_run)
+        showResult(text, ok, root.context.getString(R.string.speedtest_result_title))
+    }
+
+    private fun showResult(text: String, ok: Boolean, title: String) {
         pingResult.visibility = View.VISIBLE
         if (ok) {
             pingResult.setBackgroundResource(R.drawable.bg_ping_result_ok)
             pingResultHost.setTextColor(UiColors.accent(root.context))
             pingResultRtt.setTextColor(UiColors.accent(root.context))
-            pingResultHost.text = root.context.getString(R.string.speedtest_result_title)
+            pingResultHost.text = title
             pingResultRtt.text = text
         } else {
             pingResult.setBackgroundResource(R.drawable.bg_ping_result_fail)
             pingResultHost.setTextColor(root.context.getColor(R.color.error_red))
             pingResultRtt.setTextColor(root.context.getColor(R.color.error_red))
-            pingResultHost.text = root.context.getString(R.string.speedtest_result_title)
+            pingResultHost.text = title
             pingResultRtt.text = text
         }
     }
@@ -355,7 +394,11 @@ class MainFragmentView(private val root: View) {
 
     private fun resetPingState() {
         pingButton.clearAnimation()
+        copySocksButton.clearAnimation()
+        speedTestButton.clearAnimation()
         pingButtonLabel.text = root.context.getString(R.string.ping_run)
+        copySocksButtonLabel.text = root.context.getString(R.string.ping_run)
+        speedTestButtonLabel.text = root.context.getString(R.string.speedtest_run)
         pingResult.visibility = View.GONE
     }
 }
