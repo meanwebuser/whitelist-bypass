@@ -15,11 +15,21 @@
       "bundleIdentifier": "bypass.whitelist.whitelist-bypass-proxy",
       "developerName": "BEZаботный-NET",
       "subtitle": "WhiteTransport encrypted proxy",
-      "localizedDescription": "Encrypted VK private-bus discovery, WBStream transport and Android-matched neon B icon.",
+      "localizedDescription": "No-auth SOCKS5 by default, stable manual credentials, unified discovery logs, encrypted VK private-bus discovery.",
       "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
       "tintColor": "#6D5DF6",
       "category": "utilities",
       "versions": [
+        {
+          "version": "0.3.12",
+          "buildVersion": "3012",
+          "date": "2026-06-01T05:07:00Z",
+          "localizedDescription": "SOCKS5 auth mode now has No auth default; auto credentials no longer change unless Auto is selected; discovery logs go to subsystem bypass.whitelist/category discovery.",
+          "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-ios.ipa",
+          "size": 6941039,
+          "sha256": "34aeb50f1b02660db25b3b6fcbea0ae9c63e706415e3801d1fcd7d87d443fb55",
+          "minOSVersion": "16.0"
+        },
         {
           "version": "0.3.11",
           "date": "2026-06-01T04:55:00Z",
@@ -44,11 +54,11 @@
         "entitlements": [],
         "privacy": {}
       },
-      "version": "0.3.11",
-      "versionDate": "2026-06-01T04:55:00Z",
+      "version": "0.3.12",
+      "versionDate": "2026-06-01T05:07:00Z",
       "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-ios.ipa",
-      "size": 6913454,
-      "sha256": "6e9ee3510e3fd44795170867c00cca19fbeebc6b6a2a0db57dbb702d2f7ad5cb"
+      "size": 6941039,
+      "sha256": "34aeb50f1b02660db25b3b6fcbea0ae9c63e706415e3801d1fcd7d87d443fb55"
     }
   ],
   "news": [

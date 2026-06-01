@@ -27,6 +27,7 @@
 "settings_tunnel_video" = "Video (VP8)";
 "settings_proxy" = "Proxy";
 "settings_auth_mode" = "Auth Mode";
+"settings_auth_none" = "No auth";
 "settings_auth_auto" = "Auto";
 "settings_auth_manual" = "Manual";
 "settings_display" = "Display";

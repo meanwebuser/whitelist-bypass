@@ -16,8 +16,8 @@ enum DefaultsKeys {
 }
 
 struct AppVersion {
-    static let name = "0.3.11"
-    static let code = 3011
+    static let name = "0.3.12"
+    static let code = 3012
 }
 
 enum VP8Defaults {
@@ -59,7 +59,7 @@ struct AppDefaults {
     }
 
     static var socksAuthMode: SocksAuthMode {
-        get { SocksAuthMode(rawValue: defaults.string(forKey: DefaultsKeys.socksAuthMode) ?? "") ?? .auto }
+        get { SocksAuthMode(rawValue: defaults.string(forKey: DefaultsKeys.socksAuthMode) ?? "") ?? .none }
         set { defaults.set(newValue.rawValue, forKey: DefaultsKeys.socksAuthMode) }
     }
 

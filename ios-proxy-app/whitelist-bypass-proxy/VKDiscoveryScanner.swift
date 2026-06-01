@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 struct DiscoveryRoom: Identifiable {
     let id: String
@@ -16,6 +17,7 @@ struct DiscoveryRoom: Identifiable {
 }
 
 final class VKDiscoveryScanner {
+    private let logger = Logger(subsystem: "bypass.whitelist", category: "discovery")
     private let groupId = "237416141"
     private let userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
     private var urls: [URL] {
@@ -28,22 +30,27 @@ final class VKDiscoveryScanner {
     }
 
     func scan(completion: @escaping (_ rooms: [DiscoveryRoom], _ source: String?) -> Void) {
+        logger.info("scanner scan started")
         scanPrivateBus { [weak self] rooms in
             guard let self = self else { return }
             if !rooms.isEmpty {
+                self.logger.info("private-bus returned rooms=\(rooms.count, privacy: .public) free=\(rooms.filter { $0.isFree }.count, privacy: .public)")
                 completion(rooms, "vk-private-bus")
                 return
             }
+            self.logger.warning("private-bus returned no rooms; falling back to wall")
             self.scanWall(urls: self.urls, firstSource: nil, completion: completion)
         }
     }
 
     private func scanPrivateBus(completion: @escaping ([DiscoveryRoom]) -> Void) {
         guard !WtBusSecrets.vkBotToken.isEmpty, !WtBusSecrets.vkBotPeerID.isEmpty else {
+            logger.warning("private-bus skipped: empty token or peer id")
             completion([])
             return
         }
         guard let url = URL(string: "https://api.vk.com/method/messages.getHistory") else {
+            logger.error("private-bus URL construction failed")
             completion([])
             return
         }
@@ -61,17 +68,28 @@ final class VKDiscoveryScanner {
         request.httpBody = params.map { key, value in
             "\(key)=\(value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value)"
         }.joined(separator: "&").data(using: .utf8)
-        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
-            guard let self = self,
-                  let data = data,
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            if let error = error {
+                self.logger.error("private-bus network error: \(error.localizedDescription, privacy: .public)")
+                completion([])
+                return
+            }
+            if let http = response as? HTTPURLResponse {
+                self.logger.info("private-bus HTTP \(http.statusCode, privacy: .public)")
+            }
+            guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let response = json["response"] as? [String: Any],
                   let items = response["items"] as? [[String: Any]] else {
+                self.logger.error("private-bus parse failed bytes=\(data?.count ?? 0, privacy: .public)")
                 completion([])
                 return
             }
             let text = items.compactMap { $0["text"] as? String }.joined(separator: "\n")
-            completion(self.parse(text: text))
+            let rooms = self.parse(text: text)
+            self.logger.info("private-bus messages=\(items.count, privacy: .public) rooms=\(rooms.count, privacy: .public)")
+            completion(rooms)
         }.resume()
     }
 
@@ -84,11 +102,17 @@ final class VKDiscoveryScanner {
         request.timeoutInterval = 10
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
             let source = firstSource ?? url.absoluteString
+            if let error = error {
+                self.logger.warning("wall fetch failed url=\(url.absoluteString, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+            } else if let http = response as? HTTPURLResponse {
+                self.logger.info("wall fetch HTTP \(http.statusCode, privacy: .public) url=\(url.absoluteString, privacy: .public)")
+            }
             if let data = data, let html = String(data: data, encoding: .utf8) {
                 let rooms = self.parse(text: html)
+                self.logger.info("wall parse url=\(url.absoluteString, privacy: .public) bytes=\(data.count, privacy: .public) rooms=\(rooms.count, privacy: .public)")
                 if !rooms.isEmpty {
                     completion(rooms, source)
                     return
@@ -106,7 +130,9 @@ final class VKDiscoveryScanner {
         rooms.append(contentsOf: parseLegacyRooms(text))
         var unique: [String: DiscoveryRoom] = [:]
         for room in rooms { unique[room.id] = room }
-        return unique.values.sorted { $0.order > $1.order }
+        let sorted = unique.values.sorted { $0.order > $1.order }
+        logger.info("parse summary encrypted=\(rooms.count, privacy: .public) unique=\(sorted.count, privacy: .public) free=\(sorted.filter { $0.isFree }.count, privacy: .public)")
+        return sorted
     }
 
     private func parseEncryptedPayloads(_ text: String) -> [DiscoveryRoom] {

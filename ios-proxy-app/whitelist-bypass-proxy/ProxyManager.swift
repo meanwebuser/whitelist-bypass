@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import Combine
 import Mobile
+import os
 
 
 enum ProxyStatus: String {
@@ -27,6 +28,7 @@ enum ProxyStatus: String {
 }
 
 enum SocksAuthMode: String, CaseIterable {
+    case none = "NONE"
     case auto = "AUTO"
     case manual = "MANUAL"
 }
@@ -194,6 +196,7 @@ class ProxyManager: ObservableObject {
     @Published var telegramCheckStatus: String = ""
     var detectedPlatform: CallPlatform = .vk
     private let discoveryScanner = VKDiscoveryScanner()
+    private let discoveryLogger = Logger(subsystem: "bypass.whitelist", category: "discovery")
 
     @Published var callUrl: String = AppDefaults.lastUrl {
         didSet {
@@ -225,12 +228,22 @@ class ProxyManager: ObservableObject {
     private var logFlushScheduled = false
 
     var activeSocksUser: String {
-        socksAuthMode == .manual ? manualSocksUser : autoSocksUser
+        switch socksAuthMode {
+        case .none: return ""
+        case .manual: return manualSocksUser
+        case .auto: return autoSocksUser
+        }
     }
 
     var activeSocksPass: String {
-        socksAuthMode == .manual ? manualSocksPass : autoSocksPass
+        switch socksAuthMode {
+        case .none: return ""
+        case .manual: return manualSocksPass
+        case .auto: return autoSocksPass
+        }
     }
+
+    var socksAuthEnabled: Bool { socksAuthMode != .none }
 
     init() {
         let chars = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -239,7 +252,10 @@ class ProxyManager: ObservableObject {
     }
 
     var socksUrl: String {
-        "socks5://\(activeSocksUser):\(activeSocksPass)@127.0.0.1:\(socksPort)"
+        if socksAuthEnabled {
+            return "socks5://\(activeSocksUser):\(activeSocksPass)@127.0.0.1:\(socksPort)"
+        }
+        return "socks5://127.0.0.1:\(socksPort)"
     }
 
     private func isPortAvailable(_ port: Int) -> Bool {
@@ -595,16 +611,22 @@ class ProxyManager: ObservableObject {
     }
 
     func openTelegramProxy() {
-        let urlString = "tg://socks?server=127.0.0.1&port=\(socksPort)&user=\(activeSocksUser)&pass=\(activeSocksPass)"
+        var urlString = "tg://socks?server=127.0.0.1&port=\(socksPort)"
+        if socksAuthEnabled {
+            urlString += "&user=\(activeSocksUser)&pass=\(activeSocksPass)"
+        }
         if let url = URL(string: urlString) {
             UIApplication.shared.open(url)
         }
     }
 
     var xrayProxyUri: String {
-        let creds = "\(activeSocksUser):\(activeSocksPass)"
-        let credsB64 = Data(creds.utf8).base64EncodedString()
-        return "socks://\(credsB64)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
+        if socksAuthEnabled {
+            let creds = "\(activeSocksUser):\(activeSocksPass)"
+            let credsB64 = Data(creds.utf8).base64EncodedString()
+            return "socks://\(credsB64)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
+        }
+        return "socks://127.0.0.1:\(socksPort)#WLB-\(socksPort)"
     }
 
     func openHappProxy() {
