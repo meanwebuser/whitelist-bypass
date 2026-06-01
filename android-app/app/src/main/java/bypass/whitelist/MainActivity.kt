@@ -394,7 +394,10 @@ class MainActivity :
                 runOnUiThread {
                     discoveryScanRunning = false
                     val allConfigs = result.configs
-                    val configs = allConfigs.filter { !badDiscoveryRooms.contains(it.url) }
+                    val myClientId = discoveryClientId()
+                    val configs = allConfigs.filter { cfg ->
+                        !badDiscoveryRooms.contains(cfg.url) && (cfg.ownerClientId.isNullOrBlank() || cfg.ownerClientId == myClientId)
+                    }
                     cachedDiscoveryConfigs = configs
                     val nodes = configs.map { room ->
                         val raw = room.nodeLabel ?: room.name
@@ -426,8 +429,11 @@ class MainActivity :
         Prefs.autoDestination = picked
         Prefs.activeDestinationId = picked.id
         mainFragment()?.onDestinationsChanged()
-        appendLog("Discovery selected room: node=${picked.nodeLabel ?: picked.name} slot=${picked.slotId ?: "?"} lease=${picked.leaseId ?: "?"}")
-        if (connectNow) startJoinFor(picked)
+        appendLog("Discovery selected room: node=${picked.nodeLabel ?: picked.name} owner=${picked.ownerClientId ?: "free"} slot=${picked.slotId ?: "?"} lease=${picked.leaseId ?: "?"}")
+        if (connectNow) {
+            sendPrivateBusClientEvent("claim_room", picked.url, "connect")
+            startJoinFor(picked)
+        }
     }
 
     override fun onDisconnectPressed() {

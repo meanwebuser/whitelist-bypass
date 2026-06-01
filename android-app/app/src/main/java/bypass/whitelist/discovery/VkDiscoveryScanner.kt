@@ -67,6 +67,7 @@ object VkDiscoveryScanner {
         val creator: String?,
         val node: String?,
         val location: String?,
+        val ownerClientId: String?,
         val createdAt: Long,
         val expiresAt: Long,
         val seq: Long,
@@ -189,6 +190,11 @@ object VkDiscoveryScanner {
             val configs = parseConfigs(privateHtml)
             if (configs.isNotEmpty()) return Result(configs, "vk-private-bus", "vk-private")
         }
+        val okHtml = fetchOkGraphBus()
+        if (okHtml != null) {
+            val configs = parseConfigs(okHtml)
+            if (configs.isNotEmpty()) return Result(configs, "ok-graph", "ok-graph")
+        }
         var source: String? = null
         for (url in urls) {
             val html = fetch(url) ?: continue
@@ -199,6 +205,34 @@ object VkDiscoveryScanner {
         return Result(emptyList(), source, "http")
     }
 
+
+
+    private fun fetchOkGraphBus(): String? {
+        val token = BuildConfig.OK_GRAPH_TOKEN.takeIf { it.isNotBlank() } ?: return null
+        val chatId = BuildConfig.OK_GRAPH_CHAT_ID.takeIf { it.isNotBlank() } ?: return null
+        return try {
+            val body = listOf(
+                "chat_id" to chatId,
+                "count" to "100",
+                "access_token" to token,
+            ).joinToString("&") { (k, v) -> "${k}=${URLEncoder.encode(v, "UTF-8")}" }
+            val conn = URL("https://api.ok.ru/graph/me/messages?$body").openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 8000
+            conn.readTimeout = 10000
+            val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val json = JSONObject(text)
+            val messages = json.optJSONArray("messages") ?: return text
+            buildString {
+                for (i in 0 until messages.length()) {
+                    val msg = messages.optJSONObject(i)?.optJSONObject("message")?.optString("text")
+                    if (!msg.isNullOrBlank()) append(msg).append('\n')
+                }
+            }.ifBlank { text }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     private fun fetchPrivateBus(): String? {
         val token = BuildConfig.VK_BOT_TOKEN.takeIf { it.isNotBlank() } ?: return null
@@ -320,13 +354,16 @@ object VkDiscoveryScanner {
                 legacyEvents = legacyEvents.size,
                 slots = newestBySlot.size,
                 free = newest.count { it.status == "free" && it.room?.startsWith("wbstream://") == true && it.expiresAt > now },
-                busy = newest.count { it.status == "busy" },
+                busy = newest.count { it.status == "busy" || it.status == "claimed" },
                 closed = newest.count { it.status == "closed" },
                 expired = newest.count { it.expiresAt <= now },
                 roomLinks = roomLinks.size,
             )
             val configs = newest
-                .filter { it.status == "free" && it.expiresAt > now && it.room?.startsWith("wbstream://") == true }
+                .filter { event ->
+                    event.expiresAt > now && event.room?.startsWith("wbstream://") == true &&
+                        (event.status == "free" || ((event.status == "busy" || event.status == "claimed") && !event.ownerClientId.isNullOrBlank()))
+                }
                 .sortedByDescending { it.order }
                 .map { event ->
                     val label = listOfNotNull(event.node?.ifBlank { null } ?: event.creator?.ifBlank { null }, event.location?.ifBlank { null }).joinToString(" · ").ifBlank { null }
@@ -337,6 +374,7 @@ object VkDiscoveryScanner {
                         leaseId = event.leaseId,
                         expiresAt = event.expiresAt,
                         nodeLabel = label,
+                        ownerClientId = event.ownerClientId,
                     )
                 }
             return ParsedConfigs(configs, stats)
@@ -365,6 +403,7 @@ object VkDiscoveryScanner {
             node = optString("node").takeIf { it.isNotBlank() } ?: optString("node_name").takeIf { it.isNotBlank() },
             location = optString("location").takeIf { it.isNotBlank() }
                 ?: listOfNotNull(optString("country").takeIf { it.isNotBlank() }, optString("city").takeIf { it.isNotBlank() }, optString("region").takeIf { it.isNotBlank() }).joinToString(" ").takeIf { it.isNotBlank() },
+            ownerClientId = optString("owner_client_id").takeIf { it.isNotBlank() } ?: optString("ownerClientId").takeIf { it.isNotBlank() },
             createdAt = createdAt,
             expiresAt = expiresAt,
             seq = seq,
