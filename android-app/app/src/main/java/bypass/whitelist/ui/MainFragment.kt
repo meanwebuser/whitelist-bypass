@@ -30,6 +30,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         fun onDisconnectPressed()
         fun onDiscoveryConnectPressed()
         fun onDiscoveryRefreshPressed()
+        fun onDiscoveryRoomSelected(url: String)
         fun onPingPressed(callback: (success: Boolean, rttMs: Int) -> Unit)
         fun onTunnelDiagnosticsPressed(callback: (text: String, ok: Boolean) -> Unit, progress: (text: String) -> Unit)
         fun onSpeedTestPressed(callback: (text: String, ok: Boolean) -> Unit)
@@ -62,6 +63,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
             }
         }
         container.onDiscoveryRefreshPressed = { host()?.onDiscoveryRefreshPressed() }
+        container.onServerChoiceClicked = { url -> host()?.onDiscoveryRoomSelected(url) }
         container.onTunnelDiagnosticsPressed = {
             container.showTunnelDiagnosticsRunning()
             host()?.onTunnelDiagnosticsPressed(
@@ -153,6 +155,11 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
     fun onRoomWarmupChanged(text: String, refreshing: Boolean) {
         content?.bindRoomWarmup(text, refreshing)
     }
+
+    fun onRoomServerChoicesChanged(rooms: List<bypass.whitelist.tunnel.CallConfig>) {
+        content?.bindServerChoices(rooms)
+    }
+
 
     private fun showRowMenu(config: CallConfig) {
         val tunnelMode = (config.tunnelMode ?: Prefs.tunnelMode).forPlatform(config.platform)

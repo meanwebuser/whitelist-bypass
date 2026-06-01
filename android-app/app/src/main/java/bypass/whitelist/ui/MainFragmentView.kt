@@ -36,6 +36,7 @@ class MainFragmentView(private val root: View) {
     private val copySocksButtonLabel: TextView = root.findViewById(R.id.copySocksButtonLabel)
     private val roomWarmupStatus: TextView = root.findViewById(R.id.roomWarmupStatus)
     private val roomRefreshButton: View = root.findViewById(R.id.roomRefreshButton)
+    private val roomServerChoices: LinearLayout = root.findViewById(R.id.roomServerChoices)
     private val speedTestButton: View = root.findViewById(R.id.speedTestButton)
     private val speedTestButtonLabel: TextView = root.findViewById(R.id.speedTestButtonLabel)
     private val emptyCta: View = root.findViewById(R.id.emptyCta)
@@ -54,6 +55,7 @@ class MainFragmentView(private val root: View) {
     var onPingPressed: Callback? = null
     var onTunnelDiagnosticsPressed: Callback? = null
     var onDiscoveryRefreshPressed: Callback? = null
+    var onServerChoiceClicked: ParamCallback<String>? = null
     var onSpeedTestPressed: Callback? = null
     var onCallSelected: ParamCallback<CallConfig>? = null
     var onCallLongPressed: ParamCallback<CallConfig>? = null
@@ -62,6 +64,7 @@ class MainFragmentView(private val root: View) {
     private var pulseRunning: Boolean = false
     private var collapsedToActive: Boolean = false
     private var currentCalls: List<CallConfig> = emptyList()
+    private var heroConnected = false
     private var activeCallId: String = ""
 
     init {
@@ -69,6 +72,7 @@ class MainFragmentView(private val root: View) {
         pingButton.clipToOutline = true
         copySocksButton.clipToOutline = true
         speedTestButton.clipToOutline = true
+        speedTestButton.visibility = View.GONE
         addButton.setOnClickListener { onAddCallClicked?.invoke() }
         emptyCta.setOnClickListener { onAddCallClicked?.invoke() }
         hero.setOnTouchListener { v, event ->
@@ -113,6 +117,7 @@ class MainFragmentView(private val root: View) {
     }
 
     fun bindHero(connected: Boolean, status: VpnStatus?) {
+        heroConnected = connected
         val context = root.context
         if (connected) {
             heroLabel.text = context.getString(R.string.hero_disconnect)
@@ -124,9 +129,9 @@ class MainFragmentView(private val root: View) {
             statsCard.visibility = View.VISIBLE
             pingRow.visibility = View.GONE
             copySocksButton.visibility = View.VISIBLE
-            speedTestButton.visibility = View.VISIBLE
+            speedTestButton.visibility = View.GONE
+            emptyCta.visibility = View.GONE
             copySocksButtonLabel.text = context.getString(R.string.ping_run)
-            speedTestButtonLabel.text = context.getString(R.string.speedtest_run)
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTED)
             heroRingMid.setBackgroundResource(R.drawable.bg_hero_ring_dashed_active)
             statusDot.setBackgroundResource(R.drawable.bg_status_dot_active)
@@ -194,6 +199,45 @@ class MainFragmentView(private val root: View) {
         roomRefreshButton.isEnabled = !refreshing
     }
 
+    fun bindServerChoices(rooms: List<CallConfig>) {
+        roomServerChoices.removeAllViews()
+        if (rooms.isEmpty()) {
+            roomServerChoices.visibility = View.GONE
+            return
+        }
+        roomServerChoices.visibility = View.VISIBLE
+        emptyCta.visibility = View.GONE
+        rooms.distinctBy { it.url }.take(5).forEach { room ->
+            val label = serverLabel(room)
+            val chip = TextView(root.context).apply {
+                text = label
+                textSize = 12f
+                setTextColor(root.context.getColor(R.color.accent_emerald))
+                setBackgroundResource(R.drawable.bg_ping_button)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                setOnClickListener { onServerChoiceClicked?.invoke(room.url) }
+            }
+            val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(6)
+            }
+            roomServerChoices.addView(chip, lp)
+        }
+    }
+
+    private fun serverLabel(room: CallConfig): String {
+        val raw = room.nodeLabel ?: room.name
+        val text = if (raw.equals("vpn2", ignoreCase = true)) "vpn2 · Germany" else raw
+        val flag = when {
+            text.contains("germany", ignoreCase = true) || text.contains("de", ignoreCase = true) || text.contains("vpn2", ignoreCase = true) -> "🇩🇪"
+            text.contains("russia", ignoreCase = true) || text.contains("ru", ignoreCase = true) -> "🇷🇺"
+            else -> "🌐"
+        }
+        return "$flag  $text"
+    }
+
+    private fun dp(v: Int): Int = (v * root.resources.displayMetrics.density).toInt()
+
+
     fun setStats(uptimeText: String, mode: String) {
         statUptime.text = uptimeText
         statMode.text = mode
@@ -257,6 +301,8 @@ class MainFragmentView(private val root: View) {
     }
 
     fun showSpeedRunning() {
+        return
+        @Suppress("UNREACHABLE_CODE")
         speedTestButtonLabel.text = root.context.getString(R.string.speedtest_running)
         val anim = AlphaAnimation(0.5f, 1.0f).apply {
             duration = 450
@@ -316,7 +362,7 @@ class MainFragmentView(private val root: View) {
             currentCalls
         }
         if (currentCalls.isEmpty()) {
-            emptyCta.visibility = View.VISIBLE
+            emptyCta.visibility = View.GONE
             callsList.visibility = View.GONE
             return
         }
