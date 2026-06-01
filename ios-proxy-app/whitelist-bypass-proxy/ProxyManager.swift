@@ -1,4 +1,5 @@
 import Foundation
+import CFNetwork
 import UIKit
 import Combine
 import Mobile
@@ -187,7 +188,13 @@ class ProxyManager: ObservableObject {
     @Published var statusText: String?
     @Published var vpnStatusText: String = "VPN: not configured"
     @Published var vpnAvailable: Bool = SystemVPNManager.shared.isPacketTunnelBundled
+    @Published var discoveryEnabled: Bool = AppDefaults.discoveryEnabled { didSet { AppDefaults.discoveryEnabled = discoveryEnabled } }
+    @Published var discoveryStatus: String = NSLocalizedString("discovery_idle", comment: "")
+    @Published var discoveredFreeCount: Int = 0
+    @Published var lastDiscoverySource: String = ""
+    @Published var telegramCheckStatus: String = ""
     var detectedPlatform: CallPlatform = .vk
+    private let discoveryScanner = VKDiscoveryScanner()
 
     @Published var callUrl: String = AppDefaults.lastUrl {
         didSet {
@@ -261,7 +268,10 @@ class ProxyManager: ObservableObject {
             callUrl = normalizedCallUrl
             appendLog("Normalized link: \(normalizedCallUrl)")
         }
-        guard !callUrl.isEmpty else { return }
+        guard !callUrl.isEmpty else {
+            scanAndConnect()
+            return
+        }
 
         if !isPortAvailable(socksPort) {
             let originalPort = socksPort
@@ -383,6 +393,70 @@ class ProxyManager: ObservableObject {
                 appendLog("Sent join params")
             }
         }
+    }
+
+
+    func scanAndConnect() {
+        guard discoveryEnabled else {
+            showToast(NSLocalizedString("discovery_disabled", comment: ""))
+            return
+        }
+        discoveryStatus = NSLocalizedString("discovery_scanning", comment: "")
+        statusText = discoveryStatus
+        appendLog("Discovery scan started")
+        discoveryScanner.scan { [weak self] rooms, source in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.lastDiscoverySource = source ?? ""
+                let freeRooms = rooms.filter { $0.isFree }
+                self.discoveredFreeCount = freeRooms.count
+                self.discoveryStatus = String(format: NSLocalizedString("discovery_found", comment: ""), freeRooms.count)
+                self.statusText = self.discoveryStatus
+                self.appendLog("Discovery found free rooms: \(freeRooms.count)")
+                guard let selected = freeRooms.first else {
+                    self.showToast(NSLocalizedString("discovery_no_free", comment: ""))
+                    return
+                }
+                self.callUrl = selected.room
+                self.appendLog("Discovery selected: \(selected.creator) \(selected.room)")
+                self.connect()
+            }
+        }
+    }
+
+    func checkTelegramThroughTunnel() {
+        guard isRunning else {
+            showToast(NSLocalizedString("telegram_check_needs_connection", comment: ""))
+            return
+        }
+        telegramCheckStatus = NSLocalizedString("telegram_check_running", comment: "")
+        appendLog("Telegram check started")
+        let start = Date()
+        var request = URLRequest(url: URL(string: "https://t.me/Kuplinov_Telegram/1032")!)
+        request.timeoutInterval = 12
+        request.setValue("BEZabotny-NET iOS", forHTTPHeaderField: "User-Agent")
+        let config = URLSessionConfiguration.ephemeral
+        config.connectionProxyDictionary = [
+            kCFNetworkProxiesSOCKSEnable as String: true,
+            kCFNetworkProxiesSOCKSProxy as String: "127.0.0.1",
+            kCFNetworkProxiesSOCKSPort as String: socksPort,
+            kCFStreamPropertySOCKSUser as String: activeSocksUser,
+            kCFStreamPropertySOCKSPassword as String: activeSocksPass,
+        ]
+        URLSession(configuration: config).dataTask(with: request) { [weak self] _, response, error in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if let error = error {
+                    self.telegramCheckStatus = "Telegram: \(error.localizedDescription)"
+                    self.appendLog("Telegram check failed: \(error.localizedDescription)")
+                    return
+                }
+                let ms = Int(Date().timeIntervalSince(start) * 1000)
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                self.telegramCheckStatus = "Telegram HTTP \(code) · \(ms) ms"
+                self.appendLog("Telegram check: HTTP \(code), \(ms) ms")
+            }
+        }.resume()
     }
 
     func disconnect() {
