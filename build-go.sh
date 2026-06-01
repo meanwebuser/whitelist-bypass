@@ -25,6 +25,7 @@ cp mobile.aar ../android-app/app/libs/mobile.aar
 echo "Building Pion relay for Android..."
 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o ../android-app/app/src/main/jniLibs/arm64-v8a/librelay.so .
 GOOS=linux GOARCH=arm go build -trimpath -ldflags="-s -w" -o ../android-app/app/src/main/jniLibs/armeabi-v7a/librelay.so .
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../android-app/app/src/main/jniLibs/x86_64/librelay.so .
 echo "Pion relay built"
 
 echo "Done. .aar size: $(du -h mobile.aar | cut -f1)"

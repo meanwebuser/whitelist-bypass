@@ -9,6 +9,9 @@ REMOTE_SRC="$REMOTE_BASE/src"
 REMOTE_OUT="$REMOTE_BASE/out"
 LOCAL_OUT="${WT_BUILD_LOCAL_OUT:-$ROOT/build/server44}"
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new)
+if [[ -n "${WT_BUILD_SSH_KEY:-}" ]]; then
+  SSH_OPTS+=(-i "$WT_BUILD_SSH_KEY")
+fi
 RCLONE_BIN="${WT_RCLONE_BIN:-$HOME/.local/bin/rclone}"
 if [[ ! -x "$RCLONE_BIN" ]]; then RCLONE_BIN="$(command -v rclone)"; fi
 RCLONE_SFTP=":sftp:"
