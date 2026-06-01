@@ -14,10 +14,12 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import bypass.whitelist.BuildConfig
 import bypass.whitelist.tunnel.CallConfig
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.concurrent.atomic.AtomicBoolean
 
 object VkDiscoveryScanner {
@@ -29,6 +31,7 @@ object VkDiscoveryScanner {
         "https://vk.ru/club$GROUP_ID",
         "https://vk.com/club$GROUP_ID",
     )
+    private val encryptedPayloadRegex = Regex("(wt(?:room|bus)2)\\.([A-Za-z0-9_-]{1,16})\\.([А-Яа-я]{24,})")
     private val payloadRegex = Regex("wt1\\.([A-Za-z0-9_-]{24,})")
     private val roomRegex = Regex("wbstream://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+")
 
@@ -48,6 +51,11 @@ object VkDiscoveryScanner {
     }
 
     fun scan(): Result {
+        val privateHtml = fetchPrivateBus()
+        if (privateHtml != null) {
+            val configs = parseConfigs(privateHtml)
+            if (configs.isNotEmpty()) return Result(configs, "vk-private-bus", "vk-private")
+        }
         var source: String? = null
         for (url in urls) {
             val html = fetch(url) ?: continue
@@ -56,6 +64,39 @@ object VkDiscoveryScanner {
             if (configs.isNotEmpty()) return Result(configs, source, "http")
         }
         return Result(emptyList(), source, "http")
+    }
+
+
+    private fun fetchPrivateBus(): String? {
+        val token = BuildConfig.VK_BOT_TOKEN.takeIf { it.isNotBlank() } ?: return null
+        val peerId = BuildConfig.VK_BOT_PEER_ID.takeIf { it.isNotBlank() } ?: return null
+        return try {
+            val body = listOf(
+                "peer_id" to peerId,
+                "count" to "100",
+                "access_token" to token,
+                "v" to "5.199",
+            ).joinToString("&") { (k, v) -> "${k}=${URLEncoder.encode(v, "UTF-8")}" }
+            val conn = URL("https://api.vk.com/method/messages.getHistory").openConnection() as HttpURLConnection
+            conn.instanceFollowRedirects = true
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 8000
+            conn.readTimeout = 10000
+            conn.doOutput = true
+            conn.setRequestProperty("User-Agent", "BEZabotny-NET private bus")
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val json = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+            val items = json.optJSONObject("response")?.optJSONArray("items") ?: return null
+            buildString {
+                for (i in 0 until items.length()) {
+                    val text = items.optJSONObject(i)?.optString("text").orEmpty()
+                    if (text.isNotBlank()) append(text).append("\n")
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -128,7 +169,11 @@ object VkDiscoveryScanner {
 
     fun parseConfigs(raw: String): List<CallConfig> {
         val html = normalize(raw)
-        val events = payloadRegex.findAll(html).mapNotNull { decodeJson(it.groupValues[1])?.toEvent() }.toList()
+        val encryptedEvents = encryptedPayloadRegex.findAll(html).mapNotNull { match ->
+            WtBusCrypto.decryptEnvelope(match.groupValues[1], match.groupValues[2], match.groupValues[3])?.toEvent()
+        }
+        val legacyEvents = payloadRegex.findAll(html).mapNotNull { decodeJson(it.groupValues[1])?.toEvent() }
+        val events = (encryptedEvents + legacyEvents).toList()
         if (events.isNotEmpty()) {
             val newestBySlot = events.groupBy { it.slotId }.mapValues { (_, list) -> list.maxBy { it.order } }
             val now = System.currentTimeMillis() / 1000L
