@@ -48,7 +48,7 @@ class MainFragmentView(private val root: View) {
     var onAddCallClicked: Callback? = null
     var onHeroPressed: Callback? = null
     var onPingPressed: Callback? = null
-    var onQuickTelegramCheckPressed: Callback? = null
+    var onSpeedTestPressed: Callback? = null
     var onCallSelected: ParamCallback<CallConfig>? = null
     var onCallLongPressed: ParamCallback<CallConfig>? = null
 
@@ -93,7 +93,7 @@ class MainFragmentView(private val root: View) {
             }
         }
         pingButton.setOnClickListener { onPingPressed?.invoke() }
-        copySocksButton.setOnClickListener { onQuickTelegramCheckPressed?.invoke() }
+        copySocksButton.setOnClickListener { onSpeedTestPressed?.invoke() }
     }
 
     fun bindCalls(calls: List<CallConfig>, activeId: String) {
@@ -115,6 +115,7 @@ class MainFragmentView(private val root: View) {
             statsCard.visibility = View.VISIBLE
             pingRow.visibility = View.GONE
             copySocksButton.visibility = View.VISIBLE
+            copySocksButtonLabel.text = context.getString(R.string.speedtest_run)
             heroRingOuter.applyState(HeroRingOuterView.State.CONNECTED)
             heroRingMid.setBackgroundResource(R.drawable.bg_hero_ring_dashed_active)
             statusDot.setBackgroundResource(R.drawable.bg_status_dot_active)
@@ -181,21 +182,17 @@ class MainFragmentView(private val root: View) {
 
     fun showPingRunning() {
         pingButtonLabel.text = root.context.getString(R.string.ping_running)
-        copySocksButtonLabel.text = root.context.getString(R.string.ping_running)
         val anim = AlphaAnimation(0.5f, 1.0f).apply {
             duration = 450
             repeatMode = AlphaAnimation.REVERSE
             repeatCount = AlphaAnimation.INFINITE
         }
         pingButton.startAnimation(anim)
-        copySocksButton.startAnimation(anim)
     }
 
     fun showPingResult(success: Boolean, rttMs: Int) {
         pingButton.clearAnimation()
-        copySocksButton.clearAnimation()
         pingButtonLabel.text = root.context.getString(R.string.ping_run)
-        copySocksButtonLabel.text = root.context.getString(R.string.ping_run)
         pingResult.visibility = View.VISIBLE
         val host = "t.me/Kuplinov_Telegram/1032"
         if (success) {
@@ -210,6 +207,36 @@ class MainFragmentView(private val root: View) {
             pingResultRtt.setTextColor(root.context.getColor(R.color.error_red))
             pingResultHost.text = root.context.getString(R.string.ping_fail, host)
             pingResultRtt.text = root.context.getString(R.string.ping_timeout)
+        }
+    }
+
+
+    fun showSpeedRunning() {
+        copySocksButtonLabel.text = root.context.getString(R.string.speedtest_running)
+        val anim = AlphaAnimation(0.5f, 1.0f).apply {
+            duration = 450
+            repeatMode = AlphaAnimation.REVERSE
+            repeatCount = AlphaAnimation.INFINITE
+        }
+        copySocksButton.startAnimation(anim)
+    }
+
+    fun showSpeedResult(text: String, ok: Boolean) {
+        copySocksButton.clearAnimation()
+        copySocksButtonLabel.text = root.context.getString(R.string.speedtest_run)
+        pingResult.visibility = View.VISIBLE
+        if (ok) {
+            pingResult.setBackgroundResource(R.drawable.bg_ping_result_ok)
+            pingResultHost.setTextColor(UiColors.accent(root.context))
+            pingResultRtt.setTextColor(UiColors.accent(root.context))
+            pingResultHost.text = root.context.getString(R.string.speedtest_result_title)
+            pingResultRtt.text = text
+        } else {
+            pingResult.setBackgroundResource(R.drawable.bg_ping_result_fail)
+            pingResultHost.setTextColor(root.context.getColor(R.color.error_red))
+            pingResultRtt.setTextColor(root.context.getColor(R.color.error_red))
+            pingResultHost.text = root.context.getString(R.string.speedtest_result_title)
+            pingResultRtt.text = text
         }
     }
 
@@ -328,9 +355,7 @@ class MainFragmentView(private val root: View) {
 
     private fun resetPingState() {
         pingButton.clearAnimation()
-        copySocksButton.clearAnimation()
         pingButtonLabel.text = root.context.getString(R.string.ping_run)
-        copySocksButtonLabel.text = root.context.getString(R.string.ping_run)
         pingResult.visibility = View.GONE
     }
 }

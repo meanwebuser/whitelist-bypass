@@ -73,6 +73,10 @@
     <string name="ping_fail">%1$s недоступен через туннель</string>
     <string name="ping_timeout">таймаут</string>
     <string name="ping_ms">%1$d мс</string>
+    <string name="speedtest_run">Проверить скорость</string>
+    <string name="speedtest_running">Проверка скорости…</string>
+    <string name="speedtest_result_title">Скорость туннеля</string>
+    <string name="speedtest_failed">тест скорости не удался</string>
     <string name="picker_add_title">Добавить сервер</string>
     <string name="sheet_new_title">Новый сервер</string>
     <string name="sheet_new_sub">Сохраните ссылку комнаты. Платформа определяется автоматически.</string>
