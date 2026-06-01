@@ -35,8 +35,11 @@ class HeadlessRelayController(
         isRunning = true
 
         val relayBin = File(nativeLibDir, "librelay.so")
+        onLog.invoke("Headless relay lookup: abi=${Build.SUPPORTED_ABIS.joinToString()} path=${relayBin.absolutePath}")
         if (!relayBin.exists()) {
-            onLog.invoke("Relay binary not found")
+            isRunning = false
+            onStatus.invoke(VpnStatus.CALL_DISCONNECTED)
+            onLog.invoke("Relay binary not found: ${relayBin.absolutePath}; packaged native libs must include this device ABI")
             return
         }
 

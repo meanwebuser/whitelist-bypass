@@ -33,14 +33,21 @@ val brandDotEnv = listOf(
 ).firstOrNull { it.isFile }?.let(::loadBrandDotEnv) ?: emptyMap()
 
 val appBrandName = brandEnvValue(brandDotEnv, "APP_BRAND", "BRANDING", "BRAND_NAME", "APP_NAME") ?: "whitelistbypass"
-val wtbusKeyB64 = brandEnvValue(brandDotEnv, "WTBUS_KEY_B64") ?: ""
+val allowEmptyMobileSecrets = brandEnvValue(brandDotEnv, "ALLOW_EMPTY_MOBILE_SECRETS") == "1"
+fun requiredMobileSecret(name: String, vararg aliases: String): String {
+    val value = brandEnvValue(brandDotEnv, name, *aliases)
+    if (!value.isNullOrBlank()) return value
+    if (allowEmptyMobileSecrets) return ""
+    throw GradleException("Missing required Android secret $name. Put it in android-app/.env or export it. Set ALLOW_EMPTY_MOBILE_SECRETS=1 only for intentionally empty/dev builds.")
+}
+val wtbusKeyB64 = requiredMobileSecret("WTBUS_KEY_B64")
 val wtbusKeyId = brandEnvValue(brandDotEnv, "WTBUS_KEY_ID") ?: "k1"
-val vkBotToken = brandEnvValue(brandDotEnv, "VK_BOT_TOKEN") ?: ""
-val vkBotPeerId = brandEnvValue(brandDotEnv, "VK_BOT_PEER_ID") ?: ""
+val vkBotToken = requiredMobileSecret("VK_BOT_TOKEN")
+val vkBotPeerId = requiredMobileSecret("VK_BOT_PEER_ID")
 
 val versionMajor = 0
 val versionMinor = 3
-val versionPatch = 13
+val versionPatch = 14
 val versionBuild = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 0
 
 android {
