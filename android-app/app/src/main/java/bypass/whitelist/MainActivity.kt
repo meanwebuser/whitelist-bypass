@@ -8,6 +8,8 @@ import android.graphics.Color
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -107,6 +109,11 @@ class MainActivity :
     private var currentDiscoveryRoom: String? = null
     private var staleRoomRecoveryInProgress: Boolean = false
     private var connectivityValidationGeneration: Int = 0
+    private val watchdogHandler = Handler(Looper.getMainLooper())
+    private var watchdogGeneration: Int = 0
+    private var watchdogStartedAtMs: Long = 0L
+    private var watchdogConsecutiveFailures: Int = 0
+    private var watchdogProbeRunning: Boolean = false
     private var discoveryScanRunning: Boolean = false
     private var cachedDiscoveryConfigs: List<CallConfig> = emptyList()
     private var cachedDiscoverySummary: String = "Комнаты: проверяю…"
@@ -488,6 +495,7 @@ class MainActivity :
                     mainFragment()?.onConnectedChanged(true)
                     mainFragment()?.onStatusTextChanged(result.first)
                     appendLog("Connectivity validation OK: ${result.first}")
+                    startConnectivityWatchdog("validated")
                 } else {
                     connected = false
                     lastStatus = VpnStatus.TUNNEL_LOST
@@ -495,6 +503,7 @@ class MainActivity :
                     mainFragment()?.onConnectedChanged(false)
                     mainFragment()?.onStatusTextChanged("Связи нет: ${result.first}")
                     appendLog("Connectivity validation failed: ${result.first}")
+                    stopConnectivityWatchdog("validation_failed")
                     scheduleBadRoomRecovery("connectivity_validation_failed")
                 }
             }
@@ -804,6 +813,79 @@ class MainActivity :
     private fun logsFragment(): LogsFragment? =
         supportFragmentManager.fragments.firstOrNull { it is LogsFragment } as? LogsFragment
 
+
+    private fun startConnectivityWatchdog(reason: String) {
+        watchdogGeneration++
+        watchdogStartedAtMs = System.currentTimeMillis()
+        watchdogConsecutiveFailures = 0
+        watchdogProbeRunning = false
+        appendLog("Connectivity watchdog started: $reason")
+        scheduleConnectivityWatchdogTick(initial = true)
+    }
+
+    private fun stopConnectivityWatchdog(reason: String) {
+        watchdogGeneration++
+        watchdogProbeRunning = false
+        watchdogHandler.removeCallbacksAndMessages(null)
+        appendLog("Connectivity watchdog stopped: $reason")
+    }
+
+    private fun scheduleConnectivityWatchdogTick(initial: Boolean = false) {
+        val generation = watchdogGeneration
+        val connectedAgeMs = System.currentTimeMillis() - watchdogStartedAtMs
+        val delayMs = when {
+            initial -> 15_000L
+            connectedAgeMs < 120_000L -> 15_000L
+            else -> 60_000L
+        }
+        watchdogHandler.postDelayed({
+            if (generation == watchdogGeneration) runConnectivityWatchdogProbe(generation)
+        }, delayMs)
+    }
+
+    private fun runConnectivityWatchdogProbe(generation: Int) {
+        if (!connected || resetInProgress || watchdogProbeRunning) return
+        watchdogProbeRunning = true
+        thread(name = "wt-connectivity-watchdog") {
+            val result = try { runTunnelPingOnly() } catch (e: Exception) { "watchdog ping failed: ${e.message ?: "unknown"}" to false }
+            runOnUiThread {
+                watchdogProbeRunning = false
+                if (generation != watchdogGeneration || resetInProgress || !connected) return@runOnUiThread
+                if (result.second) {
+                    watchdogConsecutiveFailures = 0
+                    appendLog("Connectivity watchdog OK: ${result.first}")
+                    scheduleConnectivityWatchdogTick()
+                } else {
+                    watchdogConsecutiveFailures += 1
+                    appendLog("Connectivity watchdog failed #$watchdogConsecutiveFailures: ${result.first}")
+                    mainFragment()?.onStatusTextChanged("Проверяю связь… ${result.first}")
+                    if (watchdogConsecutiveFailures >= 2) {
+                        connected = false
+                        lastStatus = VpnStatus.TUNNEL_LOST
+                        mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_LOST)
+                        mainFragment()?.onConnectedChanged(false)
+                        mainFragment()?.onStatusTextChanged("Связь потеряна, переподключаюсь…")
+                        stopConnectivityWatchdog("lost")
+                        scheduleBadRoomRecovery("watchdog_lost_connectivity")
+                    } else {
+                        scheduleConnectivityWatchdogTick()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun runTunnelPingOnly(): Pair<String, Boolean> {
+        val host = "10.255.0.1"
+        val port = 18080
+        val latencyStart = System.nanoTime()
+        val request = "GET /ping HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n"
+            .toByteArray(Charsets.US_ASCII)
+        val ping = socksHttp(host, port, request, readTimeoutMs = 5000)
+        if (!String(ping, Charsets.ISO_8859_1).startsWith("HTTP/1.")) return "ping failed" to false
+        val latencyMs = ((System.nanoTime() - latencyStart) / 1_000_000).toInt()
+        return "$latencyMs ms" to true
+    }
 
     private fun runTunnelDiagnostics(progress: (String) -> Unit): Pair<String, Boolean> {
         val host = "10.255.0.1"
@@ -1115,6 +1197,7 @@ class MainActivity :
         }
         connected = false
         connectivityValidationGeneration++
+        stopConnectivityWatchdog("disconnect")
         lastStatus = null
         closeActiveHeadlessController()
         removeJoinFragment()
@@ -1128,6 +1211,7 @@ class MainActivity :
         if (resetInProgress) return
         resetInProgress = true
         connectivityValidationGeneration++
+        stopConnectivityWatchdog("full_reset")
         val resetId = ++resetGeneration
         connected = false
         lastStatus = VpnStatus.STOPPING

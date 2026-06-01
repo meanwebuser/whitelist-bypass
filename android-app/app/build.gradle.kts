@@ -56,7 +56,7 @@ val androidUpdateUrl = requiredAndroidConfig("ANDROID_UPDATE_URL", "UPDATE_URL",
 
 val versionMajor = 0
 val versionMinor = 3
-val versionPatch = 18
+val versionPatch = 19
 val versionBuild = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 0
 
 android {
