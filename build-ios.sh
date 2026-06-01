@@ -9,6 +9,7 @@ command -v gobind >/dev/null || { echo "gobind not found, run: go install golang
 command -v xcodebuild >/dev/null || { echo "xcodebuild not found, install Xcode command line tools"; exit 1; }
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+"$ROOT/scripts/generate-ios-secrets.sh"
 APP_BUILD_DIR="$ROOT/ios-proxy-app/build/Debug-iphoneos"
 APP_PATH="$APP_BUILD_DIR/whitelist-bypass-proxy.app"
 IPA_PATH="$ROOT/prebuilts/whitelist-bypass-proxy.ipa"
