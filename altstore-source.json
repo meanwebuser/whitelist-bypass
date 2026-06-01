@@ -15,11 +15,21 @@
       "bundleIdentifier": "bypass.whitelist.whitelist-bypass-proxy",
       "developerName": "BEZаботный-NET",
       "subtitle": "WhiteTransport encrypted proxy",
-      "localizedDescription": "Happ import now uses socks5:// links while generic copy keeps socks:// format. Private-bus discovery secrets remain required.",
+      "localizedDescription": "All local proxy/share URLs now use socks5:// because the embedded local proxy is SOCKS5. Removes legacy socks:// profile copy.",
       "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
       "tintColor": "#6D5DF6",
       "category": "utilities",
       "versions": [
+        {
+          "version": "0.3.15",
+          "buildVersion": "3015",
+          "date": "2026-06-01T05:34:00Z",
+          "localizedDescription": "Uses socks5:// everywhere: status URL, Happ import, and generic Copy Profile.",
+          "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-ios.ipa",
+          "size": 6937932,
+          "sha256": "c92e2dc050f3875ad662ddfc3d8db80dc791a5c889a4c050e5eb168ffdc1ccb7",
+          "minOSVersion": "16.0"
+        },
         {
           "version": "0.3.14",
           "buildVersion": "3014",
@@ -74,11 +84,11 @@
         "entitlements": [],
         "privacy": {}
       },
-      "version": "0.3.14",
-      "versionDate": "2026-06-01T05:25:00Z",
+      "version": "0.3.15",
+      "versionDate": "2026-06-01T05:34:00Z",
       "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-ios.ipa",
-      "size": 6939697,
-      "sha256": "001aed7eafad7c8031609d50e55be5fba6c29d010122712d618027b1d60e264f"
+      "size": 6937932,
+      "sha256": "c92e2dc050f3875ad662ddfc3d8db80dc791a5c889a4c050e5eb168ffdc1ccb7"
     }
   ],
   "news": [

@@ -620,16 +620,7 @@ class ProxyManager: ObservableObject {
         }
     }
 
-    var xrayProxyUri: String {
-        if socksAuthEnabled {
-            let creds = "\(activeSocksUser):\(activeSocksPass)"
-            let credsB64 = Data(creds.utf8).base64EncodedString()
-            return "socks://\(credsB64)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
-        }
-        return "socks://127.0.0.1:\(socksPort)#WLB-\(socksPort)"
-    }
-
-    var happProxyUri: String {
+    var socks5ProxyUri: String {
         if socksAuthEnabled {
             return "socks5://\(activeSocksUser):\(activeSocksPass)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
         }
@@ -637,8 +628,8 @@ class ProxyManager: ObservableObject {
     }
 
     func openHappProxy() {
-        UIPasteboard.general.string = happProxyUri
-        guard let encoded = happProxyUri.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+        UIPasteboard.general.string = socks5ProxyUri
+        guard let encoded = socks5ProxyUri.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
               let url = URL(string: "happ://add/\(encoded)") else {
             showToast(NSLocalizedString("toast_happ_params_copied", comment: ""))
             return
@@ -651,7 +642,7 @@ class ProxyManager: ObservableObject {
     }
 
     func copyProxyProfile() {
-        UIPasteboard.general.string = xrayProxyUri
+        UIPasteboard.general.string = socks5ProxyUri
         showToast(NSLocalizedString("toast_proxy_profile_copied", comment: ""))
     }
 
