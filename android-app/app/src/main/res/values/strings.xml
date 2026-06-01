@@ -219,4 +219,6 @@
     <string name="update_open_settings">Open settings</string>
     <string name="settings_row_copy_socks">Copy SOCKS5 URL</string>
     <string name="settings_row_copy_socks_sub">Copy local proxy URL to clipboard</string>
+    <string name="settings_row_telemetry">Encrypted VK telemetry</string>
+    <string name="settings_row_telemetry_sub">Optional: send encrypted client errors/logs to debug peer</string>
 </resources>

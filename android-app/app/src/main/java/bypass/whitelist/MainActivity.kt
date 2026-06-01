@@ -61,6 +61,7 @@ import java.net.Socket
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import kotlin.concurrent.thread
+import org.json.JSONObject
 
 class MainActivity :
     AppCompatActivity(),
@@ -105,6 +106,7 @@ class MainActivity :
     private val badDiscoveryRooms = linkedSetOf<String>()
     private var currentDiscoveryRoom: String? = null
     private var staleRoomRecoveryInProgress: Boolean = false
+    private var connectivityValidationGeneration: Int = 0
     private var discoveryScanRunning: Boolean = false
     private var cachedDiscoveryConfigs: List<CallConfig> = emptyList()
     private var cachedDiscoverySummary: String = "Комнаты: проверяю…"
@@ -247,10 +249,7 @@ class MainActivity :
                 lastStatus = status
                 mainFragment()?.onStatusChanged(status)
                 if (status == VpnStatus.TUNNEL_ACTIVE) {
-                    if (!connected) {
-                        connected = true
-                        mainFragment()?.onConnectedChanged(true)
-                    }
+                    beginConnectivityValidation("service-status")
                 } else if (status == VpnStatus.CALL_FAILED || status == VpnStatus.CALL_DISCONNECTED || status == VpnStatus.TUNNEL_LOST) {
                     if (connected) {
                         connected = false
@@ -274,10 +273,12 @@ class MainActivity :
             }
             TunnelServiceState.isTunnelActive(this) -> {
                 if (!connected || lastStatus != VpnStatus.TUNNEL_ACTIVE) {
-                    connected = true
-                    lastStatus = VpnStatus.TUNNEL_ACTIVE
-                    mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_ACTIVE)
-                    mainFragment()?.onConnectedChanged(true)
+                    connected = false
+                    lastStatus = VpnStatus.CONNECTING
+                    mainFragment()?.onStatusChanged(VpnStatus.CONNECTING)
+                    mainFragment()?.onConnectedChanged(false)
+                    mainFragment()?.onStatusTextChanged("Туннель поднят, проверяю связь…")
+                    beginConnectivityValidation("resume-active")
                 }
             }
             TunnelServiceState.isHeadlessSessionRunning(this) -> {
@@ -352,6 +353,12 @@ class MainActivity :
         scanRooms(reason = "manual-refresh", force = true, connectWhenReady = false)
     }
 
+    override fun onDiscoveryRoomSelected(url: String) {
+        val room = cachedDiscoveryConfigs.firstOrNull { it.url == url } ?: return
+        useDiscoveredRoom(room, connectNow = false)
+        mainFragment()?.onStatusTextChanged("Выбран сервер: ${room.nodeLabel ?: room.name}")
+    }
+
     private fun lazyPrewarmRooms(reason: String, force: Boolean) {
         if (TunnelServiceState.isAnyTunnelComponentRunning(this) || resetInProgress) return
         if (!force && (discoveryScanRunning || cachedDiscoveryConfigs.isNotEmpty())) {
@@ -382,13 +389,17 @@ class MainActivity :
                     val allConfigs = result.configs
                     val configs = allConfigs.filter { !badDiscoveryRooms.contains(it.url) }
                     cachedDiscoveryConfigs = configs
-                    val nodes = configs.map { it.nodeLabel ?: it.name }.distinct().take(3)
+                    val nodes = configs.map { room ->
+                        val raw = room.nodeLabel ?: room.name
+                        if (raw.equals("vpn2", ignoreCase = true)) "vpn2 · Germany" else raw
+                    }.distinct().take(3)
                     cachedDiscoverySummary = if (configs.isNotEmpty()) {
                         "Свободно: ${configs.size} · ${nodes.joinToString(", ")}"
                     } else {
                         "Свободных комнат нет · запрошена новая"
                     }
                     mainFragment()?.onRoomWarmupChanged(cachedDiscoverySummary, false)
+                    mainFragment()?.onRoomServerChoicesChanged(configs)
                     mainFragment()?.onStatusTextChanged(cachedDiscoverySummary)
                     appendLog("Discovery scan finished: picked_free=${configs.size}, total_free=${allConfigs.size}, method=${result.method}, source=${result.source ?: "none"}, ${result.stats.summary()}")
                     if (configs.isNotEmpty()) {
@@ -450,20 +461,48 @@ class MainActivity :
                 appendLog("Tunnel diagnostics failed: ${e.message}")
                 "diagnostics failed: ${e.message ?: "unknown"}" to false
             }
-            runOnUiThread { callback(result.first, result.second) }
+            runOnUiThread {
+                callback(result.first, result.second)
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    mainFragment()?.onStatusTextChanged(result.first)
+                }, 5000)
+            }
+        }
+    }
+
+    private fun beginConnectivityValidation(reason: String) {
+        val validationId = ++connectivityValidationGeneration
+        appendLog("Connectivity validation started: $reason")
+        thread {
+            val result = try {
+                runTunnelDiagnostics { text -> runOnUiThread { mainFragment()?.onStatusTextChanged(text) } }
+            } catch (e: Exception) {
+                "connectivity validation failed: ${e.message ?: "unknown"}" to false
+            }
+            runOnUiThread {
+                if (validationId != connectivityValidationGeneration || resetInProgress) return@runOnUiThread
+                if (result.second) {
+                    connected = true
+                    lastStatus = VpnStatus.TUNNEL_ACTIVE
+                    mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_ACTIVE)
+                    mainFragment()?.onConnectedChanged(true)
+                    mainFragment()?.onStatusTextChanged(result.first)
+                    appendLog("Connectivity validation OK: ${result.first}")
+                } else {
+                    connected = false
+                    lastStatus = VpnStatus.TUNNEL_LOST
+                    mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_LOST)
+                    mainFragment()?.onConnectedChanged(false)
+                    mainFragment()?.onStatusTextChanged("Связи нет: ${result.first}")
+                    appendLog("Connectivity validation failed: ${result.first}")
+                    scheduleBadRoomRecovery("connectivity_validation_failed")
+                }
+            }
         }
     }
 
     override fun onSpeedTestPressed(callback: (String, Boolean) -> Unit) {
-        thread {
-            val result = try {
-                runTunnelSpeedTest()
-            } catch (e: Exception) {
-                appendLog("Speedtest failed: ${e.message}")
-                getString(R.string.speedtest_failed) to false
-            }
-            runOnUiThread { callback(result.first, result.second) }
-        }
+        callback("Проверка скорости отключена", false)
     }
 
     override fun isTunnelActive(): Boolean = connected
@@ -533,7 +572,8 @@ class MainActivity :
     }
 
     override fun appendLog(message: String) {
-        val (line, _) = logWriter.append(message)
+        val formatted = formatLogLine(message)
+        val (line, _) = logWriter.append(formatted)
         runOnUiThread {
             logsFragment()?.onLineAppended(line)
             if (overlayLogs.isVisible) {
@@ -544,6 +584,19 @@ class MainActivity :
         if (message.contains("guest cannot create room", ignoreCase = true)) {
             scheduleBadRoomRecovery("guest_cannot_create_room")
         }
+    }
+
+    private fun formatLogLine(message: String): String {
+        if (message.startsWith("[")) return message
+        val lower = message.lowercase()
+        val category = if (lower.contains("relay") || lower.contains("tunnel") || lower.contains("vpn") || lower.contains("room") || lower.contains("discovery") || lower.contains("ping") || lower.contains("telegram") || lower.contains("connect") || lower.contains("wbstream")) "LINK" else "APP"
+        val level = if (lower.contains("debug") || lower.contains("poll") || lower.contains("heartbeat")) "DEBUG" else "INFO"
+        val arrow = when {
+            lower.contains("send") || lower.contains("request") || lower.contains("start") || lower.contains("connect uses") -> "→"
+            lower.contains("received") || lower.contains("found") || lower.contains("selected") || lower.contains("ready") -> "←"
+            else -> "•"
+        }
+        return "[$level][$category] $arrow $message"
     }
 
     override fun onJoinStatusText(text: String) {
@@ -565,8 +618,10 @@ class MainActivity :
             }
             mainFragment()?.onStatusChanged(status)
             if (status == VpnStatus.TUNNEL_ACTIVE) {
-                connected = true
-                mainFragment()?.onConnectedChanged(true)
+                connected = false
+                mainFragment()?.onConnectedChanged(false)
+                mainFragment()?.onStatusTextChanged("Туннель поднят, проверяю связь…")
+                beginConnectivityValidation("join-status")
             }
         }
     }
@@ -768,7 +823,7 @@ class MainActivity :
         val tgStart = System.nanoTime()
         val tgOk = probeHttpsViaSocks5(host = "t.me", path = "/Kuplinov_Telegram/1032")
         val tgMs = ((System.nanoTime() - tgStart) / 1_000_000).toInt()
-        val text = "/ping ${latencyMs} ms · IP $externalIp · t.me ${if (tgOk) "OK" else "FAIL"} ${tgMs} ms"
+        val text = "${latencyMs} ms · $externalIp · t.me ${if (tgOk) "OK" else "FAIL"} ${tgMs} ms"
         appendLog("Tunnel diagnostics $text")
         return text to tgOk
     }
@@ -949,6 +1004,18 @@ class MainActivity :
                 badRooms = badSnapshot,
             )
             appendLog("Private-bus $type sent: $ok")
+            if (Prefs.telemetryEnabled) VkDiscoveryScanner.sendTelemetry(
+                clientId = discoveryClientId(),
+                level = if (ok) "info" else "error",
+                event = "private_bus.$type",
+                messageText = "Private-bus $type sent: $ok",
+                room = room,
+                meta = JSONObject().apply {
+                    put("reason", reason)
+                    put("ok", ok)
+                    put("bad_rooms_count", badSnapshot.size)
+                },
+            )
         }
     }
 
@@ -1002,7 +1069,7 @@ class MainActivity :
         activeJoinUrl = url
         if (config.autoDiscovered) currentDiscoveryRoom = url
         logWriter.reset()
-        runOnUiThread { logsFragment()?.refresh() }
+        runOnUiThread { logsFragment()?.refresh(host = this) }
         appendLog("Loading: ${maskUrl(url)}")
         lastStatus = VpnStatus.CONNECTING
         mainFragment()?.onStatusChanged(VpnStatus.CONNECTING)
@@ -1047,6 +1114,7 @@ class MainActivity :
             return
         }
         connected = false
+        connectivityValidationGeneration++
         lastStatus = null
         closeActiveHeadlessController()
         removeJoinFragment()
@@ -1059,6 +1127,7 @@ class MainActivity :
     private fun fullReset() {
         if (resetInProgress) return
         resetInProgress = true
+        connectivityValidationGeneration++
         val resetId = ++resetGeneration
         connected = false
         lastStatus = VpnStatus.STOPPING

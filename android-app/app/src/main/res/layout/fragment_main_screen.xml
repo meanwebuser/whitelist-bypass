@@ -164,8 +164,7 @@
             android:focusable="true"
             android:gravity="center"
             android:orientation="horizontal"
-            android:padding="12dp"
-            android:visibility="gone">
+            android:padding="12dp">
 
             <TextView
                 android:id="@+id/copySocksButtonLabel"
@@ -199,8 +198,7 @@
             android:focusable="true"
             android:gravity="center"
             android:orientation="horizontal"
-            android:padding="12dp"
-            android:visibility="gone">
+            android:padding="12dp">
 
             <TextView
                 android:id="@+id/speedTestButtonLabel"
@@ -217,6 +215,7 @@
 
         <LinearLayout
             android:id="@+id/emptyCta"
+            android:visibility="gone"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
@@ -226,8 +225,7 @@
             android:focusable="true"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:padding="14dp"
-            android:visibility="gone">
+            android:padding="14dp">
 
             <FrameLayout
                 android:layout_width="36dp"
@@ -275,8 +273,7 @@
             android:layout_marginTop="24dp"
             android:background="@drawable/bg_stats_card"
             android:baselineAligned="false"
-            android:orientation="horizontal"
-            android:visibility="gone">
+            android:orientation="horizontal">
 
             <LinearLayout
                 style="@style/StatCell"
@@ -339,12 +336,18 @@
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/roomServerChoices"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
+
+        <LinearLayout
             android:id="@+id/pingRow"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:orientation="vertical"
-            android:visibility="gone">
+            android:orientation="vertical">
 
             <LinearLayout
                 android:id="@+id/pingButton"
@@ -382,8 +385,7 @@
                 android:background="@drawable/bg_ping_result_ok"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:padding="10dp"
-                android:visibility="gone">
+                android:padding="10dp">
 
                 <TextView
                     android:id="@+id/pingResultHost"

@@ -1,18 +1,15 @@
 package bypass.whitelist.ui
 
+import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.widget.Button
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.fragment.app.Fragment
 import bypass.whitelist.R
-import bypass.whitelist.util.UiColors
 
 class LogsFragment : Fragment(R.layout.fragment_logs_screen) {
 
@@ -22,13 +19,20 @@ class LogsFragment : Fragment(R.layout.fragment_logs_screen) {
         fun shareLogs()
     }
 
+    private enum class Category { ALL, LINK, OTHER }
+    private enum class Level { INFO, DEBUG }
+
     private var container: LinearLayout? = null
     private var scrollView: ScrollView? = null
+    private var category: Category = Category.ALL
+    private var minLevel: Level = Level.INFO
+    private var allLines: List<String> = emptyList()
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         container = view.findViewById(R.id.eventsContainer)
         scrollView = view.findViewById(R.id.activityScroll)
-        renderLines(host()?.activityLogLines().orEmpty())
+        bindFilters(view)
+        refresh(host = host())
         view.findViewById<Button>(R.id.buttonCopyRaw).setOnClickListener { host()?.copyLogs() }
         view.findViewById<Button>(R.id.buttonShareFile).setOnClickListener { host()?.shareLogs() }
     }
@@ -39,115 +43,84 @@ class LogsFragment : Fragment(R.layout.fragment_logs_screen) {
         super.onDestroyView()
     }
 
-    fun refresh() {
-        renderLines(host()?.activityLogLines().orEmpty())
+    fun refresh(host: Host?) {
+        allLines = host?.activityLogLines().orEmpty()
+        renderLines()
     }
 
     fun onLineAppended(line: String) {
-        val parent = container ?: return
-        if (parent.childCount == 1 && parent.getChildAt(0) is TextView && (parent.getChildAt(0) as TextView).text == getString(R.string.activity_empty)) {
-            parent.removeAllViews()
+        allLines = allLines + line
+        if (matches(line)) {
+            addLine(line)
+            scrollToBottom()
         }
-        appendRow(parent, line)
+    }
+
+    private fun bindFilters(view: View) {
+        view.findViewById<Button>(R.id.logFilterAll).setOnClickListener { category = Category.ALL; renderLines() }
+        view.findViewById<Button>(R.id.logFilterLink).setOnClickListener { category = Category.LINK; renderLines() }
+        view.findViewById<Button>(R.id.logFilterOther).setOnClickListener { category = Category.OTHER; renderLines() }
+        view.findViewById<Button>(R.id.logLevelInfo).setOnClickListener { minLevel = Level.INFO; renderLines() }
+        view.findViewById<Button>(R.id.logLevelDebug).setOnClickListener { minLevel = Level.DEBUG; renderLines() }
+    }
+
+    private fun renderLines() {
+        container?.removeAllViews()
+        allLines.filter { matches(it) }.takeLast(350).forEach { addLine(it) }
         scrollToBottom()
     }
 
-    private fun renderLines(lines: List<String>) {
-        val parent = container ?: return
-        parent.removeAllViews()
-        if (lines.isEmpty()) {
-            val empty = TextView(requireContext()).apply {
-                text = getString(R.string.activity_empty)
-                setTextColor(requireContext().getColor(R.color.ink_3))
-                setPadding(dp(20), dp(24), dp(20), dp(24))
-                gravity = Gravity.CENTER
-            }
-            parent.addView(empty)
-            return
+    private fun matches(line: String): Boolean {
+        val parsed = parse(line)
+        val categoryOk = when (category) {
+            Category.ALL -> true
+            Category.LINK -> parsed.category == "LINK"
+            Category.OTHER -> parsed.category != "LINK"
         }
-        lines.forEach { appendRow(parent, it) }
+        val levelOk = minLevel == Level.DEBUG || parsed.level != "DEBUG"
+        return categoryOk && levelOk
     }
 
-    private fun appendRow(parent: LinearLayout, rawLine: String) {
-        val inflater = LayoutInflater.from(parent.context)
-        val row = inflater.inflate(R.layout.item_log_line, parent, false)
-        bindRow(row, parseLine(rawLine))
-        parent.addView(row)
+    private data class ParsedLine(val level: String, val category: String, val direction: String, val text: String)
+
+    private fun parse(line: String): ParsedLine {
+        val regex = Regex("^\\[(DEBUG|INFO)\\]\\[(LINK|APP|OTHER)\\]\\s*([→←•])?\\s*(.*)$")
+        val m = regex.find(line)
+        if (m != null) {
+            return ParsedLine(m.groupValues[1], m.groupValues[2], m.groupValues[3].ifBlank { "•" }, m.groupValues[4])
+        }
+        val lower = line.lowercase()
+        val cat = if (lower.contains("relay") || lower.contains("tunnel") || lower.contains("vpn") || lower.contains("room") || lower.contains("connect") || lower.contains("telegram")) "LINK" else "APP"
+        return ParsedLine("INFO", cat, "•", line)
     }
 
-    private fun bindRow(row: View, parsed: ParsedLine) {
-        val context = row.context
-        val time = row.findViewById<TextView>(R.id.lineTime)
-        val comp = row.findViewById<TextView>(R.id.lineComp)
-        val message = row.findViewById<TextView>(R.id.lineMessage)
-        val icon = row.findViewById<ImageView>(R.id.lineIcon)
-        val iconBox = row.findViewById<View>(R.id.lineIconBox)
-
-        time.text = parsed.time
-        message.text = parsed.message
-        if (parsed.component.isNotEmpty()) {
-            comp.text = parsed.component
-            comp.visibility = View.VISIBLE
-        } else {
-            comp.visibility = View.GONE
+    private fun addLine(line: String) {
+        val parsed = parse(line)
+        val ctx = requireContext()
+        val row = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundResource(R.drawable.bg_ping_result_ok)
         }
-
-        icon.setImageResource(iconFor(parsed.component))
-        val (boxBg, iconColor, msgColor) = when (parsed.level) {
-            Level.OK -> Triple(R.drawable.bg_log_box_ok, UiColors.accent(context), context.getColor(R.color.ink))
-            Level.WARN -> Triple(R.drawable.bg_log_box_warn, context.getColor(R.color.warn_amber), context.getColor(R.color.ink))
-            Level.ERR -> Triple(R.drawable.bg_log_box_err, context.getColor(R.color.error_red), context.getColor(R.color.error_red))
-            Level.INFO -> Triple(R.drawable.bg_settings_row_icon, context.getColor(R.color.ink_2), context.getColor(R.color.ink))
+        val header = TextView(ctx).apply {
+            text = "${parsed.direction} ${parsed.category} · ${parsed.level}"
+            textSize = 10f
+            typeface = Typeface.MONOSPACE
+            setTextColor(ctx.getColor(if (parsed.category == "LINK") R.color.accent_emerald else R.color.ink_3))
         }
-        iconBox.setBackgroundResource(boxBg)
-        icon.setColorFilter(iconColor)
-        message.setTextColor(msgColor)
-    }
-
-    private enum class Level { INFO, OK, WARN, ERR }
-    private data class ParsedLine(val time: String, val component: String, val level: Level, val message: String)
-
-    private fun parseLine(line: String): ParsedLine {
-        var rest = line.trim()
-        var time = ""
-        val firstSpace = rest.indexOf(' ')
-        if (firstSpace > 0 && rest.substring(0, firstSpace).matches(TS_REGEX)) {
-            time = rest.substring(0, minOf(firstSpace, 8))
-            rest = rest.substring(firstSpace + 1).trim()
+        val body = TextView(ctx).apply {
+            text = parsed.text
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setTextColor(ctx.getColor(R.color.ink))
+            setLineSpacing(0f, 1.08f)
         }
-
-        var component = ""
-        if (rest.startsWith("[")) {
-            val close = rest.indexOf(']')
-            if (close > 0) {
-                component = rest.substring(1, close).trim()
-                rest = rest.substring(close + 1).trim()
-            }
+        row.addView(header)
+        row.addView(body)
+        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+            setMargins(dp(20), dp(6), dp(20), dp(6))
         }
-
-        val lower = rest.lowercase()
-        val level = when {
-            lower.contains("error:") || lower.startsWith("error ") || lower.contains("failed") -> Level.ERR
-            lower.contains("warn") || lower.contains("throttle") || lower.contains("drift") || lower.contains("late") || lower.contains("captcha") -> Level.WARN
-            lower.contains("connected") || lower.contains("established") || lower.contains("ready") || lower.contains("active") -> Level.OK
-            else -> Level.INFO
-        }
-
-        return ParsedLine(time = time, component = component, level = level, message = rest)
-    }
-
-    private fun iconFor(component: String): Int = when (component.lowercase()) {
-        "boot" -> R.drawable.ic_log_boot
-        "ws" -> R.drawable.ic_log_ws
-        "sfu" -> R.drawable.ic_log_sfu
-        "tunnel" -> R.drawable.ic_log_tunnel
-        "vp8" -> R.drawable.ic_log_vp8
-        "sctp" -> R.drawable.ic_log_sctp
-        "relay" -> R.drawable.ic_log_relay
-        "heartbeat" -> R.drawable.ic_log_heartbeat
-        "captcha" -> R.drawable.ic_log_captcha
-        "error" -> R.drawable.ic_log_error
-        else -> R.drawable.ic_log_info
+        container?.addView(row, lp)
     }
 
     private fun scrollToBottom() {
@@ -157,8 +130,4 @@ class LogsFragment : Fragment(R.layout.fragment_logs_screen) {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun host(): Host? = activity as? Host
-
-    companion object {
-        private val TS_REGEX = Regex("^\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,3})?$")
-    }
 }

@@ -74,6 +74,64 @@ object VkDiscoveryScanner {
         val order: Long get() = if (seq > 0) seq else createdAt
     }
 
+
+    fun sendTelemetry(
+        clientId: String,
+        level: String,
+        event: String,
+        messageText: String,
+        room: String? = null,
+        meta: JSONObject = JSONObject(),
+    ): Boolean {
+        val token = BuildConfig.VK_BOT_TOKEN.takeIf { it.isNotBlank() } ?: return false
+        val peerId = BuildConfig.VK_TELEMETRY_PEER_ID.takeIf { it.isNotBlank() } ?: return false
+        return try {
+            val now = System.currentTimeMillis() / 1000L
+            val payload = JSONObject().apply {
+                put("v", 1)
+                put("kind", "telemetry")
+                put("level", level)
+                put("event", event)
+                put("client_id", clientId)
+                put("platform", "android")
+                put("app_version", BuildConfig.VERSION_NAME)
+                put("app_build", BuildConfig.VERSION_CODE)
+                put("device", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
+                put("system_version", Build.VERSION.RELEASE ?: "")
+                put("room", room ?: "")
+                put("message", messageText.take(900))
+                put("meta", meta)
+                put("created_at", now)
+                put("seq", now)
+                put("nonce", java.util.UUID.randomUUID().toString())
+            }
+            val encrypted = WtBusCrypto.encryptEnvelope("wtlog1", payload) ?: return false
+            sendVkMessage(peerId, token, encrypted)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun sendVkMessage(peerId: String, token: String, message: String): Boolean {
+        val body = listOf(
+            "peer_id" to peerId,
+            "random_id" to System.currentTimeMillis().toString(),
+            "message" to message,
+            "access_token" to token,
+            "v" to "5.199",
+        ).joinToString("&") { (k, v) -> "${k}=${URLEncoder.encode(v, "UTF-8")}" }
+        val conn = URL("https://api.vk.com/method/messages.send").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 10_000
+        conn.readTimeout = 10_000
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        val text = conn.inputStream.bufferedReader().use { it.readText() }
+        val json = JSONObject(text)
+        return conn.responseCode == 200 && json.opt("response") != null && json.opt("error") == null
+    }
+
     fun sendClientEvent(
         type: String,
         clientId: String,

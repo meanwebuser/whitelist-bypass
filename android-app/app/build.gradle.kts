@@ -34,20 +34,29 @@ val brandDotEnv = listOf(
 
 val appBrandName = brandEnvValue(brandDotEnv, "APP_BRAND", "BRANDING", "BRAND_NAME", "APP_NAME") ?: "whitelistbypass"
 val allowEmptyMobileSecrets = brandEnvValue(brandDotEnv, "ALLOW_EMPTY_MOBILE_SECRETS") == "1"
+val allowNoAutoUpdate = brandEnvValue(brandDotEnv, "ALLOW_NO_AUTOUPDATE") == "1"
 fun requiredMobileSecret(name: String, vararg aliases: String): String {
     val value = brandEnvValue(brandDotEnv, name, *aliases)
     if (!value.isNullOrBlank()) return value
     if (allowEmptyMobileSecrets) return ""
     throw GradleException("Missing required Android secret $name. Put it in android-app/.env or export it. Set ALLOW_EMPTY_MOBILE_SECRETS=1 only for intentionally empty/dev builds.")
 }
+fun requiredAndroidConfig(name: String, vararg aliases: String): String {
+    val value = brandEnvValue(brandDotEnv, name, *aliases)
+    if (!value.isNullOrBlank()) return value
+    if (allowNoAutoUpdate) return ""
+    throw GradleException("Missing required Android config $name. Put it in android-app/.env or export it. Set ALLOW_NO_AUTOUPDATE=1 only for intentionally disabled auto-updates.")
+}
 val wtbusKeyB64 = requiredMobileSecret("WTBUS_KEY_B64")
 val wtbusKeyId = brandEnvValue(brandDotEnv, "WTBUS_KEY_ID") ?: "k1"
 val vkBotToken = requiredMobileSecret("VK_BOT_TOKEN")
 val vkBotPeerId = requiredMobileSecret("VK_BOT_PEER_ID")
+val vkTelemetryPeerId = brandEnvValue(brandDotEnv, "VK_TELEMETRY_PEER_ID") ?: ""
+val androidUpdateUrl = requiredAndroidConfig("ANDROID_UPDATE_URL", "UPDATE_URL", "APP_UPDATE_URL")
 
 val versionMajor = 0
 val versionMinor = 3
-val versionPatch = 16
+val versionPatch = 18
 val versionBuild = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 0
 
 android {
@@ -71,6 +80,8 @@ android {
         buildConfigField("String", "WTBUS_KEY_ID", "\"$wtbusKeyId\"")
         buildConfigField("String", "VK_BOT_TOKEN", "\"$vkBotToken\"")
         buildConfigField("String", "VK_BOT_PEER_ID", "\"$vkBotPeerId\"")
+        buildConfigField("String", "VK_TELEMETRY_PEER_ID", "\"$vkTelemetryPeerId\"")
+        buildConfigField("String", "ANDROID_UPDATE_URL", "\"$androidUpdateUrl\"")
     }
 
     signingConfigs {
