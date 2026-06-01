@@ -13,22 +13,20 @@
     {
       "name": "BEZаботный-NET",
       "bundleIdentifier": "bypass.whitelist.whitelist-bypass-proxy",
-      "developerName": "megamen32",
+      "developerName": "BEZаботный-NET",
       "subtitle": "WhiteTransport encrypted proxy",
-      "localizedDescription": "BEZаботный-NET iOS proxy-only build with encrypted VK private-bus discovery and encrypted wall fallback.",
+      "localizedDescription": "Encrypted VK private-bus discovery, WBStream transport and Android-matched neon B icon.",
       "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
       "tintColor": "#6D5DF6",
       "category": "utilities",
       "versions": [
         {
           "version": "0.3.11",
-          "buildVersion": "3011",
-          "date": "2026-06-01T04:38:00Z",
-          "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-iOS-proxy-only-unsigned.ipa",
-          "localizedDescription": "Encrypted VK private-bus discovery first; encrypted wall fallback; BEZаботный-NET branding.",
-          "size": 9661157,
-          "sha256": "60f8d5f5e0c0c23efae374e7c08fb1319499c8f36e3332c8567bfdd26e591a04",
-          "minOSVersion": "16.0"
+          "date": "2026-06-01T04:55:00Z",
+          "localizedDescription": "Refreshes live room announcements and uses Android-matched icon.",
+          "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-ios.ipa",
+          "size": 6913454,
+          "sha256": "6e9ee3510e3fd44795170867c00cca19fbeebc6b6a2a0db57dbb702d2f7ad5cb"
         },
         {
           "version": "0.3.5",
@@ -47,9 +45,10 @@
         "privacy": {}
       },
       "version": "0.3.11",
-      "versionDate": "2026-06-01T04:38:00Z",
-      "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-iOS-proxy-only-unsigned.ipa",
-      "size": 9661157
+      "versionDate": "2026-06-01T04:55:00Z",
+      "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-ios.ipa",
+      "size": 6913454,
+      "sha256": "6e9ee3510e3fd44795170867c00cca19fbeebc6b6a2a0db57dbb702d2f7ad5cb"
     }
   ],
   "news": [
@@ -62,5 +61,6 @@
       "url": "https://github.com/megamen32/whitelist-bypass/releases/tag/ios-proxy-v0.3.5-altstore-3",
       "appID": "bypass.whitelist.whitelist-bypass-proxy"
     }
-  ]
+  ],
+  "identifier": "bezabotny-net"
 }
