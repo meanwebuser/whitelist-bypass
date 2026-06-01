@@ -87,6 +87,10 @@
     <string name="ping_fail">%1$s not reachable via tunnel</string>
     <string name="ping_timeout">timeout</string>
     <string name="ping_ms">%1$d ms</string>
+    <string name="speedtest_run">Check speed</string>
+    <string name="speedtest_running">Testing…</string>
+    <string name="speedtest_result_title">Tunnel speed</string>
+    <string name="speedtest_failed">speed test failed</string>
 
     <string name="picker_add_title">Add new call</string>
 

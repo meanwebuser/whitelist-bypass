@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
@@ -54,6 +55,7 @@ import bypass.whitelist.util.Prefs
 import bypass.whitelist.util.UiColors
 import bypass.whitelist.util.SocksAuth
 import bypass.whitelist.util.maskUrl
+import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import javax.net.ssl.SSLSocket
@@ -385,6 +387,18 @@ class MainActivity :
         }
     }
 
+    override fun onSpeedTestPressed(callback: (String, Boolean) -> Unit) {
+        thread {
+            val result = try {
+                runTunnelSpeedTest()
+            } catch (e: Exception) {
+                appendLog("Speedtest failed: ${e.message}")
+                getString(R.string.speedtest_failed) to false
+            }
+            runOnUiThread { callback(result.first, result.second) }
+        }
+    }
+
     override fun isTunnelActive(): Boolean = connected
 
     override fun currentStatus(): VpnStatus? = lastStatus
@@ -665,52 +679,121 @@ class MainActivity :
     private fun logsFragment(): LogsFragment? =
         supportFragmentManager.fragments.firstOrNull { it is LogsFragment } as? LogsFragment
 
-    private fun probeHttpsViaSocks5(host: String, path: String): Boolean {
-        Socket().use { socket ->
-            socket.connect(InetSocketAddress(Net.LOCALHOST, Prefs.socksPort.toInt()), 3000)
-            socket.soTimeout = 8000
+
+    private fun runTunnelSpeedTest(): Pair<String, Boolean> {
+        val host = "10.255.0.1"
+        val port = 18080
+        val latencyStart = System.nanoTime()
+        val ping = socksHttp(host, port, "GET /ping HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+        if (!String(ping, Charsets.ISO_8859_1).startsWith("HTTP/1.")) return getString(R.string.speedtest_failed) to false
+        val latencyMs = ((System.nanoTime() - latencyStart) / 1_000_000).toInt()
+
+        val downloadBytes = 2 * 1024 * 1024
+        val dlStart = System.nanoTime()
+        val dl = socksHttp(host, port, "GET /download?bytes=$downloadBytes HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
+        val dlBody = httpBody(dl)
+        val dlSec = (System.nanoTime() - dlStart) / 1_000_000_000.0
+        val dlMbps = if (dlSec > 0) dlBody.size * 8.0 / dlSec / 1_000_000.0 else 0.0
+
+        val uploadBytes = 1024 * 1024
+        val uploadBody = ByteArray(uploadBytes) { 0x5a.toByte() }
+        val header = "POST /upload HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nContent-Length: $uploadBytes\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII)
+        val upStart = System.nanoTime()
+        val upResp = socksHttp(host, port, header + uploadBody)
+        val upSec = (System.nanoTime() - upStart) / 1_000_000_000.0
+        val upMbps = if (upSec > 0) uploadBytes * 8.0 / upSec / 1_000_000.0 else 0.0
+        if (!String(upResp, Charsets.ISO_8859_1).startsWith("HTTP/1.")) return getString(R.string.speedtest_failed) to false
+
+        val text = "${latencyMs} ms · ↓ %.1f Mbps · ↑ %.1f Mbps".format(dlMbps, upMbps)
+        appendLog("Speedtest $text")
+        return text to true
+    }
+
+    private fun speedUserAgent(): String {
+        val androidId = try { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown" } catch (_: Exception) { "unknown" }
+        return "BEZabotny-NET/${appVersionName()} Android/${Build.VERSION.RELEASE} ${Build.MANUFACTURER}/${Build.MODEL} client=${androidId.takeLast(8)}"
+    }
+
+    private fun appVersionName(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
+    } catch (_: Exception) {
+        "unknown"
+    }
+
+    private fun socksHttp(host: String, port: Int, request: ByteArray): ByteArray {
+        openSocks5Tcp(host, port).use { socket ->
+            socket.soTimeout = 15000
             val output = socket.getOutputStream()
             val input = socket.getInputStream()
-
-            output.write(byteArrayOf(0x05, 0x01, 0x02))
-            output.flush()
-            if (input.read() != 0x05 || input.read() != 0x02) return false
-
-            val userBytes = SocksAuth.user.toByteArray(Charsets.US_ASCII)
-            val passBytes = SocksAuth.pass.toByteArray(Charsets.US_ASCII)
-            val authPacket = ByteArray(3 + userBytes.size + passBytes.size)
-            authPacket[0] = 0x01
-            authPacket[1] = userBytes.size.toByte()
-            System.arraycopy(userBytes, 0, authPacket, 2, userBytes.size)
-            authPacket[2 + userBytes.size] = passBytes.size.toByte()
-            System.arraycopy(passBytes, 0, authPacket, 3 + userBytes.size, passBytes.size)
-            output.write(authPacket)
-            output.flush()
-            if (input.read() != 0x01 || input.read() != 0x00) return false
-
-            val hostBytes = host.toByteArray(Charsets.US_ASCII)
-            val request = ByteArray(4 + 1 + hostBytes.size + 2)
-            request[0] = 0x05
-            request[1] = 0x01
-            request[2] = 0x00
-            request[3] = 0x03
-            request[4] = hostBytes.size.toByte()
-            System.arraycopy(hostBytes, 0, request, 5, hostBytes.size)
-            request[5 + hostBytes.size] = 0x01 // 443 high byte
-            request[6 + hostBytes.size] = 0xbb.toByte() // 443 low byte
             output.write(request)
             output.flush()
-
-            if (input.read() != 0x05 || input.read() != 0x00) return false
-            if (input.read() != 0x00) return false
-            when (input.read()) {
-                0x01 -> readFully(input, 4)
-                0x03 -> readFully(input, input.read())
-                0x04 -> readFully(input, 16)
-                else -> return false
+            val buf = ByteArray(64 * 1024)
+            val out = ByteArrayOutputStream()
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                out.write(buf, 0, n)
             }
-            readFully(input, 2)
+            return out.toByteArray()
+        }
+    }
 
+    private fun httpBody(response: ByteArray): ByteArray {
+        val needle = byteArrayOf(13, 10, 13, 10)
+        for (i in 0..response.size - needle.size) {
+            if (needle.indices.all { response[i + it] == needle[it] }) {
+                return response.copyOfRange(i + needle.size, response.size)
+            }
+        }
+        return response
+    }
+
+    private fun openSocks5Tcp(host: String, port: Int): Socket {
+        val socket = Socket()
+        socket.connect(InetSocketAddress(Net.LOCALHOST, Prefs.socksPort.toInt()), 3000)
+        socket.soTimeout = 10000
+        val output = socket.getOutputStream()
+        val input = socket.getInputStream()
+        output.write(byteArrayOf(0x05, 0x01, 0x02))
+        output.flush()
+        if (input.read() != 0x05 || input.read() != 0x02) throw java.io.IOException("SOCKS auth method rejected")
+        val userBytes = SocksAuth.user.toByteArray(Charsets.US_ASCII)
+        val passBytes = SocksAuth.pass.toByteArray(Charsets.US_ASCII)
+        val authPacket = ByteArray(3 + userBytes.size + passBytes.size)
+        authPacket[0] = 0x01
+        authPacket[1] = userBytes.size.toByte()
+        System.arraycopy(userBytes, 0, authPacket, 2, userBytes.size)
+        authPacket[2 + userBytes.size] = passBytes.size.toByte()
+        System.arraycopy(passBytes, 0, authPacket, 3 + userBytes.size, passBytes.size)
+        output.write(authPacket)
+        output.flush()
+        if (input.read() != 0x01 || input.read() != 0x00) throw java.io.IOException("SOCKS auth failed")
+        val hostBytes = host.toByteArray(Charsets.US_ASCII)
+        val request = ByteArray(4 + 1 + hostBytes.size + 2)
+        request[0] = 0x05
+        request[1] = 0x01
+        request[2] = 0x00
+        request[3] = 0x03
+        request[4] = hostBytes.size.toByte()
+        System.arraycopy(hostBytes, 0, request, 5, hostBytes.size)
+        request[5 + hostBytes.size] = ((port ushr 8) and 0xff).toByte()
+        request[6 + hostBytes.size] = (port and 0xff).toByte()
+        output.write(request)
+        output.flush()
+        if (input.read() != 0x05 || input.read() != 0x00) throw java.io.IOException("SOCKS connect failed")
+        if (input.read() != 0x00) throw java.io.IOException("SOCKS reserved byte failed")
+        when (input.read()) {
+            0x01 -> readFully(input, 4)
+            0x03 -> readFully(input, input.read())
+            0x04 -> readFully(input, 16)
+            else -> throw java.io.IOException("SOCKS bad address type")
+        }
+        readFully(input, 2)
+        return socket
+    }
+
+    private fun probeHttpsViaSocks5(host: String, path: String): Boolean {
+        openSocks5Tcp(host, 443).use { socket ->
             val sslSocket = (SSLSocketFactory.getDefault() as SSLSocketFactory)
                 .createSocket(socket, host, 443, true) as SSLSocket
             sslSocket.soTimeout = 8000

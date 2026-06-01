@@ -30,6 +30,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         fun onDisconnectPressed()
         fun onDiscoveryConnectPressed()
         fun onPingPressed(callback: (success: Boolean, rttMs: Int) -> Unit)
+        fun onSpeedTestPressed(callback: (text: String, ok: Boolean) -> Unit)
         fun isTunnelActive(): Boolean
         fun currentStatus(): VpnStatus?
     }
@@ -58,10 +59,10 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
                 }
             }
         }
-        container.onQuickTelegramCheckPressed = {
-            container.showPingRunning()
-            host()?.onPingPressed { success, rttMs ->
-                container.showPingResult(success, rttMs)
+        container.onSpeedTestPressed = {
+            container.showSpeedRunning()
+            host()?.onSpeedTestPressed { text, ok ->
+                container.showSpeedResult(text, ok)
             }
         }
         container.onPingPressed = {
