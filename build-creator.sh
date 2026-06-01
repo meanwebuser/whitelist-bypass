@@ -154,19 +154,6 @@ cp "$HEADLESS_DIR/headless-wbstream-linux-x64" "$HEADLESS_DIR/headless-wbstream-
 cp "$HEADLESS_DIR/headless-dion-linux-x64" "$HEADLESS_DIR/headless-dion-bundle"
 npx electron-builder --linux --x64
 
-# Copy standalone headless binaries to prebuilts
-echo ""
-echo "=== Copying headless binaries ==="
-mkdir -p "$ROOT/prebuilts"
-cp "$HEADLESS_DIR/headless-vk-linux-x64" "$ROOT/prebuilts/headless-vk-creator-linux-x64"
-cp "$HEADLESS_DIR/headless-vk-linux-ia32" "$ROOT/prebuilts/headless-vk-creator-linux-ia32"
-cp "$HEADLESS_DIR/headless-telemost-linux-x64" "$ROOT/prebuilts/headless-telemost-creator-linux-x64"
-cp "$HEADLESS_DIR/headless-telemost-linux-ia32" "$ROOT/prebuilts/headless-telemost-creator-linux-ia32"
-cp "$HEADLESS_DIR/headless-wbstream-linux-x64" "$ROOT/prebuilts/headless-wbstream-creator-linux-x64"
-cp "$HEADLESS_DIR/headless-wbstream-linux-ia32" "$ROOT/prebuilts/headless-wbstream-creator-linux-ia32"
-cp "$HEADLESS_DIR/headless-dion-linux-x64" "$ROOT/prebuilts/headless-dion-creator-linux-x64"
-cp "$HEADLESS_DIR/headless-dion-linux-ia32" "$ROOT/prebuilts/headless-dion-creator-linux-ia32"
-
 # Cleanup build artifacts
 rm -f "$RELAY_DIR"/relay-darwin "$RELAY_DIR"/relay-windows-*.exe "$RELAY_DIR"/relay-linux-*
 rm -f "$RELAY_DIR"/relay-bundle "$RELAY_DIR"/relay-bundle.exe

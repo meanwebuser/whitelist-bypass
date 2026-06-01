@@ -21,8 +21,8 @@ echo "=== build-go.sh ==="
 
 cd "${REPO}"
 echo ""
-echo "=== build-app.sh ==="
-./build-app.sh
+echo "=== build-android.sh ==="
+./build-android.sh
 
 cd "${REPO}"
 echo ""

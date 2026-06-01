@@ -5,11 +5,15 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    # Uncomment to reach a SOCKS5 VPN client running on the host via
+    # UPSTREAM_SOCKS=host.docker.internal:<port>. On Linux this maps to the host.
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
     volumes:
       # Cookies for spawned creators. Create empty `[]` files for platforms you
       # don't use, or remove the corresponding line.
       - ./cookies-vk.json:/data/cookies-vk.json:ro
-      - ./cookies-telemost.json:/data/cookies-telemost.json:ro
+      - ./cookies-yandex.json:/data/cookies-yandex.json:ro
       - ./cookies-wbstream.json:/data/cookies-wbstream.json:ro
       - ./cookies-dion.json:/data/cookies-dion.json:ro
       # Per-session creator logs persist here.

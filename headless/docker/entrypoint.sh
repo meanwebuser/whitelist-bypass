@@ -9,7 +9,7 @@ SESSIONS_DIR="${SESSIONS_DIR:-/data/sessions}"
 RESOURCES="${RESOURCES:-default}"
 
 VK_COOKIES_DEFAULT="/data/cookies-vk.json"
-TM_COOKIES_DEFAULT="/data/cookies-telemost.json"
+TM_COOKIES_DEFAULT="/data/cookies-yandex.json"
 WB_COOKIES_DEFAULT="/data/cookies-wbstream.json"
 DION_COOKIES_DEFAULT="/data/cookies-dion.json"
 VK_COOKIES="${VK_COOKIES:-}"
@@ -35,5 +35,8 @@ set -- \
 [ -n "$TM_COOKIES" ] && set -- "$@" --tm-cookies "$TM_COOKIES"
 [ -n "$WB_COOKIES" ] && set -- "$@" --wb-cookies "$WB_COOKIES"
 [ -n "$DION_COOKIES" ] && set -- "$@" --dion-cookies "$DION_COOKIES"
+[ -n "${UPSTREAM_SOCKS:-}" ] && set -- "$@" --upstream-socks "$UPSTREAM_SOCKS"
+[ -n "${UPSTREAM_USER:-}" ] && set -- "$@" --upstream-user "$UPSTREAM_USER"
+[ -n "${UPSTREAM_PASS:-}" ] && set -- "$@" --upstream-pass "$UPSTREAM_PASS"
 
 exec /usr/local/bin/headless-vk-bot "$@"

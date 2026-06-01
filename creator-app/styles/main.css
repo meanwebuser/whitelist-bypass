@@ -573,6 +573,29 @@ body {
   color: #e0e0e0;
 }
 
+.clear-cookies-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-clear-cookies {
+  background: #444;
+  color: #e0e0e0;
+}
+
+.btn-clear-cookies:hover {
+  background: #5a3030;
+  color: #ffb3b3;
+}
+
+.clear-cookies-status {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #9aa0a6;
+  min-height: 14px;
+}
+
 .error-title {
   color: #dc3545;
   margin-bottom: 12px;

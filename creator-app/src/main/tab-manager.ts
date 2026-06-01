@@ -14,6 +14,7 @@ import {
   CallStatus,
   HeadlessStartArgs,
   HeadlessMode,
+  UpstreamProxy,
 } from '../types';
 import {
   INITIAL_PORT_BASE,
@@ -51,6 +52,7 @@ export class TabManager {
   private headlessWBStreamPath: string;
   private headlessDionPath: string;
   private hooksDir: string;
+  private upstreamProxy: UpstreamProxy = { socks: '', user: '', pass: '' };
 
   constructor() {
     this.relayPath = resolveResourcePath(
@@ -213,6 +215,21 @@ export class TabManager {
     this._botManager.sendMessage(tab.peerId, link);
   }
 
+  setUpstreamProxy(proxy: UpstreamProxy): void {
+    this.upstreamProxy = {
+      socks: (proxy?.socks || '').trim(),
+      user: (proxy?.user || '').trim(),
+      pass: (proxy?.pass || '').trim(),
+    };
+  }
+
+  private appendUpstreamArgs(args: string[]): void {
+    if (!this.upstreamProxy.socks) return;
+    args.push('--upstream-socks', this.upstreamProxy.socks);
+    if (this.upstreamProxy.user) args.push('--upstream-user', this.upstreamProxy.user);
+    if (this.upstreamProxy.pass) args.push('--upstream-pass', this.upstreamProxy.pass);
+  }
+
   startRelay(tabId: string, tab: TabState): void {
     this.killRelay(tabId, tab);
     const port = tab.tunnelMode === TunnelMode.PionVideo ? tab.pionPort : tab.dcPort;
@@ -222,7 +239,9 @@ export class TabManager {
         ? RelayMode.TelemostVideoCreator
         : RelayMode.VKVideoCreator;
     }
-    const proc = spawn(this.relayPath, ['--mode', relayMode, '--ws-port', String(port)], {
+    const relayArgs = ['--mode', relayMode, '--ws-port', String(port)];
+    this.appendUpstreamArgs(relayArgs);
+    const proc = spawn(this.relayPath, relayArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     tab.relay = proc;
@@ -351,6 +370,7 @@ export class TabManager {
       const flag = this.joinFlagFor(platform);
       if (flag) spawnArgs.push(flag, joinTarget);
     }
+    this.appendUpstreamArgs(spawnArgs);
     const proc = spawn(config.binaryPath, spawnArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -388,6 +408,28 @@ export class TabManager {
         console.log(`[COOKIES] failed to remove ${cookie.name} on ${url}:`, err);
       }
     }
+  }
+
+  async clearPlatformCookies(platform: Platform): Promise<number> {
+    const config = this.headlessConfig(platform);
+    if (!config) return 0;
+    const ses = session.fromPartition(SESSION_PARTITION);
+    const all = await ses.cookies.get({});
+    let removed = 0;
+    for (const cookie of all) {
+      if (!cookie.domain || !config.cookieDomains.some((d) => cookie.domain!.includes(d))) continue;
+      const host = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+      const url = `https://${host}${cookie.path || '/'}`;
+      try {
+        await ses.cookies.remove(url, cookie.name);
+        removed++;
+      } catch (err) {
+        console.log(`[COOKIES] failed to remove ${cookie.name} on ${url}:`, err);
+      }
+    }
+    await fs.unlink(path.join(app.getPath('userData'), `cookies-${platform}.json`)).catch(() => {});
+    console.log(`[COOKIES] cleared ${removed} cookies for ${platform}`);
+    return removed;
   }
 
   private waitForLogin(cookieDomains: string[], authCookieName: string): Promise<void> {

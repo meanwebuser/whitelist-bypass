@@ -8,23 +8,19 @@ mkdir -p "$PREBUILTS"
 
 echo "=== Building Android app ==="
 "$ROOT/build-go.sh"
-"$ROOT/build-app.sh"
+"$ROOT/build-android.sh"
 
 echo ""
 echo "=== Building creator-app + headless creators ==="
 "$ROOT/build-creator.sh"
 
 echo ""
-echo "=== Building Linux headless joiners ==="
-"$ROOT/build-joiners.sh"
+echo "=== Building headless CLI zips per architecture ==="
+"$ROOT/build-cli.sh"
 
 echo ""
 echo "=== Building desktop joiner Electron app (Windows + Linux + macOS) ==="
 "$ROOT/build-joiner-app.sh"
-
-echo ""
-echo "=== Building Linux headless-vk-bot ==="
-"$ROOT/build-bot.sh"
 
 if [ "$(uname)" = "Darwin" ]; then
     echo ""

@@ -28,6 +28,8 @@ class HeroRingOuterView @JvmOverloads constructor(
     private val matrix = Matrix()
     private var sweepRotationDegrees = 0f
     private var spinAnimator: ValueAnimator? = null
+    private var spinDurationMs = 0L
+    private var spinDesired = false
     private var currentState: State = State.IDLE
 
     private val accent: Int get() = UiColors.accent(context)
@@ -48,28 +50,37 @@ class HeroRingOuterView @JvmOverloads constructor(
         currentState = state
         when (state) {
             State.IDLE -> {
-                stopSpin()
                 visibility = GONE
                 setBlur(0f)
             }
             State.CONNECTING -> {
                 visibility = VISIBLE
                 setBlur(2f)
-                startSpin(durationMs = 6_000L)
+                spinDurationMs = 6_000L
             }
             State.CONNECTED -> {
                 visibility = VISIBLE
                 setBlur(0.5f)
-                startSpin(durationMs = 18_000L)
+                spinDurationMs = 18_000L
             }
         }
+        syncSpin()
         invalidate()
     }
 
-    private fun startSpin(durationMs: Long) {
-        spinAnimator?.cancel()
-        spinAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
-            duration = durationMs
+    private fun syncSpin() {
+        val shouldRun = spinDesired && currentState != State.IDLE && isAttachedToWindow
+        if (shouldRun) startSpin() else stopSpin()
+    }
+
+    private fun startSpin() {
+        if (!isAttachedToWindow) return
+        val existing = spinAnimator
+        if (existing != null && existing.duration == spinDurationMs) return
+        existing?.cancel()
+        val startDegrees = sweepRotationDegrees % 360f
+        spinAnimator = ValueAnimator.ofFloat(startDegrees, startDegrees + 360f).apply {
+            duration = spinDurationMs
             repeatCount = ValueAnimator.INFINITE
             interpolator = LinearInterpolator()
             addUpdateListener {
@@ -83,7 +94,6 @@ class HeroRingOuterView @JvmOverloads constructor(
     private fun stopSpin() {
         spinAnimator?.cancel()
         spinAnimator = null
-        sweepRotationDegrees = 0f
     }
 
     private fun setBlur(radiusPx: Float) {
@@ -95,8 +105,24 @@ class HeroRingOuterView @JvmOverloads constructor(
         }
     }
 
+    fun pauseAnimation() {
+        spinDesired = false
+        syncSpin()
+    }
+
+    fun resumeAnimation() {
+        spinDesired = true
+        syncSpin()
+    }
+
     fun release() {
+        spinDesired = false
         stopSpin()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        syncSpin()
     }
 
     override fun onDetachedFromWindow() {
