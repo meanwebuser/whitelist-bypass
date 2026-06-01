@@ -7,6 +7,8 @@ struct DiscoveryRoom: Identifiable {
     let status: String
     let room: String
     let creator: String
+    let node: String
+    let location: String
     let createdAt: Int64
     let expiresAt: Int64
     let seq: Int64
@@ -14,6 +16,12 @@ struct DiscoveryRoom: Identifiable {
     var order: Int64 { seq > 0 ? seq : createdAt }
     var isFree: Bool {
         status == "free" && !room.isEmpty && expiresAt > Int64(Date().timeIntervalSince1970)
+    }
+    var displayName: String {
+        let left = node.isEmpty ? creator : node
+        if !left.isEmpty && !location.isEmpty { return "\(left) · \(location)" }
+        if !left.isEmpty { return left }
+        return "VK discovery"
     }
 }
 
@@ -228,11 +236,13 @@ final class VKDiscoveryScanner {
         let status = (json["status"] as? String) ?? "free"
         let room = (json["room"] as? String) ?? ""
         let creator = (json["creator"] as? String) ?? ""
+        let node = (json["node"] as? String) ?? (json["node_name"] as? String) ?? ""
+        let location = (json["location"] as? String) ?? [json["country"] as? String, json["city"] as? String, json["region"] as? String].compactMap { $0 }.joined(separator: " ")
         let createdAt = int64(json["created_at"]) ?? int64(json["createdAt"]) ?? 0
         let expiresAt = int64(json["expires_at"]) ?? int64(json["expiresAt"]) ?? Int64.max
         let seq = int64(json["seq"]) ?? 0
         let streamId = (json["stream_id"] as? String) ?? (json["streamId"] as? String) ?? room
-        return DiscoveryRoom(id: streamId.isEmpty ? room : streamId, status: status, room: room, creator: creator, createdAt: createdAt, expiresAt: expiresAt, seq: seq)
+        return DiscoveryRoom(id: streamId.isEmpty ? room : streamId, status: status, room: room, creator: creator, node: node, location: location, createdAt: createdAt, expiresAt: expiresAt, seq: seq)
     }
 
     private func parseLegacyRooms(_ text: String) -> [DiscoveryRoom] {
@@ -240,7 +250,7 @@ final class VKDiscoveryScanner {
         let ns = text as NSString
         return regex.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { match in
             let room = ns.substring(with: match.range)
-            return DiscoveryRoom(id: room, status: "free", room: room, creator: "legacy", createdAt: 0, expiresAt: Int64.max, seq: 0)
+            return DiscoveryRoom(id: room, status: "free", room: room, creator: "legacy", node: "legacy", location: "", createdAt: 0, expiresAt: Int64.max, seq: 0)
         }
     }
 

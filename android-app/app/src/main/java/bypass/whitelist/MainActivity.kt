@@ -105,6 +105,10 @@ class MainActivity :
     private val badDiscoveryRooms = linkedSetOf<String>()
     private var currentDiscoveryRoom: String? = null
     private var staleRoomRecoveryInProgress: Boolean = false
+    private var discoveryScanRunning: Boolean = false
+    private var cachedDiscoveryConfigs: List<CallConfig> = emptyList()
+    private var cachedDiscoverySummary: String = "Комнаты: проверяю…"
+    private var roomRequestSentForEmptyPool: Boolean = false
     private val navColorEvaluator = ArgbEvaluator()
 
     private val vpnLauncher = registerForActivityResult(
@@ -225,6 +229,7 @@ class MainActivity :
 
         handleIntent(intent)
         AppUpdater.check(this, manual = false) { appendLog(it) }
+        lazyPrewarmRooms("startup", force = false)
     }
 
     override fun onResume() {
@@ -334,37 +339,77 @@ class MainActivity :
             mainFragment()?.onStatusTextChanged("Остановите текущую сессию перед сканированием")
             return
         }
-        mainFragment()?.onStatusTextChanged("Сканирование VK…")
-        appendLog("Discovery scan started: private-bus first, then public VK fallback; group=237416141")
+        val cached = cachedDiscoveryConfigs.firstOrNull { !badDiscoveryRooms.contains(it.url) }
+        if (cached != null) {
+            appendLog("Discovery connect uses prewarmed room: ${cached.nodeLabel ?: cached.name}")
+            useDiscoveredRoom(cached, connectNow = true)
+            return
+        }
+        scanRooms(reason = "connect", force = true, connectWhenReady = true)
+    }
+
+    override fun onDiscoveryRefreshPressed() {
+        scanRooms(reason = "manual-refresh", force = true, connectWhenReady = false)
+    }
+
+    private fun lazyPrewarmRooms(reason: String, force: Boolean) {
+        if (TunnelServiceState.isAnyTunnelComponentRunning(this) || resetInProgress) return
+        if (!force && (discoveryScanRunning || cachedDiscoveryConfigs.isNotEmpty())) {
+            mainFragment()?.onRoomWarmupChanged(cachedDiscoverySummary, discoveryScanRunning)
+            return
+        }
+        scanRooms(reason = reason, force = force, connectWhenReady = false)
+    }
+
+    private fun scanRooms(reason: String, force: Boolean, connectWhenReady: Boolean) {
+        if (discoveryScanRunning && !force) return
+        discoveryScanRunning = true
+        mainFragment()?.onRoomWarmupChanged("Комнаты: обновляю…", true)
+        mainFragment()?.onStatusTextChanged("Сканирование комнат…")
+        appendLog("Discovery scan started: reason=$reason connectWhenReady=$connectWhenReady private-bus first, then public VK fallback")
         VkDiscoveryScanner.scanWithWebView(
             activity = this,
             onProgress = { step ->
                 runOnUiThread {
                     mainFragment()?.onStatusTextChanged(step)
+                    mainFragment()?.onRoomWarmupChanged("Комнаты: $step", true)
                     appendLog("Discovery: $step")
                 }
             },
             onDone = { result ->
                 runOnUiThread {
+                    discoveryScanRunning = false
                     val allConfigs = result.configs
                     val configs = allConfigs.filter { !badDiscoveryRooms.contains(it.url) }
-                    val ignored = allConfigs.size - configs.size
-                    mainFragment()?.onStatusTextChanged("Найдено свободных: ${configs.size}")
-                    appendLog("Discovery scan finished: free=${configs.size}, ignored_bad=$ignored, method=${result.method}, source=${result.source ?: "none"}")
-                    if (configs.isNotEmpty()) {
-                        val picked = configs.first()
-                        currentDiscoveryRoom = picked.url
-                        Prefs.autoDestination = picked
-                        Prefs.activeDestinationId = picked.id
-                        mainFragment()?.onDestinationsChanged()
-                        appendLog("Discovery picked auto room: slot=${picked.slotId ?: "?"} lease=${picked.leaseId ?: "?"}")
-                        startJoinFor(picked)
+                    cachedDiscoveryConfigs = configs
+                    val nodes = configs.map { it.nodeLabel ?: it.name }.distinct().take(3)
+                    cachedDiscoverySummary = if (configs.isNotEmpty()) {
+                        "Свободно: ${configs.size} · ${nodes.joinToString(", ")}"
                     } else {
-                        sendPrivateBusClientEvent("request_room", null, "no_free_rooms_or_all_bad")
+                        "Свободных комнат нет · запрошена новая"
+                    }
+                    mainFragment()?.onRoomWarmupChanged(cachedDiscoverySummary, false)
+                    mainFragment()?.onStatusTextChanged(cachedDiscoverySummary)
+                    appendLog("Discovery scan finished: picked_free=${configs.size}, total_free=${allConfigs.size}, method=${result.method}, source=${result.source ?: "none"}, ${result.stats.summary()}")
+                    if (configs.isNotEmpty()) {
+                        roomRequestSentForEmptyPool = false
+                        if (connectWhenReady) useDiscoveredRoom(configs.first(), connectNow = true)
+                    } else if (!roomRequestSentForEmptyPool) {
+                        roomRequestSentForEmptyPool = true
+                        sendPrivateBusClientEvent("request_room", null, "prewarm_no_free_rooms")
                     }
                 }
             }
         )
+    }
+
+    private fun useDiscoveredRoom(picked: CallConfig, connectNow: Boolean) {
+        currentDiscoveryRoom = picked.url
+        Prefs.autoDestination = picked
+        Prefs.activeDestinationId = picked.id
+        mainFragment()?.onDestinationsChanged()
+        appendLog("Discovery selected room: node=${picked.nodeLabel ?: picked.name} slot=${picked.slotId ?: "?"} lease=${picked.leaseId ?: "?"}")
+        if (connectNow) startJoinFor(picked)
     }
 
     override fun onDisconnectPressed() {

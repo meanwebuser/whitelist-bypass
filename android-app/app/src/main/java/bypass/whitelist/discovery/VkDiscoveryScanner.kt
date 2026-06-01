@@ -65,6 +65,8 @@ object VkDiscoveryScanner {
         val status: String,
         val room: String?,
         val creator: String?,
+        val node: String?,
+        val location: String?,
         val createdAt: Long,
         val expiresAt: Long,
         val seq: Long,
@@ -269,12 +271,14 @@ object VkDiscoveryScanner {
                 .filter { it.status == "free" && it.expiresAt > now && it.room?.startsWith("wbstream://") == true }
                 .sortedByDescending { it.order }
                 .map { event ->
+                    val label = listOfNotNull(event.node?.ifBlank { null } ?: event.creator?.ifBlank { null }, event.location?.ifBlank { null }).joinToString(" · ").ifBlank { null }
                     CallConfig.autoWith(
-                        name = event.creator?.ifBlank { null } ?: "VK discovery",
+                        name = label ?: event.creator?.ifBlank { null } ?: "VK discovery",
                         url = event.room!!,
                         slotId = event.slotId,
                         leaseId = event.leaseId,
                         expiresAt = event.expiresAt,
+                        nodeLabel = label,
                     )
                 }
             return ParsedConfigs(configs, stats)
@@ -300,6 +304,9 @@ object VkDiscoveryScanner {
             status = status,
             room = room,
             creator = optString("creator").takeIf { it.isNotBlank() },
+            node = optString("node").takeIf { it.isNotBlank() } ?: optString("node_name").takeIf { it.isNotBlank() },
+            location = optString("location").takeIf { it.isNotBlank() }
+                ?: listOfNotNull(optString("country").takeIf { it.isNotBlank() }, optString("city").takeIf { it.isNotBlank() }, optString("region").takeIf { it.isNotBlank() }).joinToString(" ").takeIf { it.isNotBlank() },
             createdAt = createdAt,
             expiresAt = expiresAt,
             seq = seq,
