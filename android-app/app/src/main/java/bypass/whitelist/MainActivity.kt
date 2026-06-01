@@ -101,6 +101,10 @@ class MainActivity :
     @Volatile private var resetInProgress: Boolean = false
     @Volatile private var resetGeneration: Long = 0L
     private var pendingConnectConfig: CallConfig? = null
+    private var pendingDiscoveryRescan: Boolean = false
+    private val badDiscoveryRooms = linkedSetOf<String>()
+    private var currentDiscoveryRoom: String? = null
+    private var staleRoomRecoveryInProgress: Boolean = false
     private val navColorEvaluator = ArgbEvaluator()
 
     private val vpnLauncher = registerForActivityResult(
@@ -326,6 +330,7 @@ class MainActivity :
 
     override fun onDiscoveryConnectPressed() {
         if (resetInProgress || TunnelServiceState.isAnyTunnelComponentRunning(this)) {
+            pendingDiscoveryRescan = true
             mainFragment()?.onStatusTextChanged("Остановите текущую сессию перед сканированием")
             return
         }
@@ -341,16 +346,21 @@ class MainActivity :
             },
             onDone = { result ->
                 runOnUiThread {
-                    val configs = result.configs
+                    val allConfigs = result.configs
+                    val configs = allConfigs.filter { !badDiscoveryRooms.contains(it.url) }
+                    val ignored = allConfigs.size - configs.size
                     mainFragment()?.onStatusTextChanged("Найдено свободных: ${configs.size}")
-                    appendLog("Discovery scan finished: free=${configs.size}, method=${result.method}, source=${result.source ?: "none"}")
+                    appendLog("Discovery scan finished: free=${configs.size}, ignored_bad=$ignored, method=${result.method}, source=${result.source ?: "none"}")
                     if (configs.isNotEmpty()) {
                         val picked = configs.first()
+                        currentDiscoveryRoom = picked.url
                         Prefs.autoDestination = picked
                         Prefs.activeDestinationId = picked.id
                         mainFragment()?.onDestinationsChanged()
                         appendLog("Discovery picked auto room: slot=${picked.slotId ?: "?"} lease=${picked.leaseId ?: "?"}")
                         startJoinFor(picked)
+                    } else {
+                        sendPrivateBusClientEvent("request_room", null, "no_free_rooms_or_all_bad")
                     }
                 }
             }
@@ -473,6 +483,9 @@ class MainActivity :
                 overlayLogsText.append("$line\n")
                 overlayLogsScroll.post { overlayLogsScroll.fullScroll(View.FOCUS_DOWN) }
             }
+        }
+        if (message.contains("guest cannot create room", ignoreCase = true)) {
+            scheduleBadRoomRecovery("guest_cannot_create_room")
         }
     }
 
@@ -839,6 +852,42 @@ class MainActivity :
         }
     }
 
+
+    private fun discoveryClientId(): String {
+        val androidId = try { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown" } catch (_: Exception) { "unknown" }
+        return "android-${androidId.takeLast(12)}"
+    }
+
+    private fun sendPrivateBusClientEvent(type: String, room: String?, reason: String) {
+        val badSnapshot = synchronized(badDiscoveryRooms) { badDiscoveryRooms.toList() }
+        thread(name = "wt-client-event") {
+            val ok = VkDiscoveryScanner.sendClientEvent(
+                type = type,
+                clientId = discoveryClientId(),
+                room = room,
+                reason = reason,
+                badRooms = badSnapshot,
+            )
+            appendLog("Private-bus $type sent: $ok")
+        }
+    }
+
+    private fun scheduleBadRoomRecovery(reason: String) {
+        val room = currentDiscoveryRoom?.takeIf { it.startsWith("wbstream://") }
+            ?: activeJoinUrl.takeIf { it.startsWith("wbstream://") }
+            ?: return
+        if (staleRoomRecoveryInProgress) return
+        staleRoomRecoveryInProgress = true
+        badDiscoveryRooms.add(room)
+        appendLog("Room looks stale; blacklisted locally and requesting replacement")
+        sendPrivateBusClientEvent("bad_room", room, reason)
+        pendingDiscoveryRescan = true
+        runOnUiThread {
+            if (!resetInProgress) fullReset()
+            staleRoomRecoveryInProgress = false
+        }
+    }
+
     private fun startJoinFor(config: CallConfig) {
         if (resetInProgress) {
             pendingConnectConfig = config
@@ -871,6 +920,7 @@ class MainActivity :
         }
 
         activeJoinUrl = url
+        if (config.autoDiscovered) currentDiscoveryRoom = url
         logWriter.reset()
         runOnUiThread { logsFragment()?.refresh() }
         appendLog("Loading: ${maskUrl(url)}")
@@ -996,10 +1046,15 @@ class MainActivity :
         mainFragment()?.onStatusChanged(VpnStatus.CALL_DISCONNECTED)
         Prefs.extendAutoDestinationGrace()
         val pendingConfig = pendingConnectConfig
+        val shouldRescan = pendingDiscoveryRescan
         pendingConnectConfig = null
+        pendingDiscoveryRescan = false
         if (pendingConfig != null) {
             appendLog("Previous session stopped, starting new connection")
             startJoinFor(pendingConfig)
+        } else if (shouldRescan) {
+            appendLog("Previous session stopped, rescanning discovery")
+            onDiscoveryConnectPressed()
         }
     }
 

@@ -3,6 +3,7 @@ package bypass.whitelist.discovery
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Bitmap
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
@@ -16,6 +17,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import bypass.whitelist.BuildConfig
 import bypass.whitelist.tunnel.CallConfig
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -48,6 +50,57 @@ object VkDiscoveryScanner {
         val seq: Long,
     ) {
         val order: Long get() = if (seq > 0) seq else createdAt
+    }
+
+    fun sendClientEvent(
+        type: String,
+        clientId: String,
+        room: String?,
+        reason: String,
+        badRooms: Collection<String> = emptyList(),
+    ): Boolean {
+        val token = BuildConfig.VK_BOT_TOKEN.takeIf { it.isNotBlank() } ?: return false
+        val peerId = BuildConfig.VK_BOT_PEER_ID.takeIf { it.isNotBlank() } ?: return false
+        return try {
+            val now = System.currentTimeMillis() / 1000L
+            val payload = JSONObject().apply {
+                put("v", 2)
+                put("type", type)
+                put("client_id", clientId)
+                put("platform", "android")
+                put("app_version", BuildConfig.VERSION_NAME)
+                put("app_build", BuildConfig.VERSION_CODE)
+                put("device", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
+                put("system_version", Build.VERSION.RELEASE ?: "")
+                put("room", room ?: "")
+                put("bad_rooms", JSONArray().also { arr -> badRooms.forEach { arr.put(it) } })
+                put("reason", reason)
+                put("created_at", now)
+                put("seq", now)
+                put("nonce", java.util.UUID.randomUUID().toString())
+            }
+            val message = WtBusCrypto.encryptEnvelope("wtclient2", payload) ?: return false
+            val body = listOf(
+                "peer_id" to peerId,
+                "random_id" to System.currentTimeMillis().toString(),
+                "message" to message,
+                "access_token" to token,
+                "v" to "5.199",
+            ).joinToString("&") { (k, v) -> "${k}=${URLEncoder.encode(v, "UTF-8")}" }
+            val conn = URL("https://api.vk.com/method/messages.send").openConnection() as HttpURLConnection
+            conn.instanceFollowRedirects = true
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 8000
+            conn.readTimeout = 10000
+            conn.doOutput = true
+            conn.setRequestProperty("User-Agent", "BEZabotny-NET Android private bus")
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            val json = JSONObject(conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+            !json.has("error") && json.has("response")
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun scan(): Result {

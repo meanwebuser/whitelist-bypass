@@ -3,6 +3,7 @@ package bypass.whitelist.discovery
 import android.util.Base64
 import bypass.whitelist.BuildConfig
 import org.json.JSONObject
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
@@ -10,6 +11,26 @@ import javax.crypto.spec.SecretKeySpec
 object WtBusCrypto {
     private const val B64URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
     private const val CUSTOM64 = "АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя"
+
+    fun encryptEnvelope(prefix: String, payload: JSONObject): String? {
+        return try {
+            val key = decodeB64Url(BuildConfig.WTBUS_KEY_B64.ifBlank { return null })
+            if (key.size != 32) return null
+            val kid = BuildConfig.WTBUS_KEY_ID.ifBlank { "k1" }
+            val nonce = ByteArray(12)
+            SecureRandom().nextBytes(nonce)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
+            cipher.updateAAD("$prefix.$kid".toByteArray(Charsets.UTF_8))
+            val encrypted = cipher.doFinal(payload.toString().toByteArray(Charsets.UTF_8))
+            val blob = ByteArray(nonce.size + encrypted.size)
+            System.arraycopy(nonce, 0, blob, 0, nonce.size)
+            System.arraycopy(encrypted, 0, blob, nonce.size, encrypted.size)
+            "$prefix.$kid.${encodeCustom(blob)}"
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     fun decryptEnvelope(prefix: String, kid: String, encoded: String): JSONObject? {
         return try {
@@ -26,6 +47,16 @@ object WtBusCrypto {
             JSONObject(String(plain, Charsets.UTF_8))
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun encodeCustom(data: ByteArray): String {
+        val b64 = Base64.encodeToString(data, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        return buildString(b64.length) {
+            for (ch in b64) {
+                val idx = B64URL.indexOf(ch)
+                if (idx >= 0) append(CUSTOM64[idx])
+            }
         }
     }
 
