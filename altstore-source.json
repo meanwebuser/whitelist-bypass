@@ -1,7 +1,7 @@
 {
-  "name": "Whitelist Bypass",
-  "subtitle": "Experimental iOS builds for whitelist-bypass",
-  "description": "Unsigned proxy-only iOS builds for AltStore/SideStore. Install Happ, Telegram, Streisand or any VPN app that supports SOCKS/Xray links. Start this app, open Add / Copy Profile, then add to Happ/Telegram or copy the generated proxy profile and import it into your VPN app. The proxy-only build does not include PacketTunnel, so it does not require NetworkExtension signing.",
+  "name": "BEZаботный-NET",
+  "subtitle": "iOS builds for BEZаботный-NET",
+  "description": "Unsigned proxy-only iOS builds for BEZаботный-NET / WhiteTransport. Includes encrypted VK private-bus discovery and encrypted wall fallback.",
   "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
   "headerURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
   "website": "https://github.com/megamen32/whitelist-bypass/tree/ios-packet-tunnel-scaffold",
@@ -11,15 +11,25 @@
   ],
   "apps": [
     {
-      "name": "Whitelist Bypass Proxy",
+      "name": "BEZаботный-NET",
       "bundleIdentifier": "bypass.whitelist.whitelist-bypass-proxy",
       "developerName": "megamen32",
-      "subtitle": "SOCKS proxy over call transport",
-      "localizedDescription": "Experimental iOS proxy-only build for whitelist-bypass. Supports WB room URL normalization, for example https://stream.wb.ru/room/<room> is converted to wbstream://<room>. Install Happ, Telegram, Streisand or any VPN app that supports SOCKS/Xray links. Start this app, open Add / Copy Profile, then add to Happ/Telegram or copy the generated proxy profile and import it into your VPN app. This AltStore build is proxy-only and does not include the PacketTunnel VPN extension.",
+      "subtitle": "WhiteTransport encrypted proxy",
+      "localizedDescription": "BEZаботный-NET iOS proxy-only build with encrypted VK private-bus discovery and encrypted wall fallback.",
       "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
       "tintColor": "#6D5DF6",
       "category": "utilities",
       "versions": [
+        {
+          "version": "0.3.11",
+          "buildVersion": "3011",
+          "date": "2026-06-01T04:38:00Z",
+          "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-iOS-proxy-only-unsigned.ipa",
+          "localizedDescription": "Encrypted VK private-bus discovery first; encrypted wall fallback; BEZаботный-NET branding.",
+          "size": 9661157,
+          "sha256": "60f8d5f5e0c0c23efae374e7c08fb1319499c8f36e3332c8567bfdd26e591a04",
+          "minOSVersion": "16.0"
+        },
         {
           "version": "0.3.5",
           "buildVersion": "3",
@@ -35,7 +45,11 @@
       "appPermissions": {
         "entitlements": [],
         "privacy": {}
-      }
+      },
+      "version": "0.3.11",
+      "versionDate": "2026-06-01T04:38:00Z",
+      "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-iOS-proxy-only-unsigned.ipa",
+      "size": 9661157
     }
   ],
   "news": [
