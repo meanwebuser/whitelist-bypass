@@ -2,8 +2,8 @@
   "name": "BEZаботный-NET",
   "subtitle": "iOS builds for BEZаботный-NET",
   "description": "Unsigned proxy-only iOS builds for BEZаботный-NET / WhiteTransport. Includes encrypted VK private-bus discovery and encrypted wall fallback.",
-  "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
-  "headerURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
+  "iconURL": "https://download.bezrabotnyi.com/white-transport/ios-icon-android-match.png",
+  "headerURL": "https://download.bezrabotnyi.com/white-transport/ios-icon-android-match.png",
   "website": "https://github.com/megamen32/whitelist-bypass/tree/ios-packet-tunnel-scaffold",
   "tintColor": "#6D5DF6",
   "featuredApps": [
@@ -16,7 +16,7 @@
       "developerName": "BEZаботный-NET",
       "subtitle": "WhiteTransport encrypted proxy",
       "localizedDescription": "All local proxy/share URLs now use socks5:// because the embedded local proxy is SOCKS5. Removes legacy socks:// profile copy.",
-      "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
+      "iconURL": "https://download.bezrabotnyi.com/white-transport/ios-icon-android-match.png",
       "tintColor": "#6D5DF6",
       "category": "utilities",
       "versions": [
