@@ -28,8 +28,11 @@ enum WtBusSecrets {
     static let vkBotPeerID = $(esc "${VK_BOT_PEER_ID:-46887791}")
 }
 SWIFT
-if [[ -n "${WTBUS_KEY_B64:-}" ]]; then
-  echo "Generated iOS WtBusSecrets.swift with WTBUS key and VK peer ${VK_BOT_PEER_ID:-46887791}"
+if [[ -n "${WTBUS_KEY_B64:-}" && -n "${VK_BOT_TOKEN:-}" ]]; then
+  echo "Generated iOS WtBusSecrets.swift with WTBUS key, VK token and VK peer ${VK_BOT_PEER_ID:-46887791}"
+elif [[ "${REQUIRE_IOS_SECRETS:-0}" == "1" ]]; then
+  echo "ERROR: REQUIRE_IOS_SECRETS=1 but WTBUS_KEY_B64 or VK_BOT_TOKEN is empty" >&2
+  exit 64
 else
   echo "Generated iOS WtBusSecrets.swift with empty secrets; private/encrypted discovery disabled" >&2
 fi
