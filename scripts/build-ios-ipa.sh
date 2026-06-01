@@ -2,6 +2,7 @@
 set -euo pipefail
 MODE="${1:-proxy}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+"$ROOT/scripts/generate-ios-secrets.sh"
 PROJECT="$ROOT/ios-proxy-app/whitelist-bypass-proxy.xcodeproj"
 SCHEME="whitelist-bypass-proxy"
 CONFIG="${CONFIGURATION:-Debug}"
