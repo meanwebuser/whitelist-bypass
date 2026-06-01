@@ -62,7 +62,10 @@ struct ContentView: View {
         .onTapGesture {
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
-        .onAppear { proxyManager.refreshSystemVPNStatus() }
+        .onAppear {
+            proxyManager.refreshSystemVPNStatus()
+            proxyManager.prewarmRooms()
+        }
     }
 }
 
@@ -102,17 +105,24 @@ struct LinkCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(NSLocalizedString("primary_title", comment: ""))
                             .font(.headline)
-                        Text(proxyManager.isRunning ? NSLocalizedString("primary_connected", comment: "") : proxyManager.discoveryStatus)
+                        Text(proxyManager.isRunning ? NSLocalizedString("primary_connected", comment: "") : proxyManager.roomWarmupSummary)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     Spacer()
-                    Text("free: \(proxyManager.discoveredFreeCount)")
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("free: \(proxyManager.discoveredFreeCount)")
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(.tertiarySystemGroupedBackground))
+                        Button(proxyManager.roomWarmupRefreshing ? "Refreshing…" : "Refresh rooms") {
+                            proxyManager.refreshRooms()
+                        }
                         .font(.caption2)
-                        .fontWeight(.medium)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(.tertiarySystemGroupedBackground))
+                        .disabled(proxyManager.roomWarmupRefreshing)
+                    }
                         .clipShape(Capsule())
                 }
 

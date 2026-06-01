@@ -193,6 +193,8 @@ class ProxyManager: ObservableObject {
     @Published var discoveryStatus: String = NSLocalizedString("discovery_idle", comment: "")
     @Published var discoveredFreeCount: Int = 0
     @Published var lastDiscoverySource: String = ""
+    @Published var roomWarmupSummary: String = "Rooms: checking…"
+    @Published var roomWarmupRefreshing: Bool = false
     @Published var telegramCheckStatus: String = ""
     var detectedPlatform: CallPlatform = .vk
     private let discoveryScanner = VKDiscoveryScanner()
@@ -288,6 +290,11 @@ class ProxyManager: ObservableObject {
             appendLog("Normalized link: \(normalizedCallUrl)")
         }
         guard !callUrl.isEmpty else {
+            if let cached = cachedDiscoveryRooms.first(where: { !badDiscoveryRooms.contains($0.room) }) {
+                appendLog("Discovery connect uses prewarmed room: \(cached.displayName)")
+                useDiscoveryRoom(cached, connectNow: true)
+                return
+            }
             scanAndConnect()
             return
         }
@@ -418,38 +425,66 @@ class ProxyManager: ObservableObject {
     }
 
 
+    func prewarmRooms(reason: String = "lazy") {
+        guard !isRunning else { return }
+        scanRooms(reason: reason, connectWhenReady: false, force: false)
+    }
+
+    func refreshRooms() {
+        scanRooms(reason: "manual-refresh", connectWhenReady: false, force: true)
+    }
+
     func scanAndConnect() {
+        scanRooms(reason: "connect", connectWhenReady: true, force: true)
+    }
+
+    private func scanRooms(reason: String, connectWhenReady: Bool, force: Bool) {
         guard discoveryEnabled else {
             showToast(NSLocalizedString("discovery_disabled", comment: ""))
             return
         }
+        if roomWarmupRefreshing && !force { return }
+        roomWarmupRefreshing = true
         discoveryStatus = NSLocalizedString("discovery_scanning", comment: "")
+        roomWarmupSummary = "Rooms: updating…"
         statusText = discoveryStatus
-        appendLog("Discovery scan started")
+        appendLog("Discovery scan started reason=\(reason) connectWhenReady=\(connectWhenReady)")
         discoveryScanner.scan { [weak self] rooms, source in
             DispatchQueue.main.async {
                 guard let self = self else { return }
+                self.roomWarmupRefreshing = false
                 self.lastDiscoverySource = source ?? ""
                 let allFreeRooms = rooms.filter { $0.isFree }
                 let freeRooms = allFreeRooms.filter { !self.badDiscoveryRooms.contains($0.room) }
                 let ignored = allFreeRooms.count - freeRooms.count
+                self.cachedDiscoveryRooms = freeRooms
                 self.discoveredFreeCount = freeRooms.count
+                let names = Array(Set(freeRooms.map { $0.displayName })).prefix(3).joined(separator: ", ")
                 self.discoveryStatus = String(format: NSLocalizedString("discovery_found", comment: ""), freeRooms.count)
-                self.statusText = self.discoveryStatus
-                self.appendLog("Discovery found free rooms: \(freeRooms.count)" + (ignored > 0 ? " (ignored bad: \(ignored))" : ""))
+                self.roomWarmupSummary = freeRooms.isEmpty ? "Rooms: none free, requested new" : "Rooms: free \(freeRooms.count) · \(names)"
+                self.statusText = self.roomWarmupSummary
+                self.appendLog("Discovery found free rooms: \(freeRooms.count)" + (ignored > 0 ? " (ignored bad: \(ignored))" : "") + " source=\(source ?? "unknown")")
                 guard let selected = freeRooms.first else {
-                    self.discoveryScanner.sendClientEvent(type: "request_room", clientId: self.clientId, room: nil, reason: "no_free_rooms_or_all_bad", badRooms: Array(self.badDiscoveryRooms)) { ok in
-                        DispatchQueue.main.async { self.appendLog("Private-bus request_room sent: \(ok)") }
+                    if !self.roomRequestSentForEmptyPool {
+                        self.roomRequestSentForEmptyPool = true
+                        self.discoveryScanner.sendClientEvent(type: "request_room", clientId: self.clientId, room: nil, reason: "prewarm_no_free_rooms", badRooms: Array(self.badDiscoveryRooms)) { [weak self] ok in
+                            self?.appendLog("Private-bus request_room sent: \(ok)")
+                        }
                     }
-                    self.showToast(NSLocalizedString("discovery_no_free", comment: ""))
                     return
                 }
-                self.currentDiscoveryRoom = selected.room
-                self.callUrl = selected.room
-                self.appendLog("Discovery selected: \(selected.creator) \(selected.room)")
-                self.connect()
+                self.roomRequestSentForEmptyPool = false
+                if connectWhenReady { self.useDiscoveryRoom(selected, connectNow: true) }
             }
         }
+    }
+
+    private func useDiscoveryRoom(_ selected: DiscoveryRoom, connectNow: Bool) {
+        currentDiscoveryRoom = selected.room
+        callUrl = selected.room
+        statusText = "Using \(selected.displayName)"
+        appendLog("Discovery selected room: id=\(selected.id) node=\(selected.displayName)")
+        if connectNow { connect() }
     }
 
     func checkTelegramThroughTunnel() {

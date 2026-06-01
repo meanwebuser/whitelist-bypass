@@ -34,6 +34,8 @@ class MainFragmentView(private val root: View) {
     private val callsList: LinearLayout = root.findViewById(R.id.callsList)
     private val copySocksButton: View = root.findViewById(R.id.copySocksButton)
     private val copySocksButtonLabel: TextView = root.findViewById(R.id.copySocksButtonLabel)
+    private val roomWarmupStatus: TextView = root.findViewById(R.id.roomWarmupStatus)
+    private val roomRefreshButton: View = root.findViewById(R.id.roomRefreshButton)
     private val speedTestButton: View = root.findViewById(R.id.speedTestButton)
     private val speedTestButtonLabel: TextView = root.findViewById(R.id.speedTestButtonLabel)
     private val emptyCta: View = root.findViewById(R.id.emptyCta)
@@ -51,6 +53,7 @@ class MainFragmentView(private val root: View) {
     var onHeroPressed: Callback? = null
     var onPingPressed: Callback? = null
     var onTunnelDiagnosticsPressed: Callback? = null
+    var onDiscoveryRefreshPressed: Callback? = null
     var onSpeedTestPressed: Callback? = null
     var onCallSelected: ParamCallback<CallConfig>? = null
     var onCallLongPressed: ParamCallback<CallConfig>? = null
@@ -98,6 +101,7 @@ class MainFragmentView(private val root: View) {
         }
         pingButton.setOnClickListener { onPingPressed?.invoke() }
         copySocksButton.setOnClickListener { onTunnelDiagnosticsPressed?.invoke() }
+        roomRefreshButton.setOnClickListener { onDiscoveryRefreshPressed?.invoke() }
         speedTestButton.setOnClickListener { onSpeedTestPressed?.invoke() }
     }
 
@@ -182,6 +186,12 @@ class MainFragmentView(private val root: View) {
 
     fun bindStatusText(text: String) {
         statusDetail.text = text
+    }
+
+    fun bindRoomWarmup(text: String, refreshing: Boolean) {
+        roomWarmupStatus.text = text
+        roomRefreshButton.alpha = if (refreshing) 0.55f else 1.0f
+        roomRefreshButton.isEnabled = !refreshing
     }
 
     fun setStats(uptimeText: String, mode: String) {

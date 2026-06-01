@@ -47,7 +47,7 @@ val vkBotPeerId = requiredMobileSecret("VK_BOT_PEER_ID")
 
 val versionMajor = 0
 val versionMinor = 3
-val versionPatch = 15
+val versionPatch = 16
 val versionBuild = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 0
 
 android {

@@ -29,6 +29,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         fun onConnectPressed(config: CallConfig)
         fun onDisconnectPressed()
         fun onDiscoveryConnectPressed()
+        fun onDiscoveryRefreshPressed()
         fun onPingPressed(callback: (success: Boolean, rttMs: Int) -> Unit)
         fun onTunnelDiagnosticsPressed(callback: (text: String, ok: Boolean) -> Unit, progress: (text: String) -> Unit)
         fun onSpeedTestPressed(callback: (text: String, ok: Boolean) -> Unit)
@@ -60,6 +61,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
                 }
             }
         }
+        container.onDiscoveryRefreshPressed = { host()?.onDiscoveryRefreshPressed() }
         container.onTunnelDiagnosticsPressed = {
             container.showTunnelDiagnosticsRunning()
             host()?.onTunnelDiagnosticsPressed(
@@ -146,6 +148,10 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
 
     fun onDestinationsChanged() {
         content?.bindCalls(Prefs.savedDestinations, Prefs.activeDestinationId)
+    }
+
+    fun onRoomWarmupChanged(text: String, refreshing: Boolean) {
+        content?.bindRoomWarmup(text, refreshing)
     }
 
     private fun showRowMenu(config: CallConfig) {
