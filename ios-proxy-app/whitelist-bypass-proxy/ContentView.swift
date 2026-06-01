@@ -29,7 +29,7 @@ struct ContentView: View {
                         .environmentObject(proxyManager)
 
                     if proxyManager.showLogs && proxyManager.captchaURL == nil {
-                        LogsCard(logs: proxyManager.logs)
+                        LogsCard(logs: proxyManager.logs, onCopy: proxyManager.copyLogs)
                     }
                 }
                 .padding(.vertical, 16)
@@ -310,12 +310,21 @@ struct ProxyInfoView: View {
 
 struct LogsCard: View {
     let logs: [String]
+    let onCopy: () -> Void
 
     var body: some View {
         CardView {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Logs")
-                    .font(.headline)
+                HStack {
+                    Text("Logs")
+                        .font(.headline)
+                    Spacer()
+                    Button(action: onCopy) {
+                        Label(NSLocalizedString("btn_copy_logs", comment: ""), systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
                 LogView(logs: logs)
                     .frame(minHeight: 140, maxHeight: 240)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))

@@ -5,6 +5,29 @@ enum WtBusCrypto {
     private static let b64url = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
     private static let custom64 = Array("АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдежзийклмнопрстуфхцчшщъыьэюя")
 
+    static func encryptEnvelope(prefix: String, payload: [String: Any]) -> String? {
+        let kid = WtBusSecrets.keyID.isEmpty ? "k1" : WtBusSecrets.keyID
+        guard !WtBusSecrets.keyB64.isEmpty,
+              let keyData = decodeBase64URL(WtBusSecrets.keyB64),
+              keyData.count == 32,
+              JSONSerialization.isValidJSONObject(payload),
+              let plain = try? JSONSerialization.data(withJSONObject: payload, options: []) else { return nil }
+        do {
+            let key = SymmetricKey(data: keyData)
+            let nonceData = Data((0..<12).map { _ in UInt8.random(in: 0...255) })
+            let nonce = try AES.GCM.Nonce(data: nonceData)
+            let aad = Data("\(prefix).\(kid)".utf8)
+            let box = try AES.GCM.seal(plain, using: key, nonce: nonce, authenticating: aad)
+            var blob = Data()
+            blob.append(nonceData)
+            blob.append(box.ciphertext)
+            blob.append(box.tag)
+            return "\(prefix).\(kid).\(encodeCustom(blob))"
+        } catch {
+            return nil
+        }
+    }
+
     static func decryptEnvelope(prefix: String, kid: String, encoded: String) -> [String: Any]? {
         guard !WtBusSecrets.keyB64.isEmpty,
               let keyData = decodeBase64URL(WtBusSecrets.keyB64),
@@ -26,6 +49,20 @@ enum WtBusCrypto {
         } catch {
             return nil
         }
+    }
+
+    private static func encodeCustom(_ data: Data) -> String {
+        let raw = data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        var result = ""
+        for ch in raw {
+            if let idx = b64url.firstIndex(of: ch) {
+                result.append(custom64[idx])
+            }
+        }
+        return result
     }
 
     private static func decodeCustom(_ text: String) -> Data? {

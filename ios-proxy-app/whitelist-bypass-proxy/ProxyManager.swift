@@ -226,6 +226,10 @@ class ProxyManager: ObservableObject {
 
     private var pendingLogs: [String] = []
     private var logFlushScheduled = false
+    private var staleRoomAutoRescanCount = 0
+    private var badDiscoveryRooms: Set<String> = []
+    private var currentDiscoveryRoom: String?
+    private let clientId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
 
     var activeSocksUser: String {
         switch socksAuthMode {
@@ -339,6 +343,9 @@ class ProxyManager: ObservableObject {
 
         logs.removeAll()
         pendingLogs.removeAll()
+        badDiscoveryRooms.removeAll()
+        currentDiscoveryRoom = nil
+        staleRoomAutoRescanCount = 0
         errorMessage = ""
         status = .idle
         isRunning = true
@@ -423,15 +430,21 @@ class ProxyManager: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 self.lastDiscoverySource = source ?? ""
-                let freeRooms = rooms.filter { $0.isFree }
+                let allFreeRooms = rooms.filter { $0.isFree }
+                let freeRooms = allFreeRooms.filter { !self.badDiscoveryRooms.contains($0.room) }
+                let ignored = allFreeRooms.count - freeRooms.count
                 self.discoveredFreeCount = freeRooms.count
                 self.discoveryStatus = String(format: NSLocalizedString("discovery_found", comment: ""), freeRooms.count)
                 self.statusText = self.discoveryStatus
-                self.appendLog("Discovery found free rooms: \(freeRooms.count)")
+                self.appendLog("Discovery found free rooms: \(freeRooms.count)" + (ignored > 0 ? " (ignored bad: \(ignored))" : ""))
                 guard let selected = freeRooms.first else {
+                    self.discoveryScanner.sendClientEvent(type: "request_room", clientId: self.clientId, room: nil, reason: "no_free_rooms_or_all_bad", badRooms: Array(self.badDiscoveryRooms)) { ok in
+                        DispatchQueue.main.async { self.appendLog("Private-bus request_room sent: \(ok)") }
+                    }
                     self.showToast(NSLocalizedString("discovery_no_free", comment: ""))
                     return
                 }
+                self.currentDiscoveryRoom = selected.room
                 self.callUrl = selected.room
                 self.appendLog("Discovery selected: \(selected.creator) \(selected.room)")
                 self.connect()
@@ -487,6 +500,9 @@ class ProxyManager: ObservableObject {
         statusText = nil
         logs.removeAll()
         pendingLogs.removeAll()
+        badDiscoveryRooms.removeAll()
+        currentDiscoveryRoom = nil
+        staleRoomAutoRescanCount = 0
         errorMessage = ""
         socksPort = 1080
     }
@@ -501,6 +517,23 @@ class ProxyManager: ObservableObject {
             isRunning = false
             captchaURL = nil
             appendLog("ERROR: \(errorText)")
+            if errorText.localizedCaseInsensitiveContains("guest cannot create room") {
+                let badRoom = currentDiscoveryRoom ?? callUrl
+                if !badRoom.isEmpty {
+                    badDiscoveryRooms.insert(badRoom)
+                    discoveryScanner.sendClientEvent(type: "bad_room", clientId: clientId, room: badRoom, reason: "guest_cannot_create_room", badRooms: Array(badDiscoveryRooms)) { [weak self] ok in
+                        DispatchQueue.main.async { self?.appendLog("Private-bus bad_room sent: \(ok)") }
+                    }
+                }
+                appendLog("Room looks stale; blacklisted locally and rescanning discovery")
+                if discoveryEnabled && staleRoomAutoRescanCount < 2 {
+                    staleRoomAutoRescanCount += 1
+                    callUrl = ""
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                        self?.scanAndConnect()
+                    }
+                }
+            }
         } else if statusString.hasPrefix("CAPTCHA:") {
             captchaURL = String(statusString.dropFirst(8))
             statusText = NSLocalizedString("status_solve_captcha", comment: "")
@@ -511,6 +544,9 @@ class ProxyManager: ObservableObject {
                 statusText = nil
             }
             status = ProxyStatus(rawValue: statusString) ?? .idle
+            if statusString.localizedCaseInsensitiveContains("TUNNEL") || statusString.localizedCaseInsensitiveContains("READY") {
+                staleRoomAutoRescanCount = 0
+            }
             appendLog("Status: \(statusString)")
         }
     }
@@ -535,6 +571,13 @@ class ProxyManager: ObservableObject {
         if logs.count > 100 {
             logs.removeFirst(logs.count - 100)
         }
+    }
+
+    func copyLogs() {
+        flushLogs()
+        let text = logs.isEmpty ? "(empty log)" : logs.joined(separator: "\n")
+        UIPasteboard.general.string = text
+        showToast(NSLocalizedString("toast_logs_copied", comment: ""))
     }
 
 

@@ -32,6 +32,8 @@
 "settings_auth_manual" = "Manual";
 "settings_display" = "Display";
 "settings_show_logs" = "Show Logs";
+"btn_copy_logs" = "Copy log";
+"toast_logs_copied" = "Log copied";
 "settings_vp8_pacing" = "VP8 settings";
 "settings_vp8_fps" = "FPS";
 "settings_vp8_batch" = "Batch";
