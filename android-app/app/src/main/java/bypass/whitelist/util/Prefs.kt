@@ -1,5 +1,6 @@
 package bypass.whitelist.util
 
+import java.util.UUID
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.SharedPreferences
@@ -63,6 +64,19 @@ object Prefs {
     var connectOnStart: Boolean
         get() = prefs.getBoolean(PrefsKeys.CONNECT_ON_START, false)
         set(value) = prefs.edit { putBoolean(PrefsKeys.CONNECT_ON_START, value) }
+
+    var telemetryEnabled: Boolean
+        get() = prefs.getBoolean(PrefsKeys.TELEMETRY_ENABLED, false)
+        set(value) = prefs.edit { putBoolean(PrefsKeys.TELEMETRY_ENABLED, value) }
+
+    val discoveryClientId: String
+        get() {
+            val existing = prefs.getString(PrefsKeys.DISCOVERY_CLIENT_ID, null)
+            if (!existing.isNullOrBlank()) return existing
+            val generated = "android-" + UUID.randomUUID().toString()
+            prefs.edit { putString(PrefsKeys.DISCOVERY_CLIENT_ID, generated) }
+            return generated
+        }
 
     var tunnelMode: TunnelMode
         get() {

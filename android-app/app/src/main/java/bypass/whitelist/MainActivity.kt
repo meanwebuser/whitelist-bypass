@@ -940,8 +940,8 @@ class MainActivity :
     }
 
     private fun speedUserAgent(): String {
-        val androidId = try { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown" } catch (_: Exception) { "unknown" }
-        return "BEZabotny-NET/${appVersionName()} Android/${Build.VERSION.RELEASE} ${Build.MANUFACTURER}/${Build.MODEL} client=${androidId.takeLast(8)}"
+        val clientTail = Prefs.discoveryClientId.takeLast(8)
+        return "BEZabotny-NET/${appVersionName()} Android/${Build.VERSION.RELEASE} ${Build.MANUFACTURER}/${Build.MODEL} client=$clientTail"
     }
 
     private fun appVersionName(): String = try {
@@ -1070,10 +1070,7 @@ class MainActivity :
     }
 
 
-    private fun discoveryClientId(): String {
-        val androidId = try { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown" } catch (_: Exception) { "unknown" }
-        return "android-${androidId.takeLast(12)}"
-    }
+    private fun discoveryClientId(): String = Prefs.discoveryClientId
 
     private fun sendPrivateBusClientEvent(type: String, room: String?, reason: String) {
         val badSnapshot = synchronized(badDiscoveryRooms) { badDiscoveryRooms.toList() }

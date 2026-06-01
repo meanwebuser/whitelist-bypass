@@ -52,11 +52,14 @@ val wtbusKeyId = brandEnvValue(brandDotEnv, "WTBUS_KEY_ID") ?: "k1"
 val vkBotToken = requiredMobileSecret("VK_BOT_TOKEN")
 val vkBotPeerId = requiredMobileSecret("VK_BOT_PEER_ID")
 val vkTelemetryPeerId = brandEnvValue(brandDotEnv, "VK_TELEMETRY_PEER_ID") ?: ""
+val okGraphToken = brandEnvValue(brandDotEnv, "OK_GRAPH_TOKEN", "OK_GRAPH_TOKEN_1") ?: ""
+val okGraphChatId = brandEnvValue(brandDotEnv, "OK_GRAPH_CHAT_ID") ?: "chat:C5cbdd516a400"
+val okGraphUserId = brandEnvValue(brandDotEnv, "OK_GRAPH_USER_ID") ?: "user:910509886088"
 val androidUpdateUrl = requiredAndroidConfig("ANDROID_UPDATE_URL", "UPDATE_URL", "APP_UPDATE_URL")
 
 val versionMajor = 0
 val versionMinor = 3
-val versionPatch = 19
+val versionPatch = 20
 val versionBuild = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 0
 
 android {
@@ -81,6 +84,9 @@ android {
         buildConfigField("String", "VK_BOT_TOKEN", "\"$vkBotToken\"")
         buildConfigField("String", "VK_BOT_PEER_ID", "\"$vkBotPeerId\"")
         buildConfigField("String", "VK_TELEMETRY_PEER_ID", "\"$vkTelemetryPeerId\"")
+        buildConfigField("String", "OK_GRAPH_TOKEN", "\"$okGraphToken\"")
+        buildConfigField("String", "OK_GRAPH_CHAT_ID", "\"$okGraphChatId\"")
+        buildConfigField("String", "OK_GRAPH_USER_ID", "\"$okGraphUserId\"")
         buildConfigField("String", "ANDROID_UPDATE_URL", "\"$androidUpdateUrl\"")
     }
 

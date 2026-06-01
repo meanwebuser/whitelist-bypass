@@ -190,6 +190,7 @@ class ProxyManager: ObservableObject {
     @Published var vpnStatusText: String = "VPN: not configured"
     @Published var vpnAvailable: Bool = SystemVPNManager.shared.isPacketTunnelBundled
     @Published var discoveryEnabled: Bool = AppDefaults.discoveryEnabled { didSet { AppDefaults.discoveryEnabled = discoveryEnabled } }
+    @Published var telemetryEnabled: Bool = AppDefaults.telemetryEnabled { didSet { AppDefaults.telemetryEnabled = telemetryEnabled } }
     @Published var discoveryStatus: String = NSLocalizedString("discovery_idle", comment: "")
     @Published var discoveredFreeCount: Int = 0
     @Published var lastDiscoverySource: String = ""
@@ -231,7 +232,15 @@ class ProxyManager: ObservableObject {
     private var staleRoomAutoRescanCount = 0
     private var badDiscoveryRooms: Set<String> = []
     private var currentDiscoveryRoom: String?
-    private let clientId = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+    private let clientId = ProxyManager.stableClientId()
+
+    private static func stableClientId() -> String {
+        let key = "wt.discoveryClientId"
+        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty { return existing }
+        let generated = "ios-" + UUID().uuidString
+        UserDefaults.standard.set(generated, forKey: key)
+        return generated
+    }
 
     var activeSocksUser: String {
         switch socksAuthMode {
@@ -595,6 +604,32 @@ class ProxyManager: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.flushLogs()
             }
+        }
+        maybeSendTelemetryLog(message)
+    }
+
+    private func maybeSendTelemetryLog(_ message: String) {
+        let lower = message.lowercased()
+        let shouldSend = lower.contains("error")
+            || lower.contains("failed")
+            || lower.contains("no free")
+            || lower.contains("bad_room")
+            || lower.contains("private-bus request_room sent: false")
+            || lower.contains("private-bus bad_room sent: false")
+        guard shouldSend, telemetryEnabled else { return }
+        discoveryScanner.sendTelemetry(
+            clientId: clientId,
+            level: (lower.contains("error") || lower.contains("failed") || lower.contains("false")) ? "error" : "info",
+            event: "client_log",
+            messageText: message,
+            room: currentDiscoveryRoom ?? callUrl,
+            meta: [
+                "status": status.rawValue,
+                "discovery_status": discoveryStatus,
+                "free_count": discoveredFreeCount,
+            ]
+        ) { [weak self] ok in
+            if !ok { self?.discoveryLogger.error("telemetry client_log send failed") }
         }
     }
 
