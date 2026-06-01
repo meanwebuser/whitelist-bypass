@@ -79,10 +79,10 @@ struct HeaderCard: View {
                         .font(.title3)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Whitelist Bypass")
+                    Text("BEZаботный-NET")
                         .font(.title3)
                         .fontWeight(.semibold)
-                    Text("SOCKS proxy over call transport")
+                    Text("VPN/proxy over free rooms")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -97,31 +97,24 @@ struct LinkCard: View {
 
     var body: some View {
         CardView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Call room")
-                    .font(.headline)
-                ZStack(alignment: .trailing) {
-                    TextField(NSLocalizedString("hint_call_link", comment: ""), text: $proxyManager.callUrl)
-                        .textFieldStyle(.plain)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .keyboardType(.URL)
-                        .padding(12)
-                        .padding(.trailing, proxyManager.callUrl.isEmpty ? 0 : 28)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                    if !proxyManager.callUrl.isEmpty {
-                        Button(action: { proxyManager.callUrl = "" }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.trailing, 10)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(NSLocalizedString("primary_title", comment: ""))
+                            .font(.headline)
+                        Text(proxyManager.isRunning ? NSLocalizedString("primary_connected", comment: "") : proxyManager.discoveryStatus)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
+                    Spacer()
+                    Text("free: \(proxyManager.discoveredFreeCount)")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(.tertiarySystemGroupedBackground))
+                        .clipShape(Capsule())
                 }
-                Text("WB room links are converted to wbstream:// automatically.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
 
                 Button(action: {
                     if proxyManager.isRunning {
@@ -130,14 +123,47 @@ struct LinkCard: View {
                         proxyManager.connect()
                     }
                 }) {
-                    Label(proxyManager.isRunning ? NSLocalizedString("btn_stop", comment: "") : NSLocalizedString("btn_go", comment: ""), systemImage: proxyManager.isRunning ? "stop.fill" : "play.fill")
-                        .fontWeight(.semibold)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
+                    VStack(spacing: 8) {
+                        Image(systemName: proxyManager.isRunning ? "power.circle.fill" : "power.circle")
+                            .font(.system(size: 64, weight: .semibold))
+                        Text(proxyManager.isRunning ? NSLocalizedString("btn_disconnect", comment: "") : NSLocalizedString("btn_connect", comment: ""))
+                            .font(.headline)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(proxyManager.isRunning ? .red : .green)
+
+                if proxyManager.isRunning {
+                    Button(action: { proxyManager.checkTelegramThroughTunnel() }) {
+                        Label(NSLocalizedString("btn_check_telegram", comment: ""), systemImage: "paperplane.fill")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(.blue)
+
+                    if !proxyManager.telegramCheckStatus.isEmpty {
+                        Text(proxyManager.telegramCheckStatus)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                DisclosureGroup(NSLocalizedString("manual_room", comment: "")) {
+                    TextField(NSLocalizedString("hint_call_link", comment: ""), text: $proxyManager.callUrl)
+                        .textFieldStyle(.plain)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
+                        .keyboardType(.URL)
+                        .padding(12)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
             }
         }
     }
@@ -152,7 +178,6 @@ struct ProxyCard: View {
                 Label("Proxy ready", systemImage: "checkmark.seal.fill")
                     .font(.headline)
                     .foregroundColor(.green)
-                ProxyInfoView(proxyUrl: proxyManager.socksUrl, onCopy: proxyManager.copyProxyUrl)
                 Text(NSLocalizedString("vpn_profile_hint", comment: ""))
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -383,6 +408,12 @@ struct SettingsView: View {
                             .autocapitalization(.none)
                         SecureField(NSLocalizedString("hint_password", comment: ""), text: $proxyManager.manualSocksPass)
                     }
+                    Button(NSLocalizedString("settings_copy_socks", comment: "")) { proxyManager.copyProxyUrl() }
+                }
+
+                Section(NSLocalizedString("settings_discovery", comment: "")) {
+                    Toggle(NSLocalizedString("settings_discovery_enabled", comment: ""), isOn: $proxyManager.discoveryEnabled)
+                    Text(String(format: NSLocalizedString("settings_app_version", comment: ""), AppVersion.name, AppVersion.code))
                 }
 
                 Section(NSLocalizedString("settings_display", comment: "")) {

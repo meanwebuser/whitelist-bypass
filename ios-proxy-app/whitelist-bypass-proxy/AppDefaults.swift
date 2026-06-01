@@ -12,6 +12,12 @@ enum DefaultsKeys {
     static let vp8Fps = "vp8Fps"
     static let vp8Batch = "vp8Batch"
     static let dualTrack = "dualTrack"
+    static let discoveryEnabled = "discoveryEnabled"
+}
+
+struct AppVersion {
+    static let name = "0.3.9"
+    static let code = 3009
 }
 
 enum VP8Defaults {
@@ -25,6 +31,11 @@ struct AppDefaults {
     static var lastUrl: String {
         get { defaults.string(forKey: DefaultsKeys.lastUrl) ?? "" }
         set { defaults.set(newValue, forKey: DefaultsKeys.lastUrl) }
+    }
+
+    static var discoveryEnabled: Bool {
+        get { defaults.object(forKey: DefaultsKeys.discoveryEnabled) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: DefaultsKeys.discoveryEnabled) }
     }
 
     static var socksPort: Int {
