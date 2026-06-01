@@ -16,8 +16,8 @@ enum DefaultsKeys {
 }
 
 struct AppVersion {
-    static let name = "0.3.15"
-    static let code = 3015
+    static let name = "0.3.17"
+    static let code = 3017
 }
 
 enum VP8Defaults {

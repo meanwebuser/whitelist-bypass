@@ -1,5 +1,6 @@
 import Foundation
 import os
+import UIKit
 
 struct DiscoveryRoom: Identifiable {
     let id: String
@@ -41,6 +42,69 @@ final class VKDiscoveryScanner {
             self.logger.warning("private-bus returned no rooms; falling back to wall")
             self.scanWall(urls: self.urls, firstSource: nil, completion: completion)
         }
+    }
+
+
+    func sendClientEvent(type: String, clientId: String, room: String?, reason: String, badRooms: [String] = [], completion: ((Bool) -> Void)? = nil) {
+        guard !WtBusSecrets.vkBotToken.isEmpty, !WtBusSecrets.vkBotPeerID.isEmpty else {
+            logger.warning("client event skipped: empty token or peer id")
+            completion?(false)
+            return
+        }
+        let now = Int(Date().timeIntervalSince1970)
+        let payload: [String: Any] = [
+            "v": 2,
+            "type": type,
+            "client_id": clientId,
+            "platform": "ios",
+            "app_version": AppVersion.name,
+            "app_build": AppVersion.code,
+            "device": UIDevice.current.model,
+            "system_version": UIDevice.current.systemVersion,
+            "room": room ?? "",
+            "bad_rooms": badRooms,
+            "reason": reason,
+            "created_at": now,
+            "seq": now,
+            "nonce": UUID().uuidString,
+        ]
+        guard let message = WtBusCrypto.encryptEnvelope(prefix: "wtclient2", payload: payload),
+              let url = URL(string: "https://api.vk.com/method/messages.send") else {
+            logger.error("client event encryption failed type=\(type, privacy: .public)")
+            completion?(false)
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("BEZabotny-NET iOS private bus", forHTTPHeaderField: "User-Agent")
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let params: [(String, String)] = [
+            ("peer_id", WtBusSecrets.vkBotPeerID),
+            ("random_id", String(Int(Date().timeIntervalSince1970 * 1000))),
+            ("message", message),
+            ("access_token", WtBusSecrets.vkBotToken),
+            ("v", "5.199"),
+        ]
+        request.httpBody = params.map { key, value in
+            "\(key)=\(value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value)"
+        }.joined(separator: "&").data(using: .utf8)
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+            if let error = error {
+                self?.logger.error("client event send failed type=\(type, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
+                completion?(false)
+                return
+            }
+            let ok: Bool
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                ok = json["error"] == nil && json["response"] != nil
+            } else {
+                ok = false
+            }
+            self?.logger.info("client event sent type=\(type, privacy: .public) ok=\(ok, privacy: .public)")
+            completion?(ok)
+        }.resume()
     }
 
     private func scanPrivateBus(completion: @escaping ([DiscoveryRoom]) -> Void) {
