@@ -17,6 +17,7 @@ data class CallConfig(
     val leaseId: String? = null,
     val expiresAt: Long? = null,
     val nodeLabel: String? = null,
+    val ownerClientId: String? = null,
 ) {
     val platform: CallPlatform get() = CallPlatform.fromUrl(url)
 
@@ -47,6 +48,7 @@ data class CallConfig(
         leaseId?.let { put("leaseId", it) }
         expiresAt?.let { put("expiresAt", it) }
         nodeLabel?.let { put("nodeLabel", it) }
+        ownerClientId?.let { put("ownerClientId", it) }
     }
 
     companion object {
@@ -60,6 +62,7 @@ data class CallConfig(
             leaseId: String?,
             expiresAt: Long?,
             nodeLabel: String? = null,
+            ownerClientId: String? = null,
         ): CallConfig {
             val stable = listOfNotNull(slotId, leaseId).joinToString(":").ifBlank { url }
             return CallConfig(
@@ -71,6 +74,7 @@ data class CallConfig(
                 leaseId = leaseId,
                 expiresAt = expiresAt,
                 nodeLabel = nodeLabel,
+                ownerClientId = ownerClientId,
             )
         }
 
@@ -87,6 +91,7 @@ data class CallConfig(
             leaseId = obj.optString("leaseId").takeIf { it.isNotBlank() },
             expiresAt = if (obj.has("expiresAt")) obj.optLong("expiresAt") else null,
             nodeLabel = obj.optString("nodeLabel").takeIf { it.isNotBlank() },
+            ownerClientId = obj.optString("ownerClientId").takeIf { it.isNotBlank() },
         )
 
         fun listToJson(items: List<CallConfig>): String {
