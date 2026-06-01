@@ -629,9 +629,16 @@ class ProxyManager: ObservableObject {
         return "socks://127.0.0.1:\(socksPort)#WLB-\(socksPort)"
     }
 
+    var happProxyUri: String {
+        if socksAuthEnabled {
+            return "socks5://\(activeSocksUser):\(activeSocksPass)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
+        }
+        return "socks5://127.0.0.1:\(socksPort)#WLB-\(socksPort)"
+    }
+
     func openHappProxy() {
-        UIPasteboard.general.string = xrayProxyUri
-        guard let encoded = xrayProxyUri.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+        UIPasteboard.general.string = happProxyUri
+        guard let encoded = happProxyUri.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
               let url = URL(string: "happ://add/\(encoded)") else {
             showToast(NSLocalizedString("toast_happ_params_copied", comment: ""))
             return

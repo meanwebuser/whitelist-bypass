@@ -15,11 +15,21 @@
       "bundleIdentifier": "bypass.whitelist.whitelist-bypass-proxy",
       "developerName": "BEZаботный-NET",
       "subtitle": "WhiteTransport encrypted proxy",
-      "localizedDescription": "Fixes iOS discovery build: WTBUS/VK secrets are now required during release build, so encrypted private-bus room scan works again. Keeps no-auth SOCKS5 default and discovery Logger.",
+      "localizedDescription": "Happ import now uses socks5:// links while generic copy keeps socks:// format. Private-bus discovery secrets remain required.",
       "iconURL": "https://github.com/megamen32/whitelist-bypass/releases/download/ios-proxy-v0.3.5-altstore-3/icon.png",
       "tintColor": "#6D5DF6",
       "category": "utilities",
       "versions": [
+        {
+          "version": "0.3.14",
+          "buildVersion": "3014",
+          "date": "2026-06-01T05:25:00Z",
+          "localizedDescription": "Fixes Happ Add profile: uses socks5://127.0.0.1:port#WLB-port instead of socks://.",
+          "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-ios.ipa",
+          "size": 6939697,
+          "sha256": "001aed7eafad7c8031609d50e55be5fba6c29d010122712d618027b1d60e264f",
+          "minOSVersion": "16.0"
+        },
         {
           "version": "0.3.13",
           "buildVersion": "3013",
@@ -64,11 +74,11 @@
         "entitlements": [],
         "privacy": {}
       },
-      "version": "0.3.13",
-      "versionDate": "2026-06-01T05:18:00Z",
+      "version": "0.3.14",
+      "versionDate": "2026-06-01T05:25:00Z",
       "downloadURL": "https://download.bezrabotnyi.com/white-transport/BEZabotny-NET-ios.ipa",
-      "size": 6938405,
-      "sha256": "19d7447c5e8d4a50a6d9e4b0d33f68d664a72febad59273793dc02fcc4afb2a9"
+      "size": 6939697,
+      "sha256": "001aed7eafad7c8031609d50e55be5fba6c29d010122712d618027b1d60e264f"
     }
   ],
   "news": [
