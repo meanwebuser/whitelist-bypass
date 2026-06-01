@@ -1,5 +1,4 @@
 import Foundation
-import CFNetwork
 import UIKit
 import Combine
 import Mobile
@@ -436,13 +435,9 @@ class ProxyManager: ObservableObject {
         request.timeoutInterval = 12
         request.setValue("BEZabotny-NET iOS", forHTTPHeaderField: "User-Agent")
         let config = URLSessionConfiguration.ephemeral
-        config.connectionProxyDictionary = [
-            kCFNetworkProxiesSOCKSEnable as String: true,
-            kCFNetworkProxiesSOCKSProxy as String: "127.0.0.1",
-            kCFNetworkProxiesSOCKSPort as String: socksPort,
-            kCFStreamPropertySOCKSUser as String: activeSocksUser,
-            kCFStreamPropertySOCKSPassword as String: activeSocksPass,
-        ]
+        // iOS does not expose SOCKS CFNetwork proxy keys. When the system VPN
+        // profile is active, this request is routed by the OS tunnel; in proxy-only
+        // mode it remains a direct reachability check.
         URLSession(configuration: config).dataTask(with: request) { [weak self] _, response, error in
             DispatchQueue.main.async {
                 guard let self = self else { return }
