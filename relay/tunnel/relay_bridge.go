@@ -60,21 +60,22 @@ type udpClient struct {
 }
 
 type RelayBridge struct {
-	tunnelMu    sync.RWMutex
-	tunnel      DataTunnel
-	conns       sync.Map
-	udpClients  sync.Map
-	udpSessions sync.Map
-	nackedConns sync.Map
-	nextID      atomic.Uint32
-	logFn       func(string, ...any)
-	mode        string
-	readBuf     int
-	ready       chan struct{}
-	once        sync.Once
-	socksUser   string
-	socksPass   string
-	upstream    *common.Socks5Upstream
+	tunnelMu         sync.RWMutex
+	tunnel           DataTunnel
+	tunnelGeneration atomic.Uint64
+	conns            sync.Map
+	udpClients       sync.Map
+	udpSessions      sync.Map
+	nackedConns      sync.Map
+	nextID           atomic.Uint32
+	logFn            func(string, ...any)
+	mode             string
+	readBuf          int
+	ready            chan struct{}
+	once             sync.Once
+	socksUser        string
+	socksPass        string
+	upstream         *common.Socks5Upstream
 
 	persistentListener atomic.Bool
 	listenerMu         sync.Mutex
@@ -115,8 +116,9 @@ func NewRelayBridge(tunnel DataTunnel, mode string, readBuf int, logFn func(stri
 		readBuf: readBuf,
 		ready:   make(chan struct{}),
 	}
+	rb.tunnelGeneration.Store(1)
 	tunnel.SetOnData(rb.handleTunnelData)
-	tunnel.SetOnClose(rb.handleTunnelClose)
+	tunnel.SetOnClose(rb.handleTunnelCloseFor(1))
 	return rb
 }
 
@@ -130,11 +132,32 @@ func (rb *RelayBridge) SetUpstreamSocks(addr, user, pass string) {
 
 func (rb *RelayBridge) SwapTunnel(newTunnel DataTunnel) {
 	rb.tunnelMu.Lock()
+	oldTunnel := rb.tunnel
 	rb.tunnel = newTunnel
+	gen := rb.tunnelGeneration.Add(1)
 	rb.tunnelMu.Unlock()
+	if oldTunnel != nil {
+		oldTunnel.SetOnData(func([]byte) {})
+		oldTunnel.SetOnClose(func() {})
+	}
 	newTunnel.SetOnData(rb.handleTunnelData)
-	newTunnel.SetOnClose(rb.handleTunnelClose)
-	rb.closeAll()
+	newTunnel.SetOnClose(rb.handleTunnelCloseFor(gen))
+	tcpCount, udpCount := rb.activeCounts()
+	rb.logFn("relay: tunnel swapped mode=%s gen=%d active_tcp=%d active_udp=%d nextID=%d", rb.mode, gen, tcpCount, udpCount, rb.nextID.Load())
+}
+
+func (rb *RelayBridge) activeCounts() (int, int) {
+	tcpCount := 0
+	rb.conns.Range(func(_, _ any) bool {
+		tcpCount++
+		return true
+	})
+	udpCount := 0
+	rb.udpClients.Range(func(_, _ any) bool {
+		udpCount++
+		return true
+	})
+	return tcpCount, udpCount
 }
 
 func (rb *RelayBridge) currentTunnel() DataTunnel {
@@ -143,12 +166,19 @@ func (rb *RelayBridge) currentTunnel() DataTunnel {
 	return rb.tunnel
 }
 
-func (rb *RelayBridge) handleTunnelClose() {
-	if rb.persistentListener.Load() {
-		rb.closeAll()
-		return
+func (rb *RelayBridge) handleTunnelCloseFor(gen uint64) func() {
+	return func() {
+		current := rb.tunnelGeneration.Load()
+		if gen != current {
+			rb.logFn("relay: ignoring stale tunnel close mode=%s gen=%d current=%d", rb.mode, gen, current)
+			return
+		}
+		if rb.persistentListener.Load() {
+			rb.closeAll()
+			return
+		}
+		rb.Close()
 	}
-	rb.Close()
 }
 
 func (rb *RelayBridge) closeAll() {

@@ -397,6 +397,18 @@ class MainActivity :
         }
     }
 
+    override fun onTunnelDiagnosticsPressed(callback: (String, Boolean) -> Unit, progress: (String) -> Unit) {
+        thread {
+            val result = try {
+                runTunnelDiagnostics { text -> runOnUiThread { progress(text) } }
+            } catch (e: Exception) {
+                appendLog("Tunnel diagnostics failed: ${e.message}")
+                "diagnostics failed: ${e.message ?: "unknown"}" to false
+            }
+            runOnUiThread { callback(result.first, result.second) }
+        }
+    }
+
     override fun onSpeedTestPressed(callback: (String, Boolean) -> Unit) {
         thread {
             val result = try {
@@ -693,6 +705,29 @@ class MainActivity :
         supportFragmentManager.fragments.firstOrNull { it is LogsFragment } as? LogsFragment
 
 
+    private fun runTunnelDiagnostics(progress: (String) -> Unit): Pair<String, Boolean> {
+        val host = "10.255.0.1"
+        val port = 18080
+        progress(getString(R.string.diag_ping))
+        val latencyStart = System.nanoTime()
+        val ping = socksHttp(host, port, "GET /ping HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII), readTimeoutMs = 7000)
+        if (!String(ping, Charsets.ISO_8859_1).startsWith("HTTP/1.")) return "ping failed" to false
+        val latencyMs = ((System.nanoTime() - latencyStart) / 1_000_000).toInt()
+
+        progress("/ping: ${latencyMs} ms · ${getString(R.string.diag_external_ip)}")
+        val ipResp = socksHttp("api.ipify.org", 80, "GET / HTTP/1.1\r\nHost: api.ipify.org\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII), readTimeoutMs = 9000)
+        val externalIp = String(httpBody(ipResp), Charsets.UTF_8).trim().lineSequence().firstOrNull()?.take(64).orEmpty()
+        if (externalIp.isBlank()) return "/ping: ${latencyMs} ms · external IP failed" to false
+
+        progress("/ping: ${latencyMs} ms · IP: $externalIp · ${getString(R.string.diag_telegram)}")
+        val tgStart = System.nanoTime()
+        val tgOk = probeHttpsViaSocks5(host = "t.me", path = "/Kuplinov_Telegram/1032")
+        val tgMs = ((System.nanoTime() - tgStart) / 1_000_000).toInt()
+        val text = "/ping ${latencyMs} ms · IP $externalIp · t.me ${if (tgOk) "OK" else "FAIL"} ${tgMs} ms"
+        appendLog("Tunnel diagnostics $text")
+        return text to tgOk
+    }
+
     private fun runTunnelSpeedTest(): Pair<String, Boolean> {
         val host = "10.255.0.1"
         val port = 18080
@@ -733,9 +768,9 @@ class MainActivity :
         "unknown"
     }
 
-    private fun socksHttp(host: String, port: Int, request: ByteArray): ByteArray {
+    private fun socksHttp(host: String, port: Int, request: ByteArray, readTimeoutMs: Int = 15000): ByteArray {
         openSocks5Tcp(host, port).use { socket ->
-            socket.soTimeout = 15000
+            socket.soTimeout = readTimeoutMs
             val output = socket.getOutputStream()
             val input = socket.getInputStream()
             output.write(request)

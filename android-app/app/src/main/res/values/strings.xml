@@ -81,12 +81,17 @@
     <string name="stat_uptime">Uptime</string>
     <string name="stat_mode">Mode</string>
 
-    <string name="ping_run">Check Telegram through tunnel</string>
+    <string name="ping_run">Check tunnel</string>
     <string name="ping_running">Pinging&#8230;</string>
     <string name="ping_ok">%1$s reached via tunnel</string>
     <string name="ping_fail">%1$s not reachable via tunnel</string>
     <string name="ping_timeout">timeout</string>
     <string name="ping_ms">%1$d ms</string>
+
+    <string name="diag_ping">/ping…</string>
+    <string name="diag_external_ip">External IP…</string>
+    <string name="diag_telegram">Telegram URL…</string>
+    <string name="diag_result_title">Tunnel diagnostics</string>
     <string name="speedtest_run">Check speed</string>
     <string name="speedtest_running">Testing…</string>
     <string name="speedtest_result_title">Tunnel speed</string>

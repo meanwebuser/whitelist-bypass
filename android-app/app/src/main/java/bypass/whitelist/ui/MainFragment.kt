@@ -30,6 +30,7 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
         fun onDisconnectPressed()
         fun onDiscoveryConnectPressed()
         fun onPingPressed(callback: (success: Boolean, rttMs: Int) -> Unit)
+        fun onTunnelDiagnosticsPressed(callback: (text: String, ok: Boolean) -> Unit, progress: (text: String) -> Unit)
         fun onSpeedTestPressed(callback: (text: String, ok: Boolean) -> Unit)
         fun isTunnelActive(): Boolean
         fun currentStatus(): VpnStatus?
@@ -58,6 +59,13 @@ class MainFragment : Fragment(R.layout.fragment_main_screen) {
                     host()?.onDiscoveryConnectPressed()
                 }
             }
+        }
+        container.onTunnelDiagnosticsPressed = {
+            container.showTunnelDiagnosticsRunning()
+            host()?.onTunnelDiagnosticsPressed(
+                callback = { text, ok -> container.showTunnelDiagnosticsResult(text, ok) },
+                progress = { text -> container.showTunnelDiagnosticsProgress(text) }
+            )
         }
         container.onSpeedTestPressed = {
             container.showSpeedRunning()
