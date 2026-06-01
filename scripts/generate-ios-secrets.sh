@@ -17,6 +17,20 @@ load_env_file "$ROOT/.env"
 load_env_file "$ROOT/ios-proxy-app/.env"
 load_env_file "$ROOT/android-app/.env"
 esc() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${1:-}"; }
+ALLOW_EMPTY_MOBILE_SECRETS="${ALLOW_EMPTY_MOBILE_SECRETS:-0}"
+missing=()
+for k in WTBUS_KEY_B64 VK_BOT_TOKEN VK_BOT_PEER_ID; do
+  if [[ -z "${!k:-}" ]]; then
+    missing+=("$k")
+  fi
+done
+if (( ${#missing[@]} > 0 )) && [[ "$ALLOW_EMPTY_MOBILE_SECRETS" != "1" ]]; then
+  echo "ERROR: missing required iOS mobile secret(s): ${missing[*]}" >&2
+  echo "Put them in ios-proxy-app/.env, android-app/.env or export them." >&2
+  echo "Set ALLOW_EMPTY_MOBILE_SECRETS=1 only for intentionally empty/dev builds." >&2
+  exit 64
+fi
+
 cat > "$OUT" <<SWIFT
 import Foundation
 
@@ -25,14 +39,11 @@ enum WtBusSecrets {
     static let keyB64 = $(esc "${WTBUS_KEY_B64:-}")
     static let keyID = $(esc "${WTBUS_KEY_ID:-k1}")
     static let vkBotToken = $(esc "${VK_BOT_TOKEN:-}")
-    static let vkBotPeerID = $(esc "${VK_BOT_PEER_ID:-46887791}")
+    static let vkBotPeerID = $(esc "${VK_BOT_PEER_ID:-}")
 }
 SWIFT
-if [[ -n "${WTBUS_KEY_B64:-}" && -n "${VK_BOT_TOKEN:-}" ]]; then
-  echo "Generated iOS WtBusSecrets.swift with WTBUS key, VK token and VK peer ${VK_BOT_PEER_ID:-46887791}"
-elif [[ "${REQUIRE_IOS_SECRETS:-0}" == "1" ]]; then
-  echo "ERROR: REQUIRE_IOS_SECRETS=1 but WTBUS_KEY_B64 or VK_BOT_TOKEN is empty" >&2
-  exit 64
+if [[ -n "${WTBUS_KEY_B64:-}" && -n "${VK_BOT_TOKEN:-}" && -n "${VK_BOT_PEER_ID:-}" ]]; then
+  echo "Generated iOS WtBusSecrets.swift with WTBUS key, VK token and VK peer ${VK_BOT_PEER_ID}"
 else
-  echo "Generated iOS WtBusSecrets.swift with empty secrets; private/encrypted discovery disabled" >&2
+  echo "Generated iOS WtBusSecrets.swift with empty secrets because ALLOW_EMPTY_MOBILE_SECRETS=1" >&2
 fi
