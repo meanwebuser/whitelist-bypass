@@ -85,7 +85,24 @@ function bindSettingsEvents(): void {
     tm.botSettings.groupId = (document.getElementById('vkGroupId') as HTMLInputElement).value.trim();
     tm.botSettings.userId = (document.getElementById('vkUserId') as HTMLInputElement).value.trim();
     tm.saveBotSettings();
+    tm.upstreamProxy.socks = (document.getElementById('upstreamSocks') as HTMLInputElement).value.trim();
+    tm.upstreamProxy.user = (document.getElementById('upstreamUser') as HTMLInputElement).value.trim();
+    tm.upstreamProxy.pass = (document.getElementById('upstreamPass') as HTMLInputElement).value.trim();
+    tm.saveUpstreamProxy();
     closeSettings();
+  });
+  document.querySelectorAll('.btn-clear-cookies').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const platform = (btn as HTMLElement).dataset.platform!;
+      const status = document.getElementById('clearCookiesStatus')!;
+      status.textContent = `Clearing ${platform} cookies...`;
+      try {
+        const removed = await window.bridge.clearCookies(platform);
+        status.textContent = `Cleared ${removed} ${platform} cookies. Log in again to use it.`;
+      } catch {
+        status.textContent = `Failed to clear ${platform} cookies.`;
+      }
+    });
   });
 }
 
@@ -154,6 +171,10 @@ function openSettings(): void {
   (document.getElementById('vkToken') as HTMLInputElement).value = tm.botSettings.token;
   (document.getElementById('vkGroupId') as HTMLInputElement).value = tm.botSettings.groupId;
   (document.getElementById('vkUserId') as HTMLInputElement).value = tm.botSettings.userId;
+  (document.getElementById('upstreamSocks') as HTMLInputElement).value = tm.upstreamProxy.socks;
+  (document.getElementById('upstreamUser') as HTMLInputElement).value = tm.upstreamProxy.user;
+  (document.getElementById('upstreamPass') as HTMLInputElement).value = tm.upstreamProxy.pass;
+  document.getElementById('clearCookiesStatus')!.textContent = '';
 }
 
 function closeSettings(): void {
@@ -168,6 +189,8 @@ function init(): void {
   bindErrorPopup();
   bindLogEvents();
   bindHeadlessEvents();
+
+  window.bridge.setUpstreamProxy(tm.upstreamProxy);
 
   window.bridge.onRelayLog((tabId: string, msg: string) => {
     tm.appendRelayLog(tabId, msg);

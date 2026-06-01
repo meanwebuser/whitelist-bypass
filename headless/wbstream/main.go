@@ -15,6 +15,7 @@ import (
 )
 
 func main() {
+	common.MaybePrintVersion()
 	cookiesPath := flag.String("cookies", "", "path to cookies-wbstream.json")
 	accessTokenFlag := flag.String("access-token", "", "WB Stream bearer access token; can also be set with WBSTREAM_ACCESS_TOKEN")
 	roomFlag := flag.String("room", "", "WB Stream room id, wbstream://<id>, or https://stream.wb.ru/room/<id> (empty = create new)")
@@ -23,6 +24,9 @@ func main() {
 	customReadBuf := flag.Int("read-buf", 0, "DC read buffer size in bytes, used with -resources custom")
 	customMemLimit := flag.Int64("mem-limit", 0, "memory limit in bytes, used with -resources custom")
 	writeFile := flag.String("write-file", "", "path to file where active room id is appended")
+	upstreamSocks := flag.String("upstream-socks", "", "route tunneled egress through this SOCKS5 proxy (host:port), e.g. a local VPN client")
+	upstreamUser := flag.String("upstream-user", "", "upstream SOCKS5 username")
+	upstreamPass := flag.String("upstream-pass", "", "upstream SOCKS5 password")
 	flag.Parse()
 
 	var readBuf int
@@ -129,6 +133,7 @@ func main() {
 				mode = "dc"
 			}
 			activeBridge = tunnel.NewRelayBridge(tun, "creator", bridgeReadBuf, log.Printf)
+			activeBridge.SetUpstreamSocks(*upstreamSocks, *upstreamUser, *upstreamPass)
 			activeBridge.SetOnPeerConfig(func(fps, batch, trackCount int) {
 				sess.AdaptTrackCount(trackCount)
 			})

@@ -109,8 +109,7 @@ The full step-by-step (Russian) covers each platform in detail: see [docs/SETUP.
 ./copy-hooks.sh        # Copy JS hooks to android assets
 ./build-app.sh         # Android APK
 ./build-headless.sh    # Headless binaries only (current platform)
-./build-joiners.sh     # Linux headless joiners (cross-compiled)
-./build-bot.sh         # Linux headless-vk-bot (cross-compiled)
+./build-cli.sh         # Per-arch zips of headless creators + joiners + vk-bot (linux x64/ia32/arm64)
 ./build-creator.sh     # Creator Electron app (all platforms)
 ./build-ios.sh         # Go .xcframework for iOS
 ```
@@ -170,7 +169,7 @@ Six binaries are produced - three creators, two Linux joiners, and the VK bot:
 
 ```sh
 ./headless/vk/headless-vk-creator               --cookies cookies-vk.json
-./headless/telemost/headless-telemost-creator   --cookies cookies-telemost.json
+./headless/telemost/headless-telemost-creator   --cookies cookies-yandex.json
 ./headless/wbstream/headless-wbstream-creator
 ./headless/wbstream-joiner/headless-wbstream-joiner --room <link> --socks-port 1080
 ./headless/telemost-joiner/headless-telemost-joiner --tm-link <link> --socks-port 1080

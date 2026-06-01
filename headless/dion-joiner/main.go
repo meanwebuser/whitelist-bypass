@@ -16,6 +16,7 @@ import (
 )
 
 func main() {
+	common.MaybePrintVersion()
 	roomFlag := flag.String("room", "", "event slug or https://dion.vc/event/<slug> (required)")
 	displayName := flag.String("name", "Joiner", "display name in the room")
 	socksHost := flag.String("socks-host", common.SocksLocalhostIP, "SOCKS5 listen address (use 0.0.0.0 to expose on LAN)")

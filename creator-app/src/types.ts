@@ -65,6 +65,12 @@ export interface BotSettings {
   userId: string;
 }
 
+export interface UpstreamProxy {
+  socks: string;
+  user: string;
+  pass: string;
+}
+
 export interface TabConfig {
   mode: TunnelMode;
   peerId: number;
@@ -144,6 +150,8 @@ export interface Bridge {
   closeTab(tabId: string): Promise<void>;
   startBot(settings: BotSettings): Promise<void>;
   stopBot(): Promise<void>;
+  setUpstreamProxy(proxy: UpstreamProxy): Promise<void>;
+  clearCookies(platform: string): Promise<number>;
   onCreateBotTab(cb: (data: BotTabData) => void): void;
   getCallCreatorCode(scriptFile: string): Promise<string>;
   onBotError(cb: (msg: string) => void): void;

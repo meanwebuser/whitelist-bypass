@@ -23,6 +23,8 @@
 
 > **Рекомендуется headless с обеих сторон** - там есть обфускация траффика, настраиваемый VP8 pacing и WB Stream. Старый браузерный путь (Android `WebView` против Electron-creator с JS-хуками) ещё работает, но медленнее, без обфускации и постепенно выводится из эксплуатации.
 
+> **Рекомендация: лучше запускать Creator на домашнем ПК.** Некоторые операторы и платформы могут заметить, что звонок идёт с IP дата-центра (VPS / хостинг), и заблокировать аккаунт. На VPS всё работает - но если дорожите аккаунтом, запускайте Creator с домашнего интернета либо используйте отдельный / одноразовый аккаунт. Касается обоих серверных вариантов - headless и десктопного Creator под XPRA.
+
 ## Creator (десктоп)
 
 ![Интерфейс](res/desktop_interface.png)
@@ -94,6 +96,27 @@
 | `--max-dc-buf <bytes>` | да | - | - | Порог `BufferedAmountLowThreshold` DC, только с `--resources custom` |
 | `--mem-limit <bytes>` | да | да | да | Soft memory limit Go рантайма, только с `--resources custom` |
 | `--write-file <path>` | да | да | да | Файл, куда записывается активная ссылка на звонок |
+| `--upstream-socks <host:port>` | да | да | да | Гнать трафик joiner-а через локальный SOCKS5 прокси, например VPN-клиент |
+| `--upstream-user <user>` | да | да | да | Логин для upstream SOCKS5 |
+| `--upstream-pass <pass>` | да | да | да | Пароль для upstream SOCKS5 |
+| `--version` | да | да | да | Вывести версию и выйти |
+
+### Выходной трафик через свой VPS
+
+По умолчанию creator открывает соединения joiner-а напрямую со своего IP. Флаг `--upstream-socks` заставляет creator отправлять **только трафик joiner-а** в локальный SOCKS5 прокси - обычно его поднимает VPN-клиент (xray / sing-box / v2ray и т.п.) рядом с creator. Получается цепочка:
+
+```
+joiner (цензура) -> creator (домашний ПК) -> VPN-клиент (тот же ПК) -> VPS -> интернет
+```
+
+SOCKS5-инбаунд VPN-клиента должен поддерживать UDP ASSOCIATE (xray / sing-box умеют).
+
+```sh
+./headless-telemost-creator \
+  --cookies cookies-yandex.json \
+  --tm-link https://telemost.yandex.ru/j/<id> \
+  --upstream-socks 127.0.0.1:1080
+```
 
 ### Режимы ресурсов
 
@@ -218,6 +241,7 @@ Standalone Go-бинарник `headless-vk-bot` - то же самое, что 
 | `--dion-cookies <path>` | Путь к DION куки (нужен для `/dion` и для join по `dion://` / `dion.vc` ссылке) |
 | `--sessions-dir <dir>` | Папка для логов запущенных creators. Опционально - без флага логи не пишутся, stdout/stderr creators отбрасываются |
 | `--resources <mode>` | Режим ресурсов, передаётся каждому запускаемому creator: `default` / `moderate` / `unlimited`. По умолчанию `default`. `custom` не поддерживается, так как у каждого бинарника свой набор флагов настройки |
+| `--version` | Вывести версию и выйти |
 
 При получении команды бот запускает соответствующий creator с `--write-file <tmp>`, ждёт появления линка в файле (до 60 секунд) и присылает его в чат. `--user-id` принимает список через запятую; если указан, команды от пользователей не из списка игнорируются.
 
@@ -268,7 +292,7 @@ mkdir wlb-bot && cd wlb-bot
 curl -O https://raw.githubusercontent.com/kulikov0/whitelist-bypass/main/headless/docker/docker-compose.yml
 curl -L https://raw.githubusercontent.com/kulikov0/whitelist-bypass/main/headless/docker/.env.example -o .env
 # отредактируйте .env: VK_TOKEN, VK_GROUP_ID, VK_USER_IDS
-# положите рядом cookies-vk.json, cookies-telemost.json, cookies-wbstream.json, cookies-dion.json
+# положите рядом cookies-vk.json, cookies-yandex.json, cookies-wbstream.json, cookies-dion.json
 # (для платформ, которые не используете - создайте файл с содержимым `[]`)
 docker compose up -d
 docker compose logs -f
@@ -289,11 +313,16 @@ docker compose pull && docker compose up -d
 | `BINS_DIR` | нет | `/opt/wlb/bin` | `--bins-dir` |
 | `SESSIONS_DIR` | нет | `/data/sessions` | `--sessions-dir` |
 | `VK_COOKIES` | нет | `/data/cookies-vk.json` если есть | `--vk-cookies` |
-| `TM_COOKIES` | нет | `/data/cookies-telemost.json` если есть | `--tm-cookies` |
+| `TM_COOKIES` | нет | `/data/cookies-yandex.json` если есть | `--tm-cookies` |
 | `WB_COOKIES` | нет | `/data/cookies-wbstream.json` если есть | `--wb-cookies` |
 | `DION_COOKIES` | нет | `/data/cookies-dion.json` если есть | `--dion-cookies` |
+| `UPSTREAM_SOCKS` | нет | - | `--upstream-socks` |
+| `UPSTREAM_USER` | нет | - | `--upstream-user` |
+| `UPSTREAM_PASS` | нет | - | `--upstream-pass` |
 
 > Если WebRTC-туннель не доходит через сетевой бридж Docker (UDP может отбрасываться), добавьте в `docker-compose.yml` строку `network_mode: host` под сервисом `bot`.
+
+> `UPSTREAM_SOCKS` гонит трафик joiner-а через локальный SOCKS5 (VPN-клиент), см. [Выходной трафик через свой VPS](#выходной-трафик-через-свой-vps). Внутри контейнера `127.0.0.1` - это сам контейнер, а не хост: чтобы дотянуться до VPN-клиента на хосте, используйте `host.docker.internal:<порт>` и раскомментируйте `extra_hosts` в `docker-compose.yml`, либо поднимите VPN-клиент отдельным сервисом и укажите его имя.
 
 ### Команды
 
@@ -481,6 +510,7 @@ curl --socks5 127.0.0.1:1080 https://api.ipify.org
 | `--tunnel-mode <mode>` | да | - | `video` или `dc` (только WB) |
 | `--vp8-fps <fps>` | да | да | частота VP8 кадров (по умолчанию `24`) |
 | `--vp8-batch <n>` | да | да | множитель batch (по умолчанию `30`) |
+| `--version` | да | да | Вывести версию и выйти |
 
 При указании `--socks-user`/`--socks-pass` SOCKS5 требует аутентификацию. Без них прокси открыт без авторизации - на `127.0.0.1` (дефолт) это не страшно, но с `--socks-host 0.0.0.0` любой в локальной сети сможет использовать ваш канал. Всегда ставьте логин/пароль, если биндитесь на `0.0.0.0`.
 

@@ -58,6 +58,8 @@ export enum IPC {
   CLOSE_TAB = 'close-tab',
   START_BOT = 'start-bot',
   STOP_BOT = 'stop-bot',
+  SET_UPSTREAM_PROXY = 'set-upstream-proxy',
+  CLEAR_COOKIES = 'clear-cookies',
   EXPORT_COOKIES_ZIP = 'export-cookies-zip',
   RELAY_LOG = 'relay-log',
   CREATE_BOT_TAB = 'create-bot-tab',

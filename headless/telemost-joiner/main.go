@@ -41,6 +41,7 @@ func resolveHostname(hostname string) (string, error) {
 }
 
 func main() {
+	common.MaybePrintVersion()
 	tmLink := flag.String("tm-link", "", "Telemost conference URI to join (required)")
 	displayName := flag.String("name", "Joiner", "display name in the conference")
 	socksHost := flag.String("socks-host", common.SocksLocalhostIP, "SOCKS5 listen address (use 0.0.0.0 to expose on LAN)")
