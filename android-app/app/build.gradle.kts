@@ -33,10 +33,14 @@ val brandDotEnv = listOf(
 ).firstOrNull { it.isFile }?.let(::loadBrandDotEnv) ?: emptyMap()
 
 val appBrandName = brandEnvValue(brandDotEnv, "APP_BRAND", "BRANDING", "BRAND_NAME", "APP_NAME") ?: "whitelistbypass"
+val wtbusKeyB64 = brandEnvValue(brandDotEnv, "WTBUS_KEY_B64") ?: ""
+val wtbusKeyId = brandEnvValue(brandDotEnv, "WTBUS_KEY_ID") ?: "k1"
+val vkBotToken = brandEnvValue(brandDotEnv, "VK_BOT_TOKEN") ?: ""
+val vkBotPeerId = brandEnvValue(brandDotEnv, "VK_BOT_PEER_ID") ?: ""
 
 val versionMajor = 0
 val versionMinor = 3
-val versionPatch = 9
+val versionPatch = 11
 val versionBuild = System.getenv("BUILD_NUMBER")?.toIntOrNull() ?: 0
 
 android {
@@ -56,6 +60,10 @@ android {
         resValue("string", "app_name", appBrandName)
         manifestPlaceholders["appLabel"] = appBrandName
         manifestPlaceholders["tileLabel"] = appBrandName
+        buildConfigField("String", "WTBUS_KEY_B64", "\"$wtbusKeyB64\"")
+        buildConfigField("String", "WTBUS_KEY_ID", "\"$wtbusKeyId\"")
+        buildConfigField("String", "VK_BOT_TOKEN", "\"$vkBotToken\"")
+        buildConfigField("String", "VK_BOT_PEER_ID", "\"$vkBotPeerId\"")
     }
 
     signingConfigs {
@@ -86,6 +94,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "11"
+    }
+    buildFeatures {
+        buildConfig = true
     }
 }
 
