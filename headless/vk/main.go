@@ -189,7 +189,7 @@ func authAndJoin(cookieStr, okJoinLink string, cfg VKConfig) (*JoinResponse, err
 	}
 
 	ms, _ := json.Marshal(map[string]bool{
-		"isAudioEnabled": false, "isVideoEnabled": true, "isScreenSharingEnabled": false,
+		"isAudioEnabled": false, "isVideoEnabled": true, "isScreenSharingEnabled": true,
 	})
 	r, err = httpPost(apiBaseURL, url.Values{
 		"method": {"vchat.joinConversationByLink"}, "session_key": {okAuth.SessionKey},
@@ -506,12 +506,13 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 	b.iceServers = buildICEServers(callInfo)
 	wsEndpoint := callInfo.WSEndpoint
 
+	capabilities := "2F7F"
 	makeWSURL := func(ep string) string {
 		return ep +
 			"&platform=WEB" +
 			"&appVersion=" + cfg.AppVersion +
 			"&version=" + cfg.ProtocolVersion +
-			"&device=browser&capabilities=0&clientType=VK&tgt=join"
+			"&device=browser&capabilities=" + capabilities + "&clientType=VK&tgt=join"
 	}
 
 	go func() {
@@ -542,7 +543,7 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 		b.vkSend("change-media-settings", map[string]interface{}{
 			"mediaSettings": map[string]interface{}{
 				"isAudioEnabled": false, "isVideoEnabled": true,
-				"isScreenSharingEnabled": false, "isFastScreenSharingEnabled": false,
+				"isScreenSharingEnabled": true, "isFastScreenSharingEnabled": false,
 				"isAudioSharingEnabled": false, "isAnimojiEnabled": false,
 			},
 		})
@@ -680,9 +681,14 @@ func main() {
 		ur.readBufSize = readBuf
 		ur.maxDCBuf = maxDCBuf
 		ur.SetObfuscator(obf)
-		ur.OnConnected = func(tun *tunnel.VP8DataTunnel) {
+		ur.OnConnected = func(tun tunnel.DataTunnel) {
 			rb := tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
 			rb.SetUpstreamSocks(*upstreamSocks, *upstreamUser, *upstreamPass)
+			if st, ok := tun.(*tunnel.SymmetricScreenTunnel); ok {
+				rb.SetOnPeerConfig(func(fps, batch, trackCount int) {
+					st.SetTrackCount(trackCount)
+				})
+			}
 		}
 		return ur
 	}

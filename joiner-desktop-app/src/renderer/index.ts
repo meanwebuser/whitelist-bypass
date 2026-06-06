@@ -99,6 +99,7 @@ startBtn.addEventListener('click', async () => {
     resources: select('resources').value,
     dns: input('dns').value.trim() || '1.1.1.1,8.8.8.8',
     noTun: input('noTun').checked,
+    dualTrack: input('dualTrack').checked,
   };
   const r = await bridge.start(settings);
   if (!r.ok) appendLog(`[ui] start failed: ${r.error}\n`);
