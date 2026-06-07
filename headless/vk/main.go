@@ -75,15 +75,16 @@ type JoinResponse struct {
 }
 
 type Bridge struct {
-	mu         sync.Mutex
-	vkWs       *websocket.Conn
-	vkSeq      int
-	iceServers []webrtc.ICEServer
-	topology   string
-	peers      map[int64]struct{}
-	relay      Relay
-	newRelay   func() Relay
-	p2p        *P2PHandler
+	mu            sync.Mutex
+	vkWs          *websocket.Conn
+	vkSeq         int
+	iceServers    []webrtc.ICEServer
+	topology      string
+	peers         map[int64]struct{}
+	relay         Relay
+	newRelay      func() Relay
+	p2p           *P2PHandler
+	screenSharing bool
 }
 
 func httpPost(endpoint string, form url.Values, extraHeaders map[string]string) ([]byte, error) {
@@ -189,7 +190,7 @@ func authAndJoin(cookieStr, okJoinLink string, cfg VKConfig) (*JoinResponse, err
 	}
 
 	ms, _ := json.Marshal(map[string]bool{
-		"isAudioEnabled": false, "isVideoEnabled": true, "isScreenSharingEnabled": true,
+		"isAudioEnabled": false, "isVideoEnabled": true, "isScreenSharingEnabled": false,
 	})
 	r, err = httpPost(apiBaseURL, url.Values{
 		"method": {"vchat.joinConversationByLink"}, "session_key": {okAuth.SessionKey},
@@ -333,6 +334,31 @@ func (b *Bridge) vkSend(command string, extra map[string]interface{}) {
 	}
 	b.vkWs.WriteMessage(websocket.TextMessage, out)
 	log.Printf("[vk-ws] -> %s", command)
+}
+
+func (b *Bridge) sendMediaSettings(screenSharing bool) {
+	b.vkSend("change-media-settings", map[string]interface{}{
+		"mediaSettings": map[string]interface{}{
+			"isAudioEnabled": false, "isVideoEnabled": true,
+			"isScreenSharingEnabled": screenSharing, "isFastScreenSharingEnabled": false,
+			"isAudioSharingEnabled": false, "isAnimojiEnabled": false,
+		},
+	})
+}
+
+// setScreenSharing re-announces media settings when the peer track count
+// crosses the single-track boundary, mirroring how the web client toggles
+// screenshare mid-call. State resets to false on every WS reconnect.
+func (b *Bridge) setScreenSharing(enabled bool) {
+	b.mu.Lock()
+	if b.vkWs == nil || b.screenSharing == enabled {
+		b.mu.Unlock()
+		return
+	}
+	b.screenSharing = enabled
+	b.mu.Unlock()
+	log.Printf("[vk-ws] peer track count change, screenshare=%v", enabled)
+	b.sendMediaSettings(enabled)
 }
 
 func (b *Bridge) handleVKMessage(raw []byte) {
@@ -540,13 +566,10 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 		}
 		log.Println("[vk-ws] Connected")
 
-		b.vkSend("change-media-settings", map[string]interface{}{
-			"mediaSettings": map[string]interface{}{
-				"isAudioEnabled": false, "isVideoEnabled": true,
-				"isScreenSharingEnabled": true, "isFastScreenSharingEnabled": false,
-				"isAudioSharingEnabled": false, "isAnimojiEnabled": false,
-			},
-		})
+		b.mu.Lock()
+		b.screenSharing = false
+		b.mu.Unlock()
+		b.sendMediaSettings(false)
 
 		err := b.readLoop()
 		log.Printf("[vk-ws] Closed: %s", common.MaskError(err))
@@ -687,6 +710,7 @@ func main() {
 			if st, ok := tun.(*tunnel.SymmetricScreenTunnel); ok {
 				rb.SetOnPeerConfig(func(fps, batch, trackCount int) {
 					st.SetTrackCount(trackCount)
+					bridge.setScreenSharing(trackCount > 1)
 				})
 			}
 		}
