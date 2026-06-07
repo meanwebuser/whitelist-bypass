@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"whitelist-bypass/relay/common"
@@ -371,4 +372,20 @@ func KickParticipant(client *http.Client, accessToken, roomID, participantID str
 		return fmt.Errorf("kick %s -> %d %s", participantID, resp.StatusCode, string(body))
 	}
 	return nil
+}
+
+type localStorageFile struct {
+	AccessToken string `json:"accessToken"`
+}
+
+func AccessTokenFromLocalStorageFile(path string) (string, string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+	var ls localStorageFile
+	if err := json.Unmarshal(data, &ls); err != nil {
+		return "", "", err
+	}
+	return ls.AccessToken, "", nil
 }
