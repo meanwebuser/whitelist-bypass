@@ -5,19 +5,29 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <ScrollView
-        android:id="@+id/activityScroll"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:overScrollMode="never">
+        android:layout_weight="1">
 
-        <LinearLayout
-            android:id="@+id/eventsContainer"
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/activityList"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:overScrollMode="never" />
+
+        <TextView
+            android:id="@+id/activityEmpty"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
-    </ScrollView>
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:paddingHorizontal="20dp"
+            android:paddingVertical="24dp"
+            android:text="@string/activity_empty"
+            android:textColor="@color/ink_3" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="match_parent"

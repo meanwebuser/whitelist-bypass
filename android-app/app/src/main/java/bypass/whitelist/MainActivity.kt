@@ -20,7 +20,6 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
-import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.viewpager2.adapter.FragmentStateAdapter
@@ -90,6 +89,7 @@ class MainActivity :
     private var navPageChangeCallback: ViewPager2.OnPageChangeCallback? = null
     private var navScrollState: Int = ViewPager2.SCROLL_STATE_IDLE
     @Volatile private var resetInProgress: Boolean = false
+    @Volatile private var overlayVisible: Boolean = false
     @Volatile private var resetGeneration: Long = 0L
     private var pendingConnectConfig: CallConfig? = null
     private val navColorEvaluator = ArgbEvaluator()
@@ -373,6 +373,8 @@ class MainActivity :
         return text.split('\n').filter { it.isNotBlank() }
     }
 
+    override fun activityLogRevision(): Long = logWriter.revision()
+
     override fun copyLogs() {
         val contents =
             if (logWriter.file.exists()) logWriter.file.readText() else logWriter.displayText()
@@ -397,11 +399,10 @@ class MainActivity :
     }
 
     override fun appendLog(message: String) {
-        val (line, _) = logWriter.append(message)
-        runOnUiThread {
-            logsFragment()?.onLineAppended(line)
-            if (overlayLogs.isVisible) {
-                overlayLogsText.append("$line\n")
+        logWriter.append(message)
+        if (overlayVisible) {
+            runOnUiThread {
+                overlayLogsText.text = logWriter.displayText()
                 overlayLogsScroll.post { overlayLogsScroll.fullScroll(View.FOCUS_DOWN) }
             }
         }
@@ -655,6 +656,7 @@ class MainActivity :
         joinOverlayContainer.visibility = if (visible) View.VISIBLE else View.GONE
         overlayLogs.visibility = if (visible) View.VISIBLE else View.GONE
         bottomNav.visibility = if (visible) View.GONE else View.VISIBLE
+        overlayVisible = visible
         if (visible) {
             overlayLogsText.text = logWriter.displayText()
             overlayLogsScroll.post { overlayLogsScroll.fullScroll(View.FOCUS_DOWN) }
