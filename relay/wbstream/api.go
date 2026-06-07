@@ -234,6 +234,36 @@ func AuthAsLoggedIn(client *http.Client, cookieHeader, accessToken, roomID, disp
 	return joinAndGetDetails(client, accessToken, roomID, displayName)
 }
 
+// DeleteRoom deletes a WBStream room. Best-effort; returns nil on success or
+// if the room is already gone (404). Other errors are returned for logging.
+func DeleteRoom(client *http.Client, accessToken, roomID string) error {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	deleteURL := fmt.Sprintf("%s/api-room/api/v2/room/%s/delete", APIBase, roomID)
+	req, err := http.NewRequest(http.MethodPost, deleteURL, strings.NewReader("{}"))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("User-Agent", common.UserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("delete-room: status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
+}
+
 var WBStreamCookieAllowlist = []string{
 	"wbx-refresh",
 	"x_wbaas_token",
