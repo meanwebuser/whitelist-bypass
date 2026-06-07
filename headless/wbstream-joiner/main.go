@@ -17,6 +17,10 @@ import (
 func main() {
 	common.MaybePrintVersion()
 	roomFlag := flag.String("room", "", "WB Stream room id, wbstream://<id>, or https://stream.wb.ru/room/<id> (required)")
+	cookiesPath := flag.String("cookies", "", "path to cookies-wbstream.json")
+	localStoragePath := flag.String("local-storage", "", "path to exported stream.wb.ru localStorage")
+	accessTokenFlag := flag.String("access-token", "", "WB Stream bearer token")
+	deviceIDFlag := flag.String("device-id", "", "WB auth device id")
 	displayName := flag.String("name", "Joiner", "display name in the room")
 	socksHost := flag.String("socks-host", common.SocksLocalhostIP, "SOCKS5 listen address (use 0.0.0.0 to expose on LAN)")
 	socksPort := flag.Int("socks-port", 1080, "SOCKS5 listen port")
@@ -49,7 +53,39 @@ func main() {
 	}
 
 	roomID := wbstream.ParseRoomID(*roomFlag)
-	id, roomToken, _, serverURL, err := wbstream.AuthAndGetToken(nil, roomID, *displayName)
+	var cookieHeader string
+	if *cookiesPath != "" {
+		cookieHeader = common.FilterCookies(common.LoadCookies(*cookiesPath), wbstream.WBStreamCookieAllowlist)
+	}
+	deviceID := *deviceIDFlag
+	bearer := *accessTokenFlag
+	if *localStoragePath != "" {
+		storedBearer, storedDeviceID, err := wbstream.AccessTokenFromLocalStorageFile(*localStoragePath)
+		if err != nil {
+			log.Fatalf("[auth] localStorage: %v", err)
+		}
+		if bearer == "" {
+			bearer = storedBearer
+		}
+		if deviceID == "" {
+			deviceID = storedDeviceID
+		}
+	}
+	if bearer == "" && cookieHeader != "" && deviceID != "" {
+		refreshed, err := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
+		if err != nil {
+			log.Printf("[auth] slide-v3 refresh failed: %v", err)
+		} else {
+			bearer = refreshed
+		}
+	}
+	var id, roomToken, serverURL string
+	var err error
+	if bearer != "" || cookieHeader != "" {
+		id, roomToken, _, serverURL, err = wbstream.AuthAsLoggedIn(nil, cookieHeader, bearer, roomID, *displayName)
+	} else {
+		id, roomToken, _, serverURL, err = wbstream.AuthAndGetToken(nil, roomID, *displayName)
+	}
 	if err != nil {
 		log.Fatalf("[auth] %v", err)
 	}
