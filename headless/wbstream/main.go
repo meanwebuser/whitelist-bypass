@@ -16,6 +16,9 @@ import (
 func main() {
 	common.MaybePrintVersion()
 	cookiesPath := flag.String("cookies", "", "path to cookies-wbstream.json")
+	localStoragePath := flag.String("local-storage", "", "path to exported stream.wb.ru localStorage")
+	accessTokenFlag := flag.String("access-token", "", "WB Stream bearer token")
+	deviceIDFlag := flag.String("device-id", "", "WB auth device id")
 	roomFlag := flag.String("room", "", "WB Stream room id, wbstream://<id>, or https://stream.wb.ru/room/<id> (empty = create new)")
 	displayName := flag.String("name", "Headless", "display name in the room")
 	resources := flag.String("resources", "default", "resource mode: default, moderate, unlimited, custom")
@@ -60,16 +63,36 @@ func main() {
 		log.Fatalf("[auth] --cookies is required")
 	}
 	rawCookies := common.LoadCookies(*cookiesPath)
-	deviceID := common.CookieValue(rawCookies, "__wb_device_id")
-	if deviceID == "" {
-		log.Fatalf("[auth] cookies file is missing __wb_device_id; re-export via creator-app's 'Export Cookies' button")
-	}
 	cookieHeader := common.FilterCookies(rawCookies, wbstream.WBStreamCookieAllowlist)
-	bearer, err := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
-	if err != nil {
-		log.Fatalf("[auth] slide-v3 refresh: %v", err)
+	deviceID := *deviceIDFlag
+	bearer := *accessTokenFlag
+	if *localStoragePath != "" {
+		storedBearer, storedDeviceID, err := wbstream.AccessTokenFromLocalStorageFile(*localStoragePath)
+		if err != nil {
+			log.Fatalf("[auth] localStorage: %v", err)
+		}
+		if bearer == "" {
+			bearer = storedBearer
+		}
+		if deviceID == "" {
+			deviceID = storedDeviceID
+		}
 	}
-	log.Printf("[auth] bearer refreshed (len=%d)", len(bearer))
+	if deviceID == "" {
+		deviceID = common.CookieValue(rawCookies, "__wb_device_id")
+	}
+	if bearer == "" && deviceID != "" {
+		refreshed, err := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
+		if err != nil {
+			log.Printf("[auth] slide-v3 refresh failed: %v", err)
+		} else {
+			bearer = refreshed
+		}
+	}
+	if bearer == "" {
+		log.Fatalf("[auth] --access-token or --local-storage with wb_auth_auth_slice is required")
+	}
+	log.Printf("[auth] bearer loaded (len=%d)", len(bearer))
 	requestedRoom := wbstream.ParseRoomID(*roomFlag)
 	roomID, roomToken, accessToken, serverURL, err := wbstream.AuthAsLoggedIn(nil, cookieHeader, bearer, requestedRoom, *displayName)
 	if err != nil {
@@ -153,13 +176,14 @@ func main() {
 		}
 		time.Sleep(3 * time.Second)
 
-		newBearer, refreshErr := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
-		if refreshErr != nil {
-			log.Printf("[rejoin] slide-v3 refresh failed: %v, retrying in 5s", refreshErr)
-			time.Sleep(5 * time.Second)
-			continue
+		if deviceID != "" {
+			newBearer, refreshErr := wbstream.RefreshAccessToken(nil, cookieHeader, deviceID)
+			if refreshErr != nil {
+				log.Printf("[rejoin] slide-v3 refresh failed, reusing current bearer: %v", refreshErr)
+			} else {
+				bearer = newBearer
+			}
 		}
-		bearer = newBearer
 		_, newRoomToken, newAccessToken, newServerURL, err := wbstream.AuthAsLoggedIn(nil, cookieHeader, bearer, roomID, *displayName)
 		if err != nil {
 			log.Printf("[rejoin] auth failed: %v, retrying in 5s", err)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"whitelist-bypass/relay/common"
@@ -255,6 +256,11 @@ type slideV3Response struct {
 	Payload struct {
 		AccessToken string `json:"access_token"`
 	} `json:"payload"`
+	AccessToken string `json:"access_token"`
+}
+
+type localStorageAuthSlice struct {
+	AccessToken string `json:"accessToken"`
 }
 
 func newRequestID() string {
@@ -265,6 +271,32 @@ func newRequestID() string {
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+func AccessTokenFromLocalStorageFile(path string) (string, string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", err
+	}
+	var accessToken string
+	var deviceID string
+	for _, line := range strings.Split(string(data), "\n") {
+		key, value, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		switch key {
+		case "wb_auth_api_device_id":
+			deviceID = strings.TrimSpace(value)
+		case "wb_auth_auth_slice":
+			var auth localStorageAuthSlice
+			if err := json.Unmarshal([]byte(value), &auth); err != nil {
+				return "", "", fmt.Errorf("parse wb_auth_auth_slice: %w", err)
+			}
+			accessToken = auth.AccessToken
+		}
+	}
+	return accessToken, deviceID, nil
 }
 
 func RefreshAccessToken(client *http.Client, cookieHeader, deviceID string) (string, error) {
@@ -300,10 +332,14 @@ func RefreshAccessToken(client *http.Client, cookieHeader, deviceID string) (str
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return "", fmt.Errorf("slide-v3 decode: %w", err)
 	}
-	if r.Payload.AccessToken == "" {
+	accessToken := r.Payload.AccessToken
+	if accessToken == "" {
+		accessToken = r.AccessToken
+	}
+	if accessToken == "" {
 		return "", fmt.Errorf("slide-v3: empty access_token in response: %s", string(raw))
 	}
-	return r.Payload.AccessToken, nil
+	return accessToken, nil
 }
 
 func joinAndGetDetails(client *http.Client, accessToken, roomID, displayName string) (string, string, string, string, error) {
