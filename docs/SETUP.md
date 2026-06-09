@@ -2,6 +2,10 @@
 
 Скачайте нужные файлы из [GitHub Releases](https://github.com/kulikov0/whitelist-bypass/releases).
 
+> # !!! ВАЖНО: один Creator = один Joiner !!!
+>
+> Одна сессия Creator (одна вкладка в десктопе или один headless-процесс) обслуживает **ровно одного** Joiner-а. Нельзя подключить нескольких Joiner-ов к одной ссылке - туннель сломается. Для каждого устройства поднимайте **отдельный** Creator со своей ссылкой.
+
 ## Содержание
 
 - [Что нужно](#что-нужно)
@@ -184,14 +188,17 @@ SOCKS5-инбаунд VPN-клиента должен поддерживать U
 
 ### Команды
 
-- `/vk dc` - звонок VK, режим DC
-- `/vk video` - звонок VK, режим Video
 - `/vk headless` - звонок VK, headless режим
-- `/tm video` - звонок Telemost, режим Video
 - `/tm headless` - звонок Telemost, headless режим
 - `/wb headless` - комната WB Stream
 - `/list` - список активных вкладок
 - `/close <id>` - закрыть вкладку по ID
+
+#### Legacy (браузерный путь, выводится из эксплуатации)
+
+- `/vk dc` - звонок VK, режим DC
+- `/vk video` - звонок VK, режим Video
+- `/tm video` - звонок Telemost, режим Video
 
 ![Команды бота](res/bot_commands.jpeg)
 
