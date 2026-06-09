@@ -36,6 +36,7 @@ import (
 type statusEmitter struct{}
 
 var tunnelLostCh = make(chan struct{}, 1)
+var selfHealReconnect bool
 
 func (statusEmitter) EmitStatus(status string) {
 	log.Printf("[status] %s", status)
@@ -45,7 +46,7 @@ func (statusEmitter) EmitStatus(status string) {
 	if strings.HasPrefix(status, "CAPTCHA:") {
 		fmt.Printf("STATUS:%s\n", status)
 	}
-	if status == common.StatusTunnelLost {
+	if status == common.StatusTunnelLost && !selfHealReconnect {
 		select {
 		case tunnelLostCh <- struct{}{}:
 		default:
@@ -236,12 +237,26 @@ func main() {
 		}
 	}
 
+	var (
+		bridge   *tunnel.RelayBridge
+		bridgeMu sync.Mutex
+	)
 	onConnected := func(t tunnel.DataTunnel) {
 		readBuf := common.VP8BufSize
 		if _, ok := t.(*tunnel.DCTunnel); ok {
 			readBuf = common.DCBufSize
 		}
-		bridge := tunnel.NewRelayBridgeWithAuth(t, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
+		bridgeMu.Lock()
+		defer bridgeMu.Unlock()
+		// Reconnect: swap the new tunnel behind the persistent SOCKS
+		// listener instead of binding a second one
+		if bridge != nil {
+			bridge.SwapTunnel(t)
+			log.Printf("[socks] tunnel swapped after reconnect")
+			return
+		}
+		bridge = tunnel.NewRelayBridgeWithAuth(t, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
+		bridge.SetPersistentListener(true)
 		bridge.MarkReady()
 		addr := fmt.Sprintf("%s:%d", *socksHost, *socksPort)
 		go func() {
@@ -265,6 +280,7 @@ func main() {
 		runTelemost(*link, *displayName, *vp8FPS, *vp8Batch,
 			onConnected, addCandidate)
 	case "vk":
+		selfHealReconnect = true
 		runVK(*link, *displayName, *tunnelMode, *vp8FPS, *vp8Batch, *dualTrack,
 			onConnected, addCandidate)
 	case "dion", "dn":

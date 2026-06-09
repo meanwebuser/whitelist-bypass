@@ -22,6 +22,7 @@ import (
 )
 
 const TopologyDirect = "DIRECT"
+const maxServerBounces = 5
 
 type CallInfo struct {
 	CallID     string
@@ -85,6 +86,10 @@ type Bridge struct {
 	newRelay      func() Relay
 	p2p           *P2PHandler
 	screenSharing bool
+
+	serverBounces       int
+	suppressScreenshare bool
+	bouncing            bool
 }
 
 func httpPost(endpoint string, form url.Values, extraHeaders map[string]string) ([]byte, error) {
@@ -355,6 +360,11 @@ func (b *Bridge) setScreenSharing(enabled bool) {
 		b.mu.Unlock()
 		return
 	}
+	if enabled && b.suppressScreenshare {
+		b.mu.Unlock()
+		log.Println("[vk-ws] screenshare suppressed after SERVER flap, staying single-track DIRECT")
+		return
+	}
 	b.screenSharing = enabled
 	b.mu.Unlock()
 	log.Printf("[vk-ws] peer track count change, screenshare=%v", enabled)
@@ -394,13 +404,8 @@ func (b *Bridge) handleVKMessage(raw []byte) {
 			log.Printf("[vk-ws]    Topology changed to %s", topo)
 			b.topology = topo
 			if topo != TopologyDirect {
-				log.Printf("[vk-ws]    SFU not supported, kicking %d peers", len(b.peers))
-				for pid := range b.peers {
-					b.vkSend("remove-participant", map[string]interface{}{
-						"participantId": pid,
-						"ban":           false,
-					})
-				}
+				b.bounceForServerTopology("SERVER topology")
+				return
 			}
 
 		case "participant-joined", "participant-added":
@@ -408,13 +413,8 @@ func (b *Bridge) handleVKMessage(raw []byte) {
 				b.peers[int64(pid)] = struct{}{}
 				log.Printf("[vk-ws]    Participant %d joined (total: %d)", int64(pid), len(b.peers))
 				if b.topology != TopologyDirect {
-					log.Printf("[vk-ws]    Kicking peer %d (SFU topology)", int64(pid))
-					b.vkSend("remove-participant", map[string]interface{}{
-						"participantId": int64(pid),
-						"ban":           false,
-					})
-					log.Println("[FATAL] SFU topology is not supported, exiting")
-					os.Exit(1)
+					b.bounceForServerTopology("participant joined under SERVER")
+					return
 				}
 			}
 
@@ -506,6 +506,32 @@ func (b *Bridge) initRelay() {
 	b.p2p.Init()
 }
 
+func (b *Bridge) bounceForServerTopology(reason string) {
+	b.mu.Lock()
+	if b.bouncing {
+		b.mu.Unlock()
+		return
+	}
+	b.bouncing = true
+	b.serverBounces++
+	count := b.serverBounces
+	if count > maxServerBounces {
+		b.suppressScreenshare = true
+	}
+	suppress := b.suppressScreenshare
+	ws := b.vkWs
+	b.mu.Unlock()
+
+	if suppress {
+		log.Printf("[vk-ws]    %s -> reconnect #%d, suppressing screenshare to settle single-track DIRECT", reason, count)
+	} else {
+		log.Printf("[vk-ws]    %s -> manual reconnect #%d to recover DIRECT", reason, count)
+	}
+	if ws != nil {
+		ws.Close()
+	}
+}
+
 func (b *Bridge) readLoop() error {
 	for {
 		_, msg, err := b.vkWs.ReadMessage()
@@ -568,6 +594,7 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 
 		b.mu.Lock()
 		b.screenSharing = false
+		b.bouncing = false
 		b.mu.Unlock()
 		b.sendMediaSettings(false)
 

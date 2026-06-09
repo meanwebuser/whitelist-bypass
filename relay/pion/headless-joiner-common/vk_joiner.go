@@ -24,7 +24,10 @@ import (
 const (
 	vkReconnectInitialDelay = time.Second
 	vkReconnectMaxDelay     = 16 * time.Second
+	vkMaxReconnectAttempts = 10
 )
+
+const vkTopologyDirect = "DIRECT"
 
 type vkAuthRottenError struct {
 	Code string
@@ -155,11 +158,16 @@ func (h *VKHeadlessJoiner) RunWithParams(jsonParams string) {
 		if !h.waitBeforeRetry(int(h.reconnectAttempt.Load())) {
 			return
 		}
-		h.reconnectAttempt.Add(1)
+		attempt := h.reconnectAttempt.Add(1)
 		if h.isClosed() {
 			return
 		}
-		h.logFn("headless: reconnect attempt #%d", h.reconnectAttempt.Load())
+		if int(attempt) > vkMaxReconnectAttempts {
+			h.logFn("headless: gave up after %d consecutive reconnect attempts", vkMaxReconnectAttempts)
+			h.Status.EmitStatusError("reconnect attempts exhausted")
+			return
+		}
+		h.logFn("headless: reconnect attempt #%d", attempt)
 		h.Status.EmitStatus(common.StatusReconnecting)
 		if err := h.runOnce(); err != nil {
 			var authRotten *vkAuthRottenError
@@ -517,16 +525,27 @@ func (h *VKHeadlessJoiner) handleVKMessage(raw []byte) {
 		case "topology-changed":
 			topo, _ := msg["topology"].(string)
 			h.logFn("headless: topology: %s", topo)
-			if topo == "server" {
-				h.logFn("headless: ERROR: server topology not supported")
+			if topo != "" && topo != vkTopologyDirect {
+				h.logFn("headless: %s topology -> closing WS to reconnect and recover DIRECT", topo)
+				h.vkMu.Lock()
+				ws := h.vkWs
+				h.vkMu.Unlock()
+				if ws != nil {
+					ws.Close()
+				}
 			}
 		case "participant-joined", "participant-added":
 			h.logFn("headless: <- %s", notif)
 		case "participant-left":
 			h.logFn("headless: <- %s", notif)
 		case "hungup":
-			h.logFn("headless: ERROR: call ended (hungup)")
-			h.Status.EmitStatusError("call ended")
+			h.logFn("headless: peer hungup -> closing WS to reconnect")
+			h.vkMu.Lock()
+			ws := h.vkWs
+			h.vkMu.Unlock()
+			if ws != nil {
+				ws.Close()
+			}
 		}
 
 	case "response":
