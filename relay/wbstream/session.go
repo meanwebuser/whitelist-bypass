@@ -263,7 +263,7 @@ func (s *Session) startTunnel() {
 	tun := s.vp8tun
 	s.mu.Unlock()
 	s.cfg.LogFn("[lk] vp8 tunnel writer started tracks=%d", len(subs))
-	if s.cfg.IsJoiner {
+	if s.cfg.IsJoiner && s.cfg.TunnelMode != TunnelModeDC {
 		go s.configPingPong(tun, len(subs))
 	}
 

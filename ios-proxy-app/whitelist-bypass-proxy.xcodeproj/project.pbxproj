@@ -295,6 +295,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "whitelist-bypass-proxy/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Whitelist Bypass";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -305,7 +306,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.3.5;
-				PRODUCT_BUNDLE_IDENTIFIER = "bypass.whitelist.whitelist-bypass-proxy";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.example.whitelist-bypass-proxy";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -332,6 +333,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "whitelist-bypass-proxy/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Whitelist Bypass";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -342,7 +344,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.3.5;
-				PRODUCT_BUNDLE_IDENTIFIER = "bypass.whitelist.whitelist-bypass-proxy";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.example.whitelist-bypass-proxy";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
