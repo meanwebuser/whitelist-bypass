@@ -133,7 +133,7 @@ enum CallPlatform: String {
         if url.hasPrefix(wbstreamPrefix) {
             return .wbstream
         }
-        if url.contains("telemost.yandex") {
+        if url.contains("telemost") {
             return .telemost
         }
         return .vk
