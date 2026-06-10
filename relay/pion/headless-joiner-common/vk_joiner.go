@@ -24,7 +24,10 @@ import (
 const (
 	vkReconnectInitialDelay = time.Second
 	vkReconnectMaxDelay     = 16 * time.Second
+	vkMaxReconnectAttempts = 10
 )
+
+const vkTopologyDirect = "DIRECT"
 
 type vkAuthRottenError struct {
 	Code string
@@ -49,6 +52,7 @@ type VKHeadlessAuthParams struct {
 	TunnelMode      string `json:"tunnelMode"`
 	VP8FPS          int    `json:"vp8Fps"`
 	VP8Batch        int    `json:"vp8Batch"`
+	DualTrack       bool   `json:"dualTrack"`
 }
 
 type VKJoinResponse struct {
@@ -73,11 +77,11 @@ type VKHeadlessJoiner struct {
 	// uses this to install /32 bypass routes before the candidate
 	// reaches Pion.
 	OnRemoteCandidate func(target int, candidateOrSDP string)
-	ResolveFn      ResolveFunc
-	Status         StatusEmitter
-	PCConfig       PeerConnectionConfigurer
-	AddTracks      AddTunnelTracksFunc
-	ReadTrackFn    ReadTrackFunc
+	ResolveFn         ResolveFunc
+	Status            StatusEmitter
+	PCConfig          PeerConnectionConfigurer
+	AddTracks         AddTunnelTracksFunc
+	ReadTrackFn       ReadTrackFunc
 
 	authParams   *VKHeadlessAuthParams
 	joinResp     *VKJoinResponse
@@ -86,15 +90,18 @@ type VKHeadlessJoiner struct {
 	vkSeq        int
 	remotePeerID *int64
 
-	pc          *webrtc.PeerConnection
-	sampleTrack *webrtc.TrackLocalStaticSample
-	dc          *webrtc.DataChannel
-	vp8tunnel   *tunnel.VP8DataTunnel
-	obf         *tunnel.TunnelObfuscator
-	vp8FPS      int
-	vp8Batch    int
-	remoteSet   bool
-	pendingICE  []webrtc.ICECandidateInit
+	pc             *webrtc.PeerConnection
+	sampleTrack    *webrtc.TrackLocalStaticSample
+	dc             *webrtc.DataChannel
+	vp8tunnel      *tunnel.VP8DataTunnel
+	sym            *tunnel.SymmetricScreenTunnel
+	producerScreen screenUplink
+	obf            *tunnel.TunnelObfuscator
+	vp8FPS         int
+	vp8Batch       int
+	dualTrack      bool
+	remoteSet      bool
+	pendingICE     []webrtc.ICECandidateInit
 
 	reconnectAttempt atomic.Int32
 	stopCh           chan struct{}
@@ -130,6 +137,7 @@ func (h *VKHeadlessJoiner) RunWithParams(jsonParams string) {
 	h.obf = obf
 	h.vp8FPS = params.VP8FPS
 	h.vp8Batch = params.VP8Batch
+	h.dualTrack = params.DualTrack
 	h.logFn("headless: auth params received")
 	h.logFn("headless: obf key-source=%q localEpoch=0x%08x", params.JoinLink, obf.LocalEpoch())
 	h.logFn("headless:   appVersion=%s protocolVersion=%s vp8Fps=%d vp8Batch=%d",
@@ -150,11 +158,16 @@ func (h *VKHeadlessJoiner) RunWithParams(jsonParams string) {
 		if !h.waitBeforeRetry(int(h.reconnectAttempt.Load())) {
 			return
 		}
-		h.reconnectAttempt.Add(1)
+		attempt := h.reconnectAttempt.Add(1)
 		if h.isClosed() {
 			return
 		}
-		h.logFn("headless: reconnect attempt #%d", h.reconnectAttempt.Load())
+		if int(attempt) > vkMaxReconnectAttempts {
+			h.logFn("headless: gave up after %d consecutive reconnect attempts", vkMaxReconnectAttempts)
+			h.Status.EmitStatusError("reconnect attempts exhausted")
+			return
+		}
+		h.logFn("headless: reconnect attempt #%d", attempt)
 		h.Status.EmitStatus(common.StatusReconnecting)
 		if err := h.runOnce(); err != nil {
 			var authRotten *vkAuthRottenError
@@ -211,10 +224,15 @@ func (h *VKHeadlessJoiner) resetSessionState() {
 	if ws != nil {
 		ws.Close()
 	}
+	if h.sym != nil {
+		h.sym.Stop()
+		h.sym = nil
+	}
 	if h.vp8tunnel != nil {
 		h.vp8tunnel.Stop()
 		h.vp8tunnel = nil
 	}
+	h.producerScreen.reset()
 	if h.dc != nil {
 		h.dc.Close()
 		h.dc = nil
@@ -260,6 +278,10 @@ func (h *VKHeadlessJoiner) joinCall() error {
 	}
 	h.logFn("headless: resolved %s -> %s", parsed.Hostname(), resolvedIP)
 
+	screenFlag := "false"
+	if h.dualTrack {
+		screenFlag = "true"
+	}
 	body := url.Values{
 		"method":          {"vchat.joinConversationByLink"},
 		"session_key":     {h.authParams.SessionKey},
@@ -268,7 +290,7 @@ func (h *VKHeadlessJoiner) joinCall() error {
 		"anonymToken":     {h.authParams.AnonymToken},
 		"isVideo":         {"true"},
 		"isAudio":         {"false"},
-		"mediaSettings":   {`{"isAudioEnabled":false,"isVideoEnabled":true,"isScreenSharingEnabled":false}`},
+		"mediaSettings":   {`{"isAudioEnabled":false,"isVideoEnabled":true,"isScreenSharingEnabled":` + screenFlag + `}`},
 		"format":          {"json"},
 	}
 
@@ -365,11 +387,15 @@ func (h *VKHeadlessJoiner) connectSFU() {
 	}
 	h.logFn("headless: resolved %s -> %s", common.MaskAddr(hostname), common.MaskAddr(resolvedIP))
 
+	capabilities := "0"
+	if h.dualTrack {
+		capabilities = "2F7F"
+	}
 	wsURL := h.joinResp.Endpoint +
 		"&platform=WEB" +
 		"&appVersion=" + h.authParams.AppVersion +
 		"&version=" + h.authParams.ProtocolVersion +
-		"&device=browser&capabilities=0&clientType=VK&tgt=join"
+		"&device=browser&capabilities=" + capabilities + "&clientType=VK&tgt=join"
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
@@ -402,7 +428,7 @@ func (h *VKHeadlessJoiner) connectSFU() {
 	h.vkSend("change-media-settings", map[string]interface{}{
 		"mediaSettings": map[string]interface{}{
 			"isAudioEnabled": false, "isVideoEnabled": true,
-			"isScreenSharingEnabled": false, "isFastScreenSharingEnabled": false,
+			"isScreenSharingEnabled": h.dualTrack, "isFastScreenSharingEnabled": false,
 			"isAudioSharingEnabled": false, "isAnimojiEnabled": false,
 		},
 	})
@@ -499,16 +525,27 @@ func (h *VKHeadlessJoiner) handleVKMessage(raw []byte) {
 		case "topology-changed":
 			topo, _ := msg["topology"].(string)
 			h.logFn("headless: topology: %s", topo)
-			if topo == "server" {
-				h.logFn("headless: ERROR: server topology not supported")
+			if topo != "" && topo != vkTopologyDirect {
+				h.logFn("headless: %s topology -> closing WS to reconnect and recover DIRECT", topo)
+				h.vkMu.Lock()
+				ws := h.vkWs
+				h.vkMu.Unlock()
+				if ws != nil {
+					ws.Close()
+				}
 			}
 		case "participant-joined", "participant-added":
 			h.logFn("headless: <- %s", notif)
 		case "participant-left":
 			h.logFn("headless: <- %s", notif)
 		case "hungup":
-			h.logFn("headless: ERROR: call ended (hungup)")
-			h.Status.EmitStatusError("call ended")
+			h.logFn("headless: peer hungup -> closing WS to reconnect")
+			h.vkMu.Lock()
+			ws := h.vkWs
+			h.vkMu.Unlock()
+			if ws != nil {
+				ws.Close()
+			}
 		}
 
 	case "response":
@@ -636,16 +673,44 @@ func (h *VKHeadlessJoiner) initPC() {
 			h.Status.EmitStatus(common.StatusTunnelConnected)
 			h.vp8tunnel = tunnel.NewVP8DataTunnel(h.sampleTrack, h.obf, h.logFn)
 			h.vp8tunnel.Start(h.vp8FPS, h.vp8Batch)
-			h.vp8tunnel.SendData(tunnel.EncodeVP8Config(h.vp8tunnel.FPS(), h.vp8tunnel.Batch(), 1))
-			h.logFn("headless: pushed vp8 config to creator fps=%d batch=%d", h.vp8tunnel.FPS(), h.vp8tunnel.Batch())
+			var downlink tunnel.DataTunnel = h.vp8tunnel
+			trackCount := 1
+			if h.dualTrack {
+				writer := tunnel.NewScreenWriter(h.obf, "screen-up", h.logFn)
+				writer.Reconfigure(h.vp8tunnel.FPS(), h.vp8tunnel.Batch())
+				writer.SetSend(h.producerScreen.send)
+				h.sym = tunnel.NewSymmetricScreenTunnel(h.vp8tunnel, writer, h.obf, h.producerScreen.ready, h.logFn)
+				h.sym.SetTrackCount(2)
+				downlink = h.sym
+				trackCount = 2
+				h.logFn("headless: === SYMMETRIC DUAL-TRACK: camera VP8 + screen DCs ===")
+			}
+			h.vp8tunnel.SendData(tunnel.EncodeVP8Config(h.vp8tunnel.FPS(), h.vp8tunnel.Batch(), trackCount))
+			h.logFn("headless: pushed vp8 config to creator fps=%d batch=%d trackCount=%d", h.vp8tunnel.FPS(), h.vp8tunnel.Batch(), trackCount)
 			if h.OnConnected != nil {
-				h.OnConnected(h.vp8tunnel)
+				h.OnConnected(downlink)
 			}
 		}
 	})
 	if mode == "video" {
+		pc.OnDataChannel(func(dc *webrtc.DataChannel) {
+			h.logFn("headless: remote DataChannel: label=%q id=%v", dc.Label(), dc.ID())
+			if !h.dualTrack {
+				return
+			}
+			switch dc.Label() {
+			case "consumerScreenShare":
+				readScreenDataChannel(dc, func(frame []byte) {
+					if h.sym != nil {
+						h.sym.HandleScreenFrame(frame)
+					}
+				}, h.logFn)
+			case "producerScreenShare":
+				attachScreenWriterDC(dc, h.producerScreen.attach, h.logFn)
+			}
+		})
 		pc.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-			h.logFn("headless: remote track: %s", track.Codec().MimeType)
+			h.logFn("headless: remote track: codec=%s ssrc=%d", track.Codec().MimeType, track.SSRC())
 			go h.ReadTrackFn(track, func(frame []byte) {
 				if h.vp8tunnel != nil {
 					h.vp8tunnel.HandleFrame(frame)

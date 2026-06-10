@@ -396,7 +396,7 @@ class ProxyManager: ObservableObject {
             }
 
         case .vk:
-            IosStartVKHeadless(socksPort, activeSocksUser, activeSocksPass, callUrl, displayName, tunnelMode.rawValue, vp8Fps, vp8Batch, bridge)
+            IosStartVKHeadless(socksPort, activeSocksUser, activeSocksPass, callUrl, displayName, tunnelMode.rawValue, vp8Fps, vp8Batch, dualTrack, bridge)
             appendLog("Started VK headless joiner")
 
         case .wbstream:

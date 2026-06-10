@@ -226,6 +226,11 @@ func AuthAndGetToken(client *http.Client, roomID, displayName string) (string, s
 	return joinAndGetDetails(client, accessToken, roomID, displayName)
 }
 
+func AuthAsGuest(client *http.Client, cookieHeader, roomID, displayName string) (string, string, string, string, error) {
+	client = clientWithCookies(client, cookieHeader)
+	return AuthAndGetToken(client, roomID, displayName)
+}
+
 func AuthAsLoggedIn(client *http.Client, cookieHeader, accessToken, roomID, displayName string) (string, string, string, string, error) {
 	if cookieHeader == "" && accessToken == "" {
 		return "", "", "", "", fmt.Errorf("cookies or access token required for logged-in auth")
@@ -408,14 +413,60 @@ type localStorageFile struct {
 	AccessToken string `json:"accessToken"`
 }
 
+type browserCookie struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 func AccessTokenFromLocalStorageFile(path string) (string, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", "", err
 	}
-	var ls localStorageFile
-	if err := json.Unmarshal(data, &ls); err != nil {
-		return "", "", err
+	var cookies []browserCookie
+	if err := json.Unmarshal(data, &cookies); err == nil {
+		parts := make([]string, 0, len(cookies))
+		for _, cookie := range cookies {
+			if cookie.Name == "" || cookie.Value == "" || !isAllowedWBStreamCookie(cookie.Name) {
+				continue
+			}
+			parts = append(parts, cookie.Name+"="+cookie.Value)
+		}
+		return "", strings.Join(parts, "; "), nil
 	}
-	return ls.AccessToken, "", nil
+	var ls localStorageFile
+	if err := json.Unmarshal(data, &ls); err == nil {
+		return ls.AccessToken, "", nil
+	}
+	content := string(data)
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		key, val, found := strings.Cut(line, "\t")
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		if key == "wb_auth_auth_slice" {
+			var authSlice struct {
+				AccessToken string `json:"accessToken"`
+			}
+			if err := json.Unmarshal([]byte(val), &authSlice); err == nil && authSlice.AccessToken != "" {
+				return authSlice.AccessToken, "", nil
+			}
+		}
+	}
+	return "", "", fmt.Errorf("no access token found in localStorage file")
+}
+
+func isAllowedWBStreamCookie(name string) bool {
+	for _, allowed := range WBStreamCookieAllowlist {
+		if name == allowed {
+			return true
+		}
+	}
+	return false
 }

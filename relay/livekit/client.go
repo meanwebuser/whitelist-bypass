@@ -18,9 +18,9 @@ import (
 )
 
 const (
-	ProtocolVersion = "15"
+	ProtocolVersion = "16"
 	SDKName         = "js"
-	SDKVersion      = "2.7.0"
+	SDKVersion      = "2.15.3-wb.0.2"
 	PingPeriod      = 5 * time.Second
 
 	TargetPublisher  = signalTargetPublisher

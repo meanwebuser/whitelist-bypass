@@ -34,7 +34,11 @@ type TunnelRelay struct {
 	sampleTrack *webrtc.TrackLocalStaticSample
 	tun         *tunnel.VP8DataTunnel
 	obf         *tunnel.TunnelObfuscator
-	OnConnected func(*tunnel.VP8DataTunnel)
+	OnConnected func(tunnel.DataTunnel)
+
+	screenDC       *webrtc.DataChannel
+	producerScreen *webrtc.DataChannel
+	sym            *tunnel.SymmetricScreenTunnel
 
 	readBufSize int
 	maxDCBuf    uint64
@@ -112,8 +116,21 @@ func (u *TunnelRelay) Init(iceServers []webrtc.ICEServer) error {
 			log.Printf("[relay] producerCommand msg len=%d", len(msg.Data))
 		})
 	}
-	pc.CreateDataChannel("producerScreenShare", &webrtc.DataChannelInit{Ordered: &ordered})
-	pc.CreateDataChannel("consumerScreenShare", &webrtc.DataChannelInit{Ordered: &ordered})
+	producerScreen, psErr := pc.CreateDataChannel("producerScreenShare", &webrtc.DataChannelInit{Ordered: &ordered})
+	if psErr == nil {
+		u.producerScreen = producerScreen
+		producerScreen.OnOpen(func() { log.Printf("[relay] producerScreenShare DC open, reading uplink screen") })
+		producerScreen.OnMessage(func(msg webrtc.DataChannelMessage) {
+			if u.sym != nil {
+				u.sym.HandleScreenFrame(msg.Data)
+			}
+		})
+	}
+	screenDC, scErr := pc.CreateDataChannel("consumerScreenShare", &webrtc.DataChannelInit{Ordered: &ordered})
+	if scErr == nil {
+		u.screenDC = screenDC
+		screenDC.OnOpen(func() { log.Printf("[relay] consumerScreenShare DC open, writing downlink screen") })
+	}
 
 	pc.OnICECandidate(func(cand *webrtc.ICECandidate) {
 		if cand == nil {
@@ -138,8 +155,19 @@ func (u *TunnelRelay) Init(iceServers []webrtc.ICEServer) error {
 			log.Println("[relay] === MODE: VIDEO ===")
 			u.tun = tunnel.NewVP8DataTunnel(sampleTrack, u.obf, log.Printf)
 			u.tun.Start(0, 0)
+			var downlink tunnel.DataTunnel = u.tun
+			if u.screenDC != nil {
+				writer := tunnel.NewScreenWriter(u.obf, "screen-down", log.Printf)
+				dc := u.screenDC
+				writer.SetSend(dc.Send)
+				u.sym = tunnel.NewSymmetricScreenTunnel(u.tun, writer, u.obf, func() bool {
+					return dc.ReadyState() == webrtc.DataChannelStateOpen
+				}, log.Printf)
+				downlink = u.sym
+				log.Println("[relay] === MODE: VIDEO (with screenshare) ===")
+			}
 			if u.OnConnected != nil {
-				u.OnConnected(u.tun)
+				u.OnConnected(downlink)
 			}
 		})
 		go u.readTrack(track)
@@ -198,6 +226,10 @@ func (u *TunnelRelay) OnConnectionStateChange(fn func(webrtc.PeerConnectionState
 
 func (u *TunnelRelay) Close() {
 	u.closeAllConns()
+	if u.sym != nil {
+		u.sym.Stop()
+		u.sym = nil
+	}
 	if u.tun != nil {
 		u.tun.Stop()
 		u.tun = nil

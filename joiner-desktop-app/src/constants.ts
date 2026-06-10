@@ -21,4 +21,5 @@ export interface JoinerSettings {
   resources: 'moderate' | 'default' | 'unlimited';
   dns: string;
   noTun: boolean;
+  dualTrack: boolean;
 }

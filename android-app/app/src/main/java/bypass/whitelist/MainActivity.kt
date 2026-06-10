@@ -4,13 +4,8 @@ import android.animation.ArgbEvaluator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
-import android.graphics.Color
 import android.net.VpnService
-import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.ImageView
@@ -25,12 +20,10 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
-import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
-import bypass.whitelist.discovery.VkDiscoveryScanner
 import bypass.whitelist.tunnel.CallConfig
 import bypass.whitelist.tunnel.CallPlatform
 import bypass.whitelist.tunnel.HeadlessJoinController
@@ -50,20 +43,14 @@ import bypass.whitelist.ui.LogsFragment
 import bypass.whitelist.ui.MainActivityHost
 import bypass.whitelist.ui.MainFragment
 import bypass.whitelist.ui.SettingsScreenFragment
-import bypass.whitelist.update.AppUpdater
 import bypass.whitelist.util.LogWriter
 import bypass.whitelist.util.Net
 import bypass.whitelist.util.Prefs
-import bypass.whitelist.util.UiColors
 import bypass.whitelist.util.SocksAuth
 import bypass.whitelist.util.maskUrl
-import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.SSLSocketFactory
 import kotlin.concurrent.thread
-import org.json.JSONObject
 
 class MainActivity :
     AppCompatActivity(),
@@ -102,22 +89,9 @@ class MainActivity :
     private var navPageChangeCallback: ViewPager2.OnPageChangeCallback? = null
     private var navScrollState: Int = ViewPager2.SCROLL_STATE_IDLE
     @Volatile private var resetInProgress: Boolean = false
+    @Volatile private var overlayVisible: Boolean = false
     @Volatile private var resetGeneration: Long = 0L
     private var pendingConnectConfig: CallConfig? = null
-    private var pendingDiscoveryRescan: Boolean = false
-    private val badDiscoveryRooms = linkedSetOf<String>()
-    private var currentDiscoveryRoom: String? = null
-    private var staleRoomRecoveryInProgress: Boolean = false
-    private var connectivityValidationGeneration: Int = 0
-    private val watchdogHandler = Handler(Looper.getMainLooper())
-    private var watchdogGeneration: Int = 0
-    private var watchdogStartedAtMs: Long = 0L
-    private var watchdogConsecutiveFailures: Int = 0
-    private var watchdogProbeRunning: Boolean = false
-    private var discoveryScanRunning: Boolean = false
-    private var cachedDiscoveryConfigs: List<CallConfig> = emptyList()
-    private var cachedDiscoverySummary: String = "Комнаты: проверяю…"
-    private var roomRequestSentForEmptyPool: Boolean = false
     private val navColorEvaluator = ArgbEvaluator()
 
     private val vpnLauncher = registerForActivityResult(
@@ -129,7 +103,6 @@ class MainActivity :
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        applyTransparentSystemBars()
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
@@ -237,8 +210,6 @@ class MainActivity :
         }
 
         handleIntent(intent)
-        AppUpdater.check(this, manual = false) { appendLog(it) }
-        lazyPrewarmRooms("startup", force = false)
     }
 
     override fun onResume() {
@@ -256,7 +227,10 @@ class MainActivity :
                 lastStatus = status
                 mainFragment()?.onStatusChanged(status)
                 if (status == VpnStatus.TUNNEL_ACTIVE) {
-                    beginConnectivityValidation("service-status")
+                    if (!connected) {
+                        connected = true
+                        mainFragment()?.onConnectedChanged(true)
+                    }
                 } else if (status == VpnStatus.CALL_FAILED || status == VpnStatus.CALL_DISCONNECTED || status == VpnStatus.TUNNEL_LOST) {
                     if (connected) {
                         connected = false
@@ -280,12 +254,10 @@ class MainActivity :
             }
             TunnelServiceState.isTunnelActive(this) -> {
                 if (!connected || lastStatus != VpnStatus.TUNNEL_ACTIVE) {
-                    connected = false
-                    lastStatus = VpnStatus.CONNECTING
-                    mainFragment()?.onStatusChanged(VpnStatus.CONNECTING)
-                    mainFragment()?.onConnectedChanged(false)
-                    mainFragment()?.onStatusTextChanged("Туннель поднят, проверяю связь…")
-                    beginConnectivityValidation("resume-active")
+                    connected = true
+                    lastStatus = VpnStatus.TUNNEL_ACTIVE
+                    mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_ACTIVE)
+                    mainFragment()?.onConnectedChanged(true)
                 }
             }
             TunnelServiceState.isHeadlessSessionRunning(this) -> {
@@ -341,101 +313,6 @@ class MainActivity :
         startJoinFor(config)
     }
 
-    override fun onDiscoveryConnectPressed() {
-        if (resetInProgress || TunnelServiceState.isAnyTunnelComponentRunning(this)) {
-            pendingDiscoveryRescan = true
-            mainFragment()?.onStatusTextChanged("Остановите текущую сессию перед сканированием")
-            return
-        }
-        val cached = cachedDiscoveryConfigs.firstOrNull { !badDiscoveryRooms.contains(it.url) }
-        if (cached != null) {
-            appendLog("Discovery connect uses prewarmed room: ${cached.nodeLabel ?: cached.name}")
-            useDiscoveredRoom(cached, connectNow = true)
-            return
-        }
-        scanRooms(reason = "connect", force = true, connectWhenReady = true)
-    }
-
-    override fun onDiscoveryRefreshPressed() {
-        scanRooms(reason = "manual-refresh", force = true, connectWhenReady = false)
-    }
-
-    override fun onDiscoveryRoomSelected(url: String) {
-        val room = cachedDiscoveryConfigs.firstOrNull { it.url == url } ?: return
-        useDiscoveredRoom(room, connectNow = false)
-        mainFragment()?.onStatusTextChanged("Выбран сервер: ${room.nodeLabel ?: room.name}")
-    }
-
-    private fun lazyPrewarmRooms(reason: String, force: Boolean) {
-        if (TunnelServiceState.isAnyTunnelComponentRunning(this) || resetInProgress) return
-        if (!force && (discoveryScanRunning || cachedDiscoveryConfigs.isNotEmpty())) {
-            mainFragment()?.onRoomWarmupChanged(cachedDiscoverySummary, discoveryScanRunning)
-            return
-        }
-        scanRooms(reason = reason, force = force, connectWhenReady = false)
-    }
-
-    private fun scanRooms(reason: String, force: Boolean, connectWhenReady: Boolean) {
-        if (discoveryScanRunning && !force) return
-        discoveryScanRunning = true
-        mainFragment()?.onRoomWarmupChanged("Комнаты: обновляю…", true)
-        mainFragment()?.onStatusTextChanged("Сканирование комнат…")
-        appendLog("Discovery scan started: reason=$reason connectWhenReady=$connectWhenReady private-bus first, then public VK fallback")
-        VkDiscoveryScanner.scanWithWebView(
-            activity = this,
-            onProgress = { step ->
-                runOnUiThread {
-                    mainFragment()?.onStatusTextChanged(step)
-                    mainFragment()?.onRoomWarmupChanged("Комнаты: $step", true)
-                    appendLog("Discovery: $step")
-                }
-            },
-            onDone = { result ->
-                runOnUiThread {
-                    discoveryScanRunning = false
-                    val allConfigs = result.configs
-                    val myClientId = discoveryClientId()
-                    val configs = allConfigs.filter { cfg ->
-                        !badDiscoveryRooms.contains(cfg.url) && (cfg.ownerClientId.isNullOrBlank() || cfg.ownerClientId == myClientId)
-                    }
-                    cachedDiscoveryConfigs = configs
-                    val nodes = configs.map { room ->
-                        val raw = room.nodeLabel ?: room.name
-                        if (raw.equals("vpn2", ignoreCase = true)) "vpn2 · Germany" else raw
-                    }.distinct().take(3)
-                    cachedDiscoverySummary = if (configs.isNotEmpty()) {
-                        "Свободно: ${configs.size} · ${nodes.joinToString(", ")}"
-                    } else {
-                        "Свободных комнат нет · запрошена новая"
-                    }
-                    mainFragment()?.onRoomWarmupChanged(cachedDiscoverySummary, false)
-                    mainFragment()?.onRoomServerChoicesChanged(configs)
-                    mainFragment()?.onStatusTextChanged(cachedDiscoverySummary)
-                    appendLog("Discovery scan finished: picked_free=${configs.size}, total_free=${allConfigs.size}, method=${result.method}, source=${result.source ?: "none"}, ${result.stats.summary()}")
-                    if (configs.isNotEmpty()) {
-                        roomRequestSentForEmptyPool = false
-                        if (connectWhenReady) useDiscoveredRoom(configs.first(), connectNow = true)
-                    } else if (!roomRequestSentForEmptyPool) {
-                        roomRequestSentForEmptyPool = true
-                        sendPrivateBusClientEvent("request_room", null, "prewarm_no_free_rooms")
-                    }
-                }
-            }
-        )
-    }
-
-    private fun useDiscoveredRoom(picked: CallConfig, connectNow: Boolean) {
-        currentDiscoveryRoom = picked.url
-        Prefs.autoDestination = picked
-        Prefs.activeDestinationId = picked.id
-        mainFragment()?.onDestinationsChanged()
-        appendLog("Discovery selected room: node=${picked.nodeLabel ?: picked.name} owner=${picked.ownerClientId ?: "free"} slot=${picked.slotId ?: "?"} lease=${picked.leaseId ?: "?"}")
-        if (connectNow) {
-            sendPrivateBusClientEvent("claim_room", picked.url, "connect")
-            startJoinFor(picked)
-        }
-    }
-
     override fun onDisconnectPressed() {
         pendingConnectConfig = null
         if (resetInProgress) {
@@ -445,79 +322,17 @@ class MainActivity :
         fullReset()
     }
 
-    override fun onCopySocksPressed() {
-        val url = "socks5://${SocksAuth.user}:${SocksAuth.pass}@${Prefs.socksHost}:${Prefs.socksPort}"
-        val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("SOCKS5 URL", url))
-        Toast.makeText(this, R.string.copy_socks_url_toast, Toast.LENGTH_SHORT).show()
-        appendLog("SOCKS5 URL copied: socks5://<auth>@${Prefs.socksHost}:${Prefs.socksPort}")
-    }
-
     override fun onPingPressed(callback: (Boolean, Int) -> Unit) {
         thread {
             val started = System.nanoTime()
             val ok = try {
-                probeHttpsViaSocks5(host = "t.me", path = "/Kuplinov_Telegram/1032")
+                probeViaSocks5(host = "ya.ru", port = 443)
             } catch (_: Exception) {
                 false
             }
             val rtt = ((System.nanoTime() - started) / 1_000_000).toInt()
             runOnUiThread { callback(ok, rtt) }
         }
-    }
-
-    override fun onTunnelDiagnosticsPressed(callback: (String, Boolean) -> Unit, progress: (String) -> Unit) {
-        thread {
-            val result = try {
-                runTunnelDiagnostics { text -> runOnUiThread { progress(text) } }
-            } catch (e: Exception) {
-                appendLog("Tunnel diagnostics failed: ${e.message}")
-                "diagnostics failed: ${e.message ?: "unknown"}" to false
-            }
-            runOnUiThread {
-                callback(result.first, result.second)
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    mainFragment()?.onStatusTextChanged(result.first)
-                }, 5000)
-            }
-        }
-    }
-
-    private fun beginConnectivityValidation(reason: String) {
-        val validationId = ++connectivityValidationGeneration
-        appendLog("Connectivity validation started: $reason")
-        thread {
-            val result = try {
-                runTunnelDiagnostics { text -> runOnUiThread { mainFragment()?.onStatusTextChanged(text) } }
-            } catch (e: Exception) {
-                "connectivity validation failed: ${e.message ?: "unknown"}" to false
-            }
-            runOnUiThread {
-                if (validationId != connectivityValidationGeneration || resetInProgress) return@runOnUiThread
-                if (result.second) {
-                    connected = true
-                    lastStatus = VpnStatus.TUNNEL_ACTIVE
-                    mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_ACTIVE)
-                    mainFragment()?.onConnectedChanged(true)
-                    mainFragment()?.onStatusTextChanged(result.first)
-                    appendLog("Connectivity validation OK: ${result.first}")
-                    startConnectivityWatchdog("validated")
-                } else {
-                    connected = false
-                    lastStatus = VpnStatus.TUNNEL_LOST
-                    mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_LOST)
-                    mainFragment()?.onConnectedChanged(false)
-                    mainFragment()?.onStatusTextChanged("Связи нет: ${result.first}")
-                    appendLog("Connectivity validation failed: ${result.first}")
-                    stopConnectivityWatchdog("validation_failed")
-                    scheduleBadRoomRecovery("connectivity_validation_failed")
-                }
-            }
-        }
-    }
-
-    override fun onSpeedTestPressed(callback: (String, Boolean) -> Unit) {
-        callback("Проверка скорости отключена", false)
     }
 
     override fun isTunnelActive(): Boolean = connected
@@ -545,14 +360,9 @@ class MainActivity :
             .show()
     }
 
-    override fun onCheckForUpdates() {
-        AppUpdater.check(this, manual = true) { appendLog(it) }
-    }
-
     override fun onResetAllSettings() {
         Prefs.resetAllSettings()
         App.applyTheme(Prefs.themeMode)
-        App.applyLanguage(Prefs.languageMode)
         settingsFragment()?.refresh()
         Toast.makeText(this, R.string.settings_toast_reset_done, Toast.LENGTH_SHORT).show()
     }
@@ -562,6 +372,8 @@ class MainActivity :
         if (text.isEmpty()) return emptyList()
         return text.split('\n').filter { it.isNotBlank() }
     }
+
+    override fun activityLogRevision(): Long = logWriter.revision()
 
     override fun copyLogs() {
         val contents =
@@ -587,31 +399,13 @@ class MainActivity :
     }
 
     override fun appendLog(message: String) {
-        val formatted = formatLogLine(message)
-        val (line, _) = logWriter.append(formatted)
-        runOnUiThread {
-            logsFragment()?.onLineAppended(line)
-            if (overlayLogs.isVisible) {
-                overlayLogsText.append("$line\n")
+        logWriter.append(message)
+        if (overlayVisible) {
+            runOnUiThread {
+                overlayLogsText.text = logWriter.displayText()
                 overlayLogsScroll.post { overlayLogsScroll.fullScroll(View.FOCUS_DOWN) }
             }
         }
-        if (message.contains("guest cannot create room", ignoreCase = true)) {
-            scheduleBadRoomRecovery("guest_cannot_create_room")
-        }
-    }
-
-    private fun formatLogLine(message: String): String {
-        if (message.startsWith("[")) return message
-        val lower = message.lowercase()
-        val category = if (lower.contains("relay") || lower.contains("tunnel") || lower.contains("vpn") || lower.contains("room") || lower.contains("discovery") || lower.contains("ping") || lower.contains("telegram") || lower.contains("connect") || lower.contains("wbstream")) "LINK" else "APP"
-        val level = if (lower.contains("debug") || lower.contains("poll") || lower.contains("heartbeat")) "DEBUG" else "INFO"
-        val arrow = when {
-            lower.contains("send") || lower.contains("request") || lower.contains("start") || lower.contains("connect uses") -> "→"
-            lower.contains("received") || lower.contains("found") || lower.contains("selected") || lower.contains("ready") -> "←"
-            else -> "•"
-        }
-        return "[$level][$category] $arrow $message"
     }
 
     override fun onJoinStatusText(text: String) {
@@ -633,10 +427,8 @@ class MainActivity :
             }
             mainFragment()?.onStatusChanged(status)
             if (status == VpnStatus.TUNNEL_ACTIVE) {
-                connected = false
-                mainFragment()?.onConnectedChanged(false)
-                mainFragment()?.onStatusTextChanged("Туннель поднят, проверяю связь…")
-                beginConnectivityValidation("join-status")
+                connected = true
+                mainFragment()?.onConnectedChanged(true)
             }
         }
     }
@@ -789,7 +581,7 @@ class MainActivity :
     }
 
     private fun applyNavVisual(icon: ImageView, label: TextView, emphasis: Float) {
-        val accent = UiColors.accent(this)
+        val accent = getColor(R.color.accent_emerald)
         val ink = getColor(R.color.ink_3)
         val blended = navColorEvaluator.evaluate(emphasis, ink, accent) as Int
         icon.setColorFilter(blended)
@@ -801,15 +593,6 @@ class MainActivity :
         label.paint.isFakeBoldText = emphasis > 0.92f
     }
 
-    private fun applyTransparentSystemBars() {
-        window.statusBarColor = Color.TRANSPARENT
-        window.navigationBarColor = Color.TRANSPARENT
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.isStatusBarContrastEnforced = false
-            window.isNavigationBarContrastEnforced = false
-        }
-    }
-
     private fun mainFragment(): MainFragment? =
         supportFragmentManager.fragments.firstOrNull { it is MainFragment } as? MainFragment
 
@@ -819,239 +602,43 @@ class MainActivity :
     private fun logsFragment(): LogsFragment? =
         supportFragmentManager.fragments.firstOrNull { it is LogsFragment } as? LogsFragment
 
-
-    private fun startConnectivityWatchdog(reason: String) {
-        watchdogGeneration++
-        watchdogStartedAtMs = System.currentTimeMillis()
-        watchdogConsecutiveFailures = 0
-        watchdogProbeRunning = false
-        appendLog("Connectivity watchdog started: $reason")
-        scheduleConnectivityWatchdogTick(initial = true)
-    }
-
-    private fun stopConnectivityWatchdog(reason: String) {
-        watchdogGeneration++
-        watchdogProbeRunning = false
-        watchdogHandler.removeCallbacksAndMessages(null)
-        appendLog("Connectivity watchdog stopped: $reason")
-    }
-
-    private fun scheduleConnectivityWatchdogTick(initial: Boolean = false) {
-        val generation = watchdogGeneration
-        val connectedAgeMs = System.currentTimeMillis() - watchdogStartedAtMs
-        val delayMs = when {
-            initial -> 15_000L
-            connectedAgeMs < 120_000L -> 15_000L
-            else -> 60_000L
-        }
-        watchdogHandler.postDelayed({
-            if (generation == watchdogGeneration) runConnectivityWatchdogProbe(generation)
-        }, delayMs)
-    }
-
-    private fun runConnectivityWatchdogProbe(generation: Int) {
-        if (!connected || resetInProgress || watchdogProbeRunning) return
-        watchdogProbeRunning = true
-        thread(name = "wt-connectivity-watchdog") {
-            val result = try { runTunnelPingOnly() } catch (e: Exception) { "watchdog ping failed: ${e.message ?: "unknown"}" to false }
-            runOnUiThread {
-                watchdogProbeRunning = false
-                if (generation != watchdogGeneration || resetInProgress || !connected) return@runOnUiThread
-                if (result.second) {
-                    watchdogConsecutiveFailures = 0
-                    appendLog("Connectivity watchdog OK: ${result.first}")
-                    scheduleConnectivityWatchdogTick()
-                } else {
-                    watchdogConsecutiveFailures += 1
-                    appendLog("Connectivity watchdog failed #$watchdogConsecutiveFailures: ${result.first}")
-                    mainFragment()?.onStatusTextChanged("Проверяю связь… ${result.first}")
-                    if (watchdogConsecutiveFailures >= 2) {
-                        connected = false
-                        lastStatus = VpnStatus.TUNNEL_LOST
-                        mainFragment()?.onStatusChanged(VpnStatus.TUNNEL_LOST)
-                        mainFragment()?.onConnectedChanged(false)
-                        mainFragment()?.onStatusTextChanged("Связь потеряна, переподключаюсь…")
-                        stopConnectivityWatchdog("lost")
-                        scheduleBadRoomRecovery("watchdog_lost_connectivity")
-                    } else {
-                        scheduleConnectivityWatchdogTick()
-                    }
-                }
-            }
-        }
-    }
-
-    private fun runTunnelPingOnly(): Pair<String, Boolean> {
-        val host = "10.255.0.1"
-        val port = 18080
-        val latencyStart = System.nanoTime()
-        val request = "GET /ping HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n"
-            .toByteArray(Charsets.US_ASCII)
-        val ping = socksHttp(host, port, request, readTimeoutMs = 5000)
-        if (!String(ping, Charsets.ISO_8859_1).startsWith("HTTP/1.")) return "ping failed" to false
-        val latencyMs = ((System.nanoTime() - latencyStart) / 1_000_000).toInt()
-        return "$latencyMs ms" to true
-    }
-
-    private fun runTunnelDiagnostics(progress: (String) -> Unit): Pair<String, Boolean> {
-        val host = "10.255.0.1"
-        val port = 18080
-        progress(getString(R.string.diag_ping))
-        val latencyStart = System.nanoTime()
-        val ping = socksHttp(host, port, "GET /ping HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII), readTimeoutMs = 7000)
-        if (!String(ping, Charsets.ISO_8859_1).startsWith("HTTP/1.")) return "ping failed" to false
-        val latencyMs = ((System.nanoTime() - latencyStart) / 1_000_000).toInt()
-
-        progress("/ping: ${latencyMs} ms · ${getString(R.string.diag_external_ip)}")
-        val ipResp = socksHttp("api.ipify.org", 80, "GET / HTTP/1.1\r\nHost: api.ipify.org\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII), readTimeoutMs = 9000)
-        val externalIp = String(httpBody(ipResp), Charsets.UTF_8).trim().lineSequence().firstOrNull()?.take(64).orEmpty()
-        if (externalIp.isBlank()) return "/ping: ${latencyMs} ms · external IP failed" to false
-
-        progress("/ping: ${latencyMs} ms · IP: $externalIp · ${getString(R.string.diag_telegram)}")
-        val tgStart = System.nanoTime()
-        val tgOk = probeHttpsViaSocks5(host = "t.me", path = "/Kuplinov_Telegram/1032")
-        val tgMs = ((System.nanoTime() - tgStart) / 1_000_000).toInt()
-        val text = "${latencyMs} ms · $externalIp · t.me ${if (tgOk) "OK" else "FAIL"} ${tgMs} ms"
-        appendLog("Tunnel diagnostics $text")
-        return text to tgOk
-    }
-
-    private fun runTunnelSpeedTest(): Pair<String, Boolean> {
-        val host = "10.255.0.1"
-        val port = 18080
-        val latencyStart = System.nanoTime()
-        val ping = socksHttp(host, port, "GET /ping HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
-        if (!String(ping, Charsets.ISO_8859_1).startsWith("HTTP/1.")) return getString(R.string.speedtest_failed) to false
-        val latencyMs = ((System.nanoTime() - latencyStart) / 1_000_000).toInt()
-
-        val downloadBytes = 2 * 1024 * 1024
-        val dlStart = System.nanoTime()
-        val dl = socksHttp(host, port, "GET /download?bytes=$downloadBytes HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
-        val dlBody = httpBody(dl)
-        val dlSec = (System.nanoTime() - dlStart) / 1_000_000_000.0
-        val dlMbps = if (dlSec > 0) dlBody.size * 8.0 / dlSec / 1_000_000.0 else 0.0
-
-        val uploadBytes = 1024 * 1024
-        val uploadBody = ByteArray(uploadBytes) { 0x5a.toByte() }
-        val header = "POST /upload HTTP/1.1\r\nHost: $host\r\nUser-Agent: ${speedUserAgent()}\r\nContent-Length: $uploadBytes\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII)
-        val upStart = System.nanoTime()
-        val upResp = socksHttp(host, port, header + uploadBody)
-        val upSec = (System.nanoTime() - upStart) / 1_000_000_000.0
-        val upMbps = if (upSec > 0) uploadBytes * 8.0 / upSec / 1_000_000.0 else 0.0
-        if (!String(upResp, Charsets.ISO_8859_1).startsWith("HTTP/1.")) return getString(R.string.speedtest_failed) to false
-
-        val text = "${latencyMs} ms · ↓ %.1f Mbps · ↑ %.1f Mbps".format(dlMbps, upMbps)
-        appendLog("Speedtest $text")
-        return text to true
-    }
-
-    private fun speedUserAgent(): String {
-        val clientTail = Prefs.discoveryClientId.takeLast(8)
-        return "BEZabotny-NET/${appVersionName()} Android/${Build.VERSION.RELEASE} ${Build.MANUFACTURER}/${Build.MODEL} client=$clientTail"
-    }
-
-    private fun appVersionName(): String = try {
-        packageManager.getPackageInfo(packageName, 0).versionName ?: "unknown"
-    } catch (_: Exception) {
-        "unknown"
-    }
-
-    private fun socksHttp(host: String, port: Int, request: ByteArray, readTimeoutMs: Int = 15000): ByteArray {
-        openSocks5Tcp(host, port).use { socket ->
-            socket.soTimeout = readTimeoutMs
+    private fun probeViaSocks5(host: String, port: Int): Boolean {
+        Socket().use { socket ->
+            socket.connect(InetSocketAddress(Net.LOCALHOST, Prefs.socksPort.toInt()), 5000)
+            socket.soTimeout = 15000
             val output = socket.getOutputStream()
             val input = socket.getInputStream()
+
+            output.write(byteArrayOf(0x05, 0x01, 0x02))
+            output.flush()
+            if (input.read() != 0x05 || input.read() != 0x02) return false
+
+            val userBytes = SocksAuth.user.toByteArray(Charsets.US_ASCII)
+            val passBytes = SocksAuth.pass.toByteArray(Charsets.US_ASCII)
+            val authPacket = ByteArray(3 + userBytes.size + passBytes.size)
+            authPacket[0] = 0x01
+            authPacket[1] = userBytes.size.toByte()
+            System.arraycopy(userBytes, 0, authPacket, 2, userBytes.size)
+            authPacket[2 + userBytes.size] = passBytes.size.toByte()
+            System.arraycopy(passBytes, 0, authPacket, 3 + userBytes.size, passBytes.size)
+            output.write(authPacket)
+            output.flush()
+            if (input.read() != 0x01 || input.read() != 0x00) return false
+
+            val hostBytes = host.toByteArray(Charsets.US_ASCII)
+            val request = ByteArray(4 + 1 + hostBytes.size + 2)
+            request[0] = 0x05
+            request[1] = 0x01
+            request[2] = 0x00
+            request[3] = 0x03
+            request[4] = hostBytes.size.toByte()
+            System.arraycopy(hostBytes, 0, request, 5, hostBytes.size)
+            request[5 + hostBytes.size] = ((port shr 8) and 0xff).toByte()
+            request[6 + hostBytes.size] = (port and 0xff).toByte()
             output.write(request)
             output.flush()
-            val buf = ByteArray(64 * 1024)
-            val out = ByteArrayOutputStream()
-            while (true) {
-                val n = input.read(buf)
-                if (n < 0) break
-                out.write(buf, 0, n)
-            }
-            return out.toByteArray()
-        }
-    }
 
-    private fun httpBody(response: ByteArray): ByteArray {
-        val needle = byteArrayOf(13, 10, 13, 10)
-        for (i in 0..response.size - needle.size) {
-            if (needle.indices.all { response[i + it] == needle[it] }) {
-                return response.copyOfRange(i + needle.size, response.size)
-            }
-        }
-        return response
-    }
-
-    private fun openSocks5Tcp(host: String, port: Int): Socket {
-        val socket = Socket()
-        socket.connect(InetSocketAddress(Net.LOCALHOST, Prefs.socksPort.toInt()), 3000)
-        socket.soTimeout = 10000
-        val output = socket.getOutputStream()
-        val input = socket.getInputStream()
-        output.write(byteArrayOf(0x05, 0x01, 0x02))
-        output.flush()
-        if (input.read() != 0x05 || input.read() != 0x02) throw java.io.IOException("SOCKS auth method rejected")
-        val userBytes = SocksAuth.user.toByteArray(Charsets.US_ASCII)
-        val passBytes = SocksAuth.pass.toByteArray(Charsets.US_ASCII)
-        val authPacket = ByteArray(3 + userBytes.size + passBytes.size)
-        authPacket[0] = 0x01
-        authPacket[1] = userBytes.size.toByte()
-        System.arraycopy(userBytes, 0, authPacket, 2, userBytes.size)
-        authPacket[2 + userBytes.size] = passBytes.size.toByte()
-        System.arraycopy(passBytes, 0, authPacket, 3 + userBytes.size, passBytes.size)
-        output.write(authPacket)
-        output.flush()
-        if (input.read() != 0x01 || input.read() != 0x00) throw java.io.IOException("SOCKS auth failed")
-        val hostBytes = host.toByteArray(Charsets.US_ASCII)
-        val request = ByteArray(4 + 1 + hostBytes.size + 2)
-        request[0] = 0x05
-        request[1] = 0x01
-        request[2] = 0x00
-        request[3] = 0x03
-        request[4] = hostBytes.size.toByte()
-        System.arraycopy(hostBytes, 0, request, 5, hostBytes.size)
-        request[5 + hostBytes.size] = ((port ushr 8) and 0xff).toByte()
-        request[6 + hostBytes.size] = (port and 0xff).toByte()
-        output.write(request)
-        output.flush()
-        if (input.read() != 0x05 || input.read() != 0x00) throw java.io.IOException("SOCKS connect failed")
-        if (input.read() != 0x00) throw java.io.IOException("SOCKS reserved byte failed")
-        when (input.read()) {
-            0x01 -> readFully(input, 4)
-            0x03 -> readFully(input, input.read())
-            0x04 -> readFully(input, 16)
-            else -> throw java.io.IOException("SOCKS bad address type")
-        }
-        readFully(input, 2)
-        return socket
-    }
-
-    private fun probeHttpsViaSocks5(host: String, path: String): Boolean {
-        openSocks5Tcp(host, 443).use { socket ->
-            val sslSocket = (SSLSocketFactory.getDefault() as SSLSocketFactory)
-                .createSocket(socket, host, 443, true) as SSLSocket
-            sslSocket.soTimeout = 8000
-            sslSocket.startHandshake()
-            val tlsOutput = sslSocket.getOutputStream()
-            val tlsInput = sslSocket.getInputStream()
-            val httpRequest = "GET $path HTTP/1.1\r\nHost: $host\r\nUser-Agent: BEZabotny-NET ping\r\nAccept: text/html,*/*\r\nConnection: close\r\n\r\n"
-            tlsOutput.write(httpRequest.toByteArray(Charsets.US_ASCII))
-            tlsOutput.flush()
-            val status = tlsInput.bufferedReader(Charsets.US_ASCII).readLine() ?: return false
-            appendLog("Ping target $host$path -> $status")
-            return status.contains(" 2") || status.contains(" 3")
-        }
-    }
-
-    private fun readFully(input: java.io.InputStream, count: Int) {
-        var remaining = count
-        val buffer = ByteArray(256)
-        while (remaining > 0) {
-            val n = input.read(buffer, 0, minOf(buffer.size, remaining))
-            if (n < 0) throw java.io.EOFException()
-            remaining -= n
+            return input.read() == 0x05 && input.read() == 0x00
         }
     }
 
@@ -1069,54 +656,10 @@ class MainActivity :
         joinOverlayContainer.visibility = if (visible) View.VISIBLE else View.GONE
         overlayLogs.visibility = if (visible) View.VISIBLE else View.GONE
         bottomNav.visibility = if (visible) View.GONE else View.VISIBLE
+        overlayVisible = visible
         if (visible) {
             overlayLogsText.text = logWriter.displayText()
             overlayLogsScroll.post { overlayLogsScroll.fullScroll(View.FOCUS_DOWN) }
-        }
-    }
-
-
-    private fun discoveryClientId(): String = Prefs.discoveryClientId
-
-    private fun sendPrivateBusClientEvent(type: String, room: String?, reason: String) {
-        val badSnapshot = synchronized(badDiscoveryRooms) { badDiscoveryRooms.toList() }
-        thread(name = "wt-client-event") {
-            val ok = VkDiscoveryScanner.sendClientEvent(
-                type = type,
-                clientId = discoveryClientId(),
-                room = room,
-                reason = reason,
-                badRooms = badSnapshot,
-            )
-            appendLog("Private-bus $type sent: $ok")
-            if (Prefs.telemetryEnabled) VkDiscoveryScanner.sendTelemetry(
-                clientId = discoveryClientId(),
-                level = if (ok) "info" else "error",
-                event = "private_bus.$type",
-                messageText = "Private-bus $type sent: $ok",
-                room = room,
-                meta = JSONObject().apply {
-                    put("reason", reason)
-                    put("ok", ok)
-                    put("bad_rooms_count", badSnapshot.size)
-                },
-            )
-        }
-    }
-
-    private fun scheduleBadRoomRecovery(reason: String) {
-        val room = currentDiscoveryRoom?.takeIf { it.startsWith("wbstream://") }
-            ?: activeJoinUrl.takeIf { it.startsWith("wbstream://") }
-            ?: return
-        if (staleRoomRecoveryInProgress) return
-        staleRoomRecoveryInProgress = true
-        badDiscoveryRooms.add(room)
-        appendLog("Room looks stale; blacklisted locally and requesting replacement")
-        sendPrivateBusClientEvent("bad_room", room, reason)
-        pendingDiscoveryRescan = true
-        runOnUiThread {
-            if (!resetInProgress) fullReset()
-            staleRoomRecoveryInProgress = false
         }
     }
 
@@ -1135,10 +678,6 @@ class MainActivity :
         }
         val url = config.url.trim()
         if (url.isEmpty()) return
-        if (config.autoDiscovered) {
-            Prefs.autoDestination = config
-            appendLog("Auto room grace refreshed for 60s")
-        }
 
         val platform = config.platform
         if (Prefs.activeTunnelMode == TunnelMode.DC &&
@@ -1152,9 +691,8 @@ class MainActivity :
         }
 
         activeJoinUrl = url
-        if (config.autoDiscovered) currentDiscoveryRoom = url
         logWriter.reset()
-        runOnUiThread { logsFragment()?.refresh(host = this) }
+        runOnUiThread { logsFragment()?.refresh() }
         appendLog("Loading: ${maskUrl(url)}")
         lastStatus = VpnStatus.CONNECTING
         mainFragment()?.onStatusChanged(VpnStatus.CONNECTING)
@@ -1199,22 +737,17 @@ class MainActivity :
             return
         }
         connected = false
-        connectivityValidationGeneration++
-        stopConnectivityWatchdog("disconnect")
         lastStatus = null
         closeActiveHeadlessController()
         removeJoinFragment()
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
         mainFragment()?.onStatusChanged(VpnStatus.CALL_DISCONNECTED)
-        Prefs.extendAutoDestinationGrace()
     }
 
     private fun fullReset() {
         if (resetInProgress) return
         resetInProgress = true
-        connectivityValidationGeneration++
-        stopConnectivityWatchdog("full_reset")
         val resetId = ++resetGeneration
         connected = false
         lastStatus = VpnStatus.STOPPING
@@ -1280,17 +813,11 @@ class MainActivity :
         setJoinOverlayVisible(false)
         mainFragment()?.onConnectedChanged(false)
         mainFragment()?.onStatusChanged(VpnStatus.CALL_DISCONNECTED)
-        Prefs.extendAutoDestinationGrace()
         val pendingConfig = pendingConnectConfig
-        val shouldRescan = pendingDiscoveryRescan
         pendingConnectConfig = null
-        pendingDiscoveryRescan = false
         if (pendingConfig != null) {
             appendLog("Previous session stopped, starting new connection")
             startJoinFor(pendingConfig)
-        } else if (shouldRescan) {
-            appendLog("Previous session stopped, rescanning discovery")
-            onDiscoveryConnectPressed()
         }
     }
 
