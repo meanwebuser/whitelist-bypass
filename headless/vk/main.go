@@ -22,6 +22,7 @@ import (
 )
 
 const TopologyDirect = "DIRECT"
+const maxServerBounces = 5
 
 type CallInfo struct {
 	CallID     string
@@ -75,15 +76,20 @@ type JoinResponse struct {
 }
 
 type Bridge struct {
-	mu         sync.Mutex
-	vkWs       *websocket.Conn
-	vkSeq      int
-	iceServers []webrtc.ICEServer
-	topology   string
-	peers      map[int64]struct{}
-	relay      Relay
-	newRelay   func() Relay
-	p2p        *P2PHandler
+	mu            sync.Mutex
+	vkWs          *websocket.Conn
+	vkSeq         int
+	iceServers    []webrtc.ICEServer
+	topology      string
+	peers         map[int64]struct{}
+	relay         Relay
+	newRelay      func() Relay
+	p2p           *P2PHandler
+	screenSharing bool
+
+	serverBounces       int
+	suppressScreenshare bool
+	bouncing            bool
 }
 
 func httpPost(endpoint string, form url.Values, extraHeaders map[string]string) ([]byte, error) {
@@ -335,6 +341,36 @@ func (b *Bridge) vkSend(command string, extra map[string]interface{}) {
 	log.Printf("[vk-ws] -> %s", command)
 }
 
+func (b *Bridge) sendMediaSettings(screenSharing bool) {
+	b.vkSend("change-media-settings", map[string]interface{}{
+		"mediaSettings": map[string]interface{}{
+			"isAudioEnabled": false, "isVideoEnabled": true,
+			"isScreenSharingEnabled": screenSharing, "isFastScreenSharingEnabled": false,
+			"isAudioSharingEnabled": false, "isAnimojiEnabled": false,
+		},
+	})
+}
+
+// setScreenSharing re-announces media settings when the peer track count
+// crosses the single-track boundary, mirroring how the web client toggles
+// screenshare mid-call. State resets to false on every WS reconnect.
+func (b *Bridge) setScreenSharing(enabled bool) {
+	b.mu.Lock()
+	if b.vkWs == nil || b.screenSharing == enabled {
+		b.mu.Unlock()
+		return
+	}
+	if enabled && b.suppressScreenshare {
+		b.mu.Unlock()
+		log.Println("[vk-ws] screenshare suppressed after SERVER flap, staying single-track DIRECT")
+		return
+	}
+	b.screenSharing = enabled
+	b.mu.Unlock()
+	log.Printf("[vk-ws] peer track count change, screenshare=%v", enabled)
+	b.sendMediaSettings(enabled)
+}
+
 func (b *Bridge) handleVKMessage(raw []byte) {
 	var msg map[string]interface{}
 	if err := json.Unmarshal(raw, &msg); err != nil {
@@ -368,13 +404,8 @@ func (b *Bridge) handleVKMessage(raw []byte) {
 			log.Printf("[vk-ws]    Topology changed to %s", topo)
 			b.topology = topo
 			if topo != TopologyDirect {
-				log.Printf("[vk-ws]    SFU not supported, kicking %d peers", len(b.peers))
-				for pid := range b.peers {
-					b.vkSend("remove-participant", map[string]interface{}{
-						"participantId": pid,
-						"ban":           false,
-					})
-				}
+				b.bounceForServerTopology("SERVER topology")
+				return
 			}
 
 		case "participant-joined", "participant-added":
@@ -382,13 +413,8 @@ func (b *Bridge) handleVKMessage(raw []byte) {
 				b.peers[int64(pid)] = struct{}{}
 				log.Printf("[vk-ws]    Participant %d joined (total: %d)", int64(pid), len(b.peers))
 				if b.topology != TopologyDirect {
-					log.Printf("[vk-ws]    Kicking peer %d (SFU topology)", int64(pid))
-					b.vkSend("remove-participant", map[string]interface{}{
-						"participantId": int64(pid),
-						"ban":           false,
-					})
-					log.Println("[FATAL] SFU topology is not supported, exiting")
-					os.Exit(1)
+					b.bounceForServerTopology("participant joined under SERVER")
+					return
 				}
 			}
 
@@ -480,6 +506,32 @@ func (b *Bridge) initRelay() {
 	b.p2p.Init()
 }
 
+func (b *Bridge) bounceForServerTopology(reason string) {
+	b.mu.Lock()
+	if b.bouncing {
+		b.mu.Unlock()
+		return
+	}
+	b.bouncing = true
+	b.serverBounces++
+	count := b.serverBounces
+	if count > maxServerBounces {
+		b.suppressScreenshare = true
+	}
+	suppress := b.suppressScreenshare
+	ws := b.vkWs
+	b.mu.Unlock()
+
+	if suppress {
+		log.Printf("[vk-ws]    %s -> reconnect #%d, suppressing screenshare to settle single-track DIRECT", reason, count)
+	} else {
+		log.Printf("[vk-ws]    %s -> manual reconnect #%d to recover DIRECT", reason, count)
+	}
+	if ws != nil {
+		ws.Close()
+	}
+}
+
 func (b *Bridge) readLoop() error {
 	for {
 		_, msg, err := b.vkWs.ReadMessage()
@@ -506,12 +558,13 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 	b.iceServers = buildICEServers(callInfo)
 	wsEndpoint := callInfo.WSEndpoint
 
+	capabilities := "2F7F"
 	makeWSURL := func(ep string) string {
 		return ep +
 			"&platform=WEB" +
 			"&appVersion=" + cfg.AppVersion +
 			"&version=" + cfg.ProtocolVersion +
-			"&device=browser&capabilities=0&clientType=VK&tgt=join"
+			"&device=browser&capabilities=" + capabilities + "&clientType=VK&tgt=join"
 	}
 
 	go func() {
@@ -539,13 +592,11 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 		}
 		log.Println("[vk-ws] Connected")
 
-		b.vkSend("change-media-settings", map[string]interface{}{
-			"mediaSettings": map[string]interface{}{
-				"isAudioEnabled": false, "isVideoEnabled": true,
-				"isScreenSharingEnabled": false, "isFastScreenSharingEnabled": false,
-				"isAudioSharingEnabled": false, "isAnimojiEnabled": false,
-			},
-		})
+		b.mu.Lock()
+		b.screenSharing = false
+		b.bouncing = false
+		b.mu.Unlock()
+		b.sendMediaSettings(false)
 
 		err := b.readLoop()
 		log.Printf("[vk-ws] Closed: %s", common.MaskError(err))
@@ -680,9 +731,15 @@ func main() {
 		ur.readBufSize = readBuf
 		ur.maxDCBuf = maxDCBuf
 		ur.SetObfuscator(obf)
-		ur.OnConnected = func(tun *tunnel.VP8DataTunnel) {
+		ur.OnConnected = func(tun tunnel.DataTunnel) {
 			rb := tunnel.NewRelayBridge(tun, "creator", common.VP8BufSize, log.Printf)
 			rb.SetUpstreamSocks(*upstreamSocks, *upstreamUser, *upstreamPass)
+			if st, ok := tun.(*tunnel.SymmetricScreenTunnel); ok {
+				rb.SetOnPeerConfig(func(fps, batch, trackCount int) {
+					st.SetTrackCount(trackCount)
+					bridge.setScreenSharing(trackCount > 1)
+				})
+			}
 		}
 		return ur
 	}

@@ -36,6 +36,7 @@ import (
 type statusEmitter struct{}
 
 var tunnelLostCh = make(chan struct{}, 1)
+var selfHealReconnect bool
 
 func (statusEmitter) EmitStatus(status string) {
 	log.Printf("[status] %s", status)
@@ -45,7 +46,7 @@ func (statusEmitter) EmitStatus(status string) {
 	if strings.HasPrefix(status, "CAPTCHA:") {
 		fmt.Printf("STATUS:%s\n", status)
 	}
-	if status == common.StatusTunnelLost {
+	if status == common.StatusTunnelLost && !selfHealReconnect {
 		select {
 		case tunnelLostCh <- struct{}{}:
 		default:
@@ -106,6 +107,7 @@ func main() {
 	vp8Batch := flag.Int("vp8-batch", 30, "VP8 batch multiplier")
 	dns := flag.String("dns", "1.1.1.1,8.8.8.8", "comma-separated DNS servers for the tunnel adapter")
 	noTun := flag.Bool("no-tun", false, "expose SOCKS5 only, do not bring up the wintun adapter")
+	dualTrack := flag.Bool("dual-track", false, "VK/WB Stream: dual-track tunnel (second screenshare channel) for higher throughput")
 	flag.Parse()
 
 	if *platform == "" || *link == "" {
@@ -235,12 +237,26 @@ func main() {
 		}
 	}
 
+	var (
+		bridge   *tunnel.RelayBridge
+		bridgeMu sync.Mutex
+	)
 	onConnected := func(t tunnel.DataTunnel) {
 		readBuf := common.VP8BufSize
 		if _, ok := t.(*tunnel.DCTunnel); ok {
 			readBuf = common.DCBufSize
 		}
-		bridge := tunnel.NewRelayBridgeWithAuth(t, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
+		bridgeMu.Lock()
+		defer bridgeMu.Unlock()
+		// Reconnect: swap the new tunnel behind the persistent SOCKS
+		// listener instead of binding a second one
+		if bridge != nil {
+			bridge.SwapTunnel(t)
+			log.Printf("[socks] tunnel swapped after reconnect")
+			return
+		}
+		bridge = tunnel.NewRelayBridgeWithAuth(t, "joiner", readBuf, log.Printf, *socksUser, *socksPass)
+		bridge.SetPersistentListener(true)
 		bridge.MarkReady()
 		addr := fmt.Sprintf("%s:%d", *socksHost, *socksPort)
 		go func() {
@@ -258,13 +274,14 @@ func main() {
 
 	switch strings.ToLower(*platform) {
 	case "wbstream", "wb":
-		runWBStream(*link, *displayName, *tunnelMode, *vp8FPS, *vp8Batch,
+		runWBStream(*link, *displayName, *tunnelMode, *vp8FPS, *vp8Batch, *dualTrack,
 			onConnected, addCandidate)
 	case "telemost", "tm":
 		runTelemost(*link, *displayName, *vp8FPS, *vp8Batch,
 			onConnected, addCandidate)
 	case "vk":
-		runVK(*link, *displayName, *tunnelMode, *vp8FPS, *vp8Batch,
+		selfHealReconnect = true
+		runVK(*link, *displayName, *tunnelMode, *vp8FPS, *vp8Batch, *dualTrack,
 			onConnected, addCandidate)
 	case "dion", "dn":
 		runDion(*link, *displayName, onConnected, addCandidate)
@@ -323,7 +340,7 @@ func signalingHosts(platform, link string) []string {
 	return nil
 }
 
-func runWBStream(link, name, mode string, fps, batch int,
+func runWBStream(link, name, mode string, fps, batch int, dualTrack bool,
 	onConnected func(tunnel.DataTunnel),
 	onCandidate func(int, string),
 ) {
@@ -348,6 +365,7 @@ func runWBStream(link, name, mode string, fps, batch int,
 		LogFn:       log.Printf,
 		VP8FPS:      fps,
 		VP8Batch:    batch,
+		ScreenShare: dualTrack,
 	})
 	sess.OnConnected = onConnected
 	sess.OnRemoteCandidate = onCandidate
@@ -386,7 +404,7 @@ func runTelemost(link, name string, fps, batch int,
 	go inner.RunWithParams(string(params))
 }
 
-func runVK(link, name, mode string, fps, batch int,
+func runVK(link, name, mode string, fps, batch int, dualTrack bool,
 	onConnected func(tunnel.DataTunnel),
 	onCandidate func(int, string),
 ) {
@@ -406,6 +424,7 @@ func runVK(link, name, mode string, fps, batch int,
 	authParams["tunnelMode"] = mode
 	authParams["vp8Fps"] = fps
 	authParams["vp8Batch"] = batch
+	authParams["dualTrack"] = dualTrack
 	patched, err := json.Marshal(authParams)
 	if err != nil {
 		log.Fatalf("[vk] auth marshal: %v", err)

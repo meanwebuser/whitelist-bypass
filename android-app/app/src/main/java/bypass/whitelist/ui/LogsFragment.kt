@@ -1,133 +1,108 @@
 package bypass.whitelist.ui
 
-import android.graphics.Typeface
 import android.os.Bundle
-import android.view.Gravity
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import androidx.fragment.app.Fragment
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import bypass.whitelist.R
 
 class LogsFragment : Fragment(R.layout.fragment_logs_screen) {
 
     interface Host {
         fun activityLogLines(): List<String>
+        fun activityLogRevision(): Long
         fun copyLogs()
         fun shareLogs()
     }
 
-    private enum class Category { ALL, LINK, OTHER }
-    private enum class Level { INFO, DEBUG }
-
-    private var container: LinearLayout? = null
-    private var scrollView: ScrollView? = null
-    private var category: Category = Category.ALL
-    private var minLevel: Level = Level.INFO
-    private var allLines: List<String> = emptyList()
+    private var recyclerView: RecyclerView? = null
+    private var emptyView: View? = null
+    private val adapter = LogLineAdapter()
+    private var lastRevision = -1L
+    private val tickHandler = Handler(Looper.getMainLooper())
+    private val tickRunnable = object : Runnable {
+        override fun run() {
+            syncIfChanged()
+            tickHandler.postDelayed(this, REFRESH_INTERVAL_MS)
+        }
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        container = view.findViewById(R.id.eventsContainer)
-        scrollView = view.findViewById(R.id.activityScroll)
-        bindFilters(view)
-        refresh(host = host())
+        val list = view.findViewById<RecyclerView>(R.id.activityList)
+        recyclerView = list
+        emptyView = view.findViewById(R.id.activityEmpty)
+        list.layoutManager = LinearLayoutManager(requireContext()).apply { stackFromEnd = true }
+        list.adapter = adapter
+        syncFromHost(forceScroll = true)
         view.findViewById<Button>(R.id.buttonCopyRaw).setOnClickListener { host()?.copyLogs() }
         view.findViewById<Button>(R.id.buttonShareFile).setOnClickListener { host()?.shareLogs() }
     }
 
+    override fun onResume() {
+        super.onResume()
+        syncIfChanged()
+        tickHandler.removeCallbacks(tickRunnable)
+        tickHandler.postDelayed(tickRunnable, REFRESH_INTERVAL_MS)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        tickHandler.removeCallbacks(tickRunnable)
+    }
+
     override fun onDestroyView() {
-        container = null
-        scrollView = null
+        tickHandler.removeCallbacks(tickRunnable)
+        recyclerView = null
+        emptyView = null
         super.onDestroyView()
     }
 
-    fun refresh(host: Host?) {
-        allLines = host?.activityLogLines().orEmpty()
-        renderLines()
+    fun refresh() {
+        syncFromHost(forceScroll = true)
     }
 
-    fun onLineAppended(line: String) {
-        allLines = allLines + line
-        if (matches(line)) {
-            addLine(line)
-            scrollToBottom()
-        }
+    private fun syncIfChanged() {
+        val revision = host()?.activityLogRevision() ?: return
+        if (revision != lastRevision) syncFromHost(forceScroll = false)
     }
 
-    private fun bindFilters(view: View) {
-        view.findViewById<Button>(R.id.logFilterAll).setOnClickListener { category = Category.ALL; renderLines() }
-        view.findViewById<Button>(R.id.logFilterLink).setOnClickListener { category = Category.LINK; renderLines() }
-        view.findViewById<Button>(R.id.logFilterOther).setOnClickListener { category = Category.OTHER; renderLines() }
-        view.findViewById<Button>(R.id.logLevelInfo).setOnClickListener { minLevel = Level.INFO; renderLines() }
-        view.findViewById<Button>(R.id.logLevelDebug).setOnClickListener { minLevel = Level.DEBUG; renderLines() }
+    private fun syncFromHost(forceScroll: Boolean) {
+        val host = host() ?: return
+        val revision = host.activityLogRevision()
+        val lines = host.activityLogLines()
+        val atBottom = isAtBottom()
+        adapter.setLines(lines)
+        lastRevision = revision
+        updateEmptyState()
+        if (forceScroll || atBottom) scrollToBottom()
     }
 
-    private fun renderLines() {
-        container?.removeAllViews()
-        allLines.filter { matches(it) }.takeLast(350).forEach { addLine(it) }
-        scrollToBottom()
+    private fun updateEmptyState() {
+        val empty = adapter.isEmpty()
+        emptyView?.visibility = if (empty) View.VISIBLE else View.GONE
+        recyclerView?.visibility = if (empty) View.GONE else View.VISIBLE
     }
 
-    private fun matches(line: String): Boolean {
-        val parsed = parse(line)
-        val categoryOk = when (category) {
-            Category.ALL -> true
-            Category.LINK -> parsed.category == "LINK"
-            Category.OTHER -> parsed.category != "LINK"
-        }
-        val levelOk = minLevel == Level.DEBUG || parsed.level != "DEBUG"
-        return categoryOk && levelOk
-    }
-
-    private data class ParsedLine(val level: String, val category: String, val direction: String, val text: String)
-
-    private fun parse(line: String): ParsedLine {
-        val regex = Regex("^\\[(DEBUG|INFO)\\]\\[(LINK|APP|OTHER)\\]\\s*([→←•])?\\s*(.*)$")
-        val m = regex.find(line)
-        if (m != null) {
-            return ParsedLine(m.groupValues[1], m.groupValues[2], m.groupValues[3].ifBlank { "•" }, m.groupValues[4])
-        }
-        val lower = line.lowercase()
-        val cat = if (lower.contains("relay") || lower.contains("tunnel") || lower.contains("vpn") || lower.contains("room") || lower.contains("connect") || lower.contains("telegram")) "LINK" else "APP"
-        return ParsedLine("INFO", cat, "•", line)
-    }
-
-    private fun addLine(line: String) {
-        val parsed = parse(line)
-        val ctx = requireContext()
-        val row = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundResource(R.drawable.bg_ping_result_ok)
-        }
-        val header = TextView(ctx).apply {
-            text = "${parsed.direction} ${parsed.category} · ${parsed.level}"
-            textSize = 10f
-            typeface = Typeface.MONOSPACE
-            setTextColor(ctx.getColor(if (parsed.category == "LINK") R.color.accent_emerald else R.color.ink_3))
-        }
-        val body = TextView(ctx).apply {
-            text = parsed.text
-            textSize = 13f
-            typeface = Typeface.MONOSPACE
-            setTextColor(ctx.getColor(R.color.ink))
-            setLineSpacing(0f, 1.08f)
-        }
-        row.addView(header)
-        row.addView(body)
-        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            setMargins(dp(20), dp(6), dp(20), dp(6))
-        }
-        container?.addView(row, lp)
+    private fun isAtBottom(): Boolean {
+        val manager = recyclerView?.layoutManager as? LinearLayoutManager ?: return true
+        val count = adapter.itemCount
+        if (count == 0) return true
+        return manager.findLastCompletelyVisibleItemPosition() >= count - 1
     }
 
     private fun scrollToBottom() {
-        scrollView?.post { scrollView?.fullScroll(View.FOCUS_DOWN) }
+        val list = recyclerView ?: return
+        val count = adapter.itemCount
+        if (count > 0) list.post { list.scrollToPosition(count - 1) }
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
     private fun host(): Host? = activity as? Host
+
+    companion object {
+        private const val REFRESH_INTERVAL_MS = 400L
+    }
 }

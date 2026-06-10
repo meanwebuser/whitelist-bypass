@@ -119,6 +119,9 @@ function spawnJoiner(settings: JoinerSettings): { ok: boolean; error?: string } 
   if (settings.socksUser) args.push('--socks-user', settings.socksUser);
   if (settings.socksPass) args.push('--socks-pass', settings.socksPass);
   if (noTun) args.push('--no-tun');
+  if (settings.dualTrack && (settings.platform === 'vk' || settings.platform === 'wbstream')) {
+    args.push('--dual-track');
+  }
 
   const elevateOnLinux =
     process.platform === 'linux' && !noTun &&
