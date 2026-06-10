@@ -2,7 +2,7 @@ package bypass.whitelist.tunnel
 
 enum class CallPlatform(val id: String, val urlMarker: String) {
     VK("vk", ""),
-    TELEMOST("telemost", "telemost.yandex"),
+    TELEMOST("telemost", "telemost"),
     WBSTREAM("wbstream", "wbstream://"),
     DION("dion", "dion://");
 
