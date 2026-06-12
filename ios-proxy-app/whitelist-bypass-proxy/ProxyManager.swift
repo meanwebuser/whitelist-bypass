@@ -2,7 +2,6 @@ import Foundation
 import UIKit
 import Combine
 import Mobile
-import os
 
 
 enum ProxyStatus: String {
@@ -28,7 +27,6 @@ enum ProxyStatus: String {
 }
 
 enum SocksAuthMode: String, CaseIterable {
-    case none = "NONE"
     case auto = "AUTO"
     case manual = "MANUAL"
 }
@@ -125,58 +123,37 @@ enum CallPlatform: String {
     case dion = "dion"
 
     static let wbstreamPrefix = "wbstream://"
-    static let wbstreamRoomURLInfix = "stream.wb.ru/room/"
     static let dionPrefix = "dion://"
     static let dionEventInfix = "dion.vc/event/"
 
-    static func normalize(url: String) -> String {
-        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let roomId = extractWBStreamRoomId(from: trimmed) {
-            return "\(wbstreamPrefix)\(roomId)"
-        }
-        return trimmed
-    }
-
     static func detect(url: String) -> CallPlatform {
-        let normalized = normalize(url: url)
-        if normalized.hasPrefix(dionPrefix) || normalized.contains(dionEventInfix) {
+        if url.hasPrefix(dionPrefix) || url.contains(dionEventInfix) {
             return .dion
         }
-        if normalized.hasPrefix(wbstreamPrefix) {
+        if url.hasPrefix(wbstreamPrefix) {
             return .wbstream
         }
-        if normalized.contains("telemost.yandex") {
+        if url.contains("telemost") {
             return .telemost
         }
         return .vk
     }
 
     static func extractRoomId(url: String) -> String {
-        let trimmed = normalize(url: url)
+        let trimmed = url.trimmingCharacters(in: .whitespaces)
         if trimmed.hasPrefix(wbstreamPrefix) {
-            return String(trimmed.dropFirst(wbstreamPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            return String(trimmed.dropFirst(wbstreamPrefix.count)).trimmingCharacters(in: .whitespaces)
         }
         if trimmed.hasPrefix(dionPrefix) {
-            return String(trimmed.dropFirst(dionPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            return String(trimmed.dropFirst(dionPrefix.count)).trimmingCharacters(in: .whitespaces)
         }
         if let range = trimmed.range(of: dionEventInfix) {
             var slug = String(trimmed[range.upperBound...])
             if let qmark = slug.firstIndex(of: "?") { slug = String(slug[..<qmark]) }
-            if let hash = slug.firstIndex(of: "#") { slug = String(slug[..<hash]) }
             if let slash = slug.firstIndex(of: "/") { slug = String(slug[..<slash]) }
-            return slug.trimmingCharacters(in: .whitespacesAndNewlines)
+            return slug.trimmingCharacters(in: .whitespaces)
         }
         return trimmed
-    }
-
-    private static func extractWBStreamRoomId(from url: String) -> String? {
-        guard let range = url.range(of: wbstreamRoomURLInfix) else { return nil }
-        var roomId = String(url[range.upperBound...])
-        if let qmark = roomId.firstIndex(of: "?") { roomId = String(roomId[..<qmark]) }
-        if let hash = roomId.firstIndex(of: "#") { roomId = String(roomId[..<hash]) }
-        if let slash = roomId.firstIndex(of: "/") { roomId = String(roomId[..<slash]) }
-        roomId = roomId.trimmingCharacters(in: .whitespacesAndNewlines)
-        return roomId.isEmpty ? nil : roomId
     }
 }
 
@@ -187,30 +164,9 @@ class ProxyManager: ObservableObject {
     @Published var isRunning: Bool = false
     @Published var toastMessage: String?
     @Published var statusText: String?
-    @Published var vpnStatusText: String = "VPN: not configured"
-    @Published var vpnAvailable: Bool = SystemVPNManager.shared.isPacketTunnelBundled
-    @Published var discoveryEnabled: Bool = AppDefaults.discoveryEnabled { didSet { AppDefaults.discoveryEnabled = discoveryEnabled } }
-    @Published var telemetryEnabled: Bool = AppDefaults.telemetryEnabled { didSet { AppDefaults.telemetryEnabled = telemetryEnabled } }
-    @Published var discoveryStatus: String = NSLocalizedString("discovery_idle", comment: "")
-    @Published var discoveredFreeCount: Int = 0
-    @Published var lastDiscoverySource: String = ""
-    @Published var roomWarmupSummary: String = "Rooms: checking…"
-    @Published var roomWarmupRefreshing: Bool = false
-    @Published var telegramCheckStatus: String = ""
     var detectedPlatform: CallPlatform = .vk
-    private let discoveryScanner = VKDiscoveryScanner()
-    private let discoveryLogger = Logger(subsystem: "bypass.whitelist", category: "discovery")
 
-    @Published var callUrl: String = AppDefaults.lastUrl {
-        didSet {
-            let normalized = CallPlatform.normalize(url: callUrl)
-            if normalized != callUrl {
-                callUrl = normalized
-                return
-            }
-            AppDefaults.lastUrl = callUrl
-        }
-    }
+    @Published var callUrl: String = AppDefaults.lastUrl { didSet { AppDefaults.lastUrl = callUrl } }
     @Published var socksPort: Int = AppDefaults.socksPort { didSet { AppDefaults.socksPort = socksPort } }
     @Published var tunnelMode: TunnelMode = AppDefaults.tunnelMode { didSet { AppDefaults.tunnelMode = tunnelMode } }
     @Published var displayName: String = AppDefaults.displayName { didSet { AppDefaults.displayName = displayName } }
@@ -229,36 +185,14 @@ class ProxyManager: ObservableObject {
 
     private var pendingLogs: [String] = []
     private var logFlushScheduled = false
-    private var staleRoomAutoRescanCount = 0
-    private var badDiscoveryRooms: Set<String> = []
-    private var currentDiscoveryRoom: String?
-    private let clientId = ProxyManager.stableClientId()
-
-    private static func stableClientId() -> String {
-        let key = "wt.discoveryClientId"
-        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty { return existing }
-        let generated = "ios-" + UUID().uuidString
-        UserDefaults.standard.set(generated, forKey: key)
-        return generated
-    }
 
     var activeSocksUser: String {
-        switch socksAuthMode {
-        case .none: return ""
-        case .manual: return manualSocksUser
-        case .auto: return autoSocksUser
-        }
+        socksAuthMode == .manual ? manualSocksUser : autoSocksUser
     }
 
     var activeSocksPass: String {
-        switch socksAuthMode {
-        case .none: return ""
-        case .manual: return manualSocksPass
-        case .auto: return autoSocksPass
-        }
+        socksAuthMode == .manual ? manualSocksPass : autoSocksPass
     }
-
-    var socksAuthEnabled: Bool { socksAuthMode != .none }
 
     init() {
         let chars = "abcdefghijklmnopqrstuvwxyz0123456789"
@@ -267,10 +201,7 @@ class ProxyManager: ObservableObject {
     }
 
     var socksUrl: String {
-        if socksAuthEnabled {
-            return "socks5://\(activeSocksUser):\(activeSocksPass)@127.0.0.1:\(socksPort)"
-        }
-        return "socks5://127.0.0.1:\(socksPort)"
+        "socks5://\(activeSocksUser):\(activeSocksPass)@127.0.0.1:\(socksPort)"
     }
 
     private func isPortAvailable(_ port: Int) -> Bool {
@@ -293,20 +224,7 @@ class ProxyManager: ObservableObject {
     }
 
     func connect() {
-        let normalizedCallUrl = CallPlatform.normalize(url: callUrl)
-        if normalizedCallUrl != callUrl {
-            callUrl = normalizedCallUrl
-            appendLog("Normalized link: \(normalizedCallUrl)")
-        }
-        guard !callUrl.isEmpty else {
-            if let cached = cachedDiscoveryRooms.first(where: { !badDiscoveryRooms.contains($0.room) }) {
-                appendLog("Discovery connect uses prewarmed room: \(cached.displayName)")
-                useDiscoveryRoom(cached, connectNow: true)
-                return
-            }
-            scanAndConnect()
-            return
-        }
+        guard !callUrl.isEmpty else { return }
 
         if !isPortAvailable(socksPort) {
             let originalPort = socksPort
@@ -359,9 +277,6 @@ class ProxyManager: ObservableObject {
 
         logs.removeAll()
         pendingLogs.removeAll()
-        badDiscoveryRooms.removeAll()
-        currentDiscoveryRoom = nil
-        staleRoomAutoRescanCount = 0
         errorMessage = ""
         status = .idle
         isRunning = true
@@ -433,100 +348,6 @@ class ProxyManager: ObservableObject {
         }
     }
 
-
-    func prewarmRooms(reason: String = "lazy") {
-        guard !isRunning else { return }
-        scanRooms(reason: reason, connectWhenReady: false, force: false)
-    }
-
-    func refreshRooms() {
-        scanRooms(reason: "manual-refresh", connectWhenReady: false, force: true)
-    }
-
-    func scanAndConnect() {
-        scanRooms(reason: "connect", connectWhenReady: true, force: true)
-    }
-
-    private func scanRooms(reason: String, connectWhenReady: Bool, force: Bool) {
-        guard discoveryEnabled else {
-            showToast(NSLocalizedString("discovery_disabled", comment: ""))
-            return
-        }
-        if roomWarmupRefreshing && !force { return }
-        roomWarmupRefreshing = true
-        discoveryStatus = NSLocalizedString("discovery_scanning", comment: "")
-        roomWarmupSummary = "Rooms: updating…"
-        statusText = discoveryStatus
-        appendLog("Discovery scan started reason=\(reason) connectWhenReady=\(connectWhenReady)")
-        discoveryScanner.scan { [weak self] rooms, source in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.roomWarmupRefreshing = false
-                self.lastDiscoverySource = source ?? ""
-                let allFreeRooms = rooms.filter { $0.isFree }
-                let freeRooms = allFreeRooms.filter { !self.badDiscoveryRooms.contains($0.room) }
-                let ignored = allFreeRooms.count - freeRooms.count
-                self.cachedDiscoveryRooms = freeRooms
-                self.discoveredFreeCount = freeRooms.count
-                let names = Array(Set(freeRooms.map { $0.displayName })).prefix(3).joined(separator: ", ")
-                self.discoveryStatus = String(format: NSLocalizedString("discovery_found", comment: ""), freeRooms.count)
-                self.roomWarmupSummary = freeRooms.isEmpty ? "Rooms: none free, requested new" : "Rooms: free \(freeRooms.count) · \(names)"
-                self.statusText = self.roomWarmupSummary
-                self.appendLog("Discovery found free rooms: \(freeRooms.count)" + (ignored > 0 ? " (ignored bad: \(ignored))" : "") + " source=\(source ?? "unknown")")
-                guard let selected = freeRooms.first else {
-                    if !self.roomRequestSentForEmptyPool {
-                        self.roomRequestSentForEmptyPool = true
-                        self.discoveryScanner.sendClientEvent(type: "request_room", clientId: self.clientId, room: nil, reason: "prewarm_no_free_rooms", badRooms: Array(self.badDiscoveryRooms)) { [weak self] ok in
-                            self?.appendLog("Private-bus request_room sent: \(ok)")
-                        }
-                    }
-                    return
-                }
-                self.roomRequestSentForEmptyPool = false
-                if connectWhenReady { self.useDiscoveryRoom(selected, connectNow: true) }
-            }
-        }
-    }
-
-    private func useDiscoveryRoom(_ selected: DiscoveryRoom, connectNow: Bool) {
-        currentDiscoveryRoom = selected.room
-        callUrl = selected.room
-        statusText = "Using \(selected.displayName)"
-        appendLog("Discovery selected room: id=\(selected.id) node=\(selected.displayName)")
-        if connectNow { connect() }
-    }
-
-    func checkTelegramThroughTunnel() {
-        guard isRunning else {
-            showToast(NSLocalizedString("telegram_check_needs_connection", comment: ""))
-            return
-        }
-        telegramCheckStatus = NSLocalizedString("telegram_check_running", comment: "")
-        appendLog("Telegram check started")
-        let start = Date()
-        var request = URLRequest(url: URL(string: "https://t.me/Kuplinov_Telegram/1032")!)
-        request.timeoutInterval = 12
-        request.setValue("BEZabotny-NET iOS", forHTTPHeaderField: "User-Agent")
-        let config = URLSessionConfiguration.ephemeral
-        // iOS does not expose SOCKS CFNetwork proxy keys. When the system VPN
-        // profile is active, this request is routed by the OS tunnel; in proxy-only
-        // mode it remains a direct reachability check.
-        URLSession(configuration: config).dataTask(with: request) { [weak self] _, response, error in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                if let error = error {
-                    self.telegramCheckStatus = "Telegram: \(error.localizedDescription)"
-                    self.appendLog("Telegram check failed: \(error.localizedDescription)")
-                    return
-                }
-                let ms = Int(Date().timeIntervalSince(start) * 1000)
-                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                self.telegramCheckStatus = "Telegram HTTP \(code) · \(ms) ms"
-                self.appendLog("Telegram check: HTTP \(code), \(ms) ms")
-            }
-        }.resume()
-    }
-
     func disconnect() {
         callbackBridge?.manager = nil
         callbackBridge = nil
@@ -544,9 +365,6 @@ class ProxyManager: ObservableObject {
         statusText = nil
         logs.removeAll()
         pendingLogs.removeAll()
-        badDiscoveryRooms.removeAll()
-        currentDiscoveryRoom = nil
-        staleRoomAutoRescanCount = 0
         errorMessage = ""
         socksPort = 1080
     }
@@ -561,23 +379,6 @@ class ProxyManager: ObservableObject {
             isRunning = false
             captchaURL = nil
             appendLog("ERROR: \(errorText)")
-            if errorText.localizedCaseInsensitiveContains("guest cannot create room") {
-                let badRoom = currentDiscoveryRoom ?? callUrl
-                if !badRoom.isEmpty {
-                    badDiscoveryRooms.insert(badRoom)
-                    discoveryScanner.sendClientEvent(type: "bad_room", clientId: clientId, room: badRoom, reason: "guest_cannot_create_room", badRooms: Array(badDiscoveryRooms)) { [weak self] ok in
-                        DispatchQueue.main.async { self?.appendLog("Private-bus bad_room sent: \(ok)") }
-                    }
-                }
-                appendLog("Room looks stale; blacklisted locally and rescanning discovery")
-                if discoveryEnabled && staleRoomAutoRescanCount < 2 {
-                    staleRoomAutoRescanCount += 1
-                    callUrl = ""
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                        self?.scanAndConnect()
-                    }
-                }
-            }
         } else if statusString.hasPrefix("CAPTCHA:") {
             captchaURL = String(statusString.dropFirst(8))
             statusText = NSLocalizedString("status_solve_captcha", comment: "")
@@ -588,9 +389,6 @@ class ProxyManager: ObservableObject {
                 statusText = nil
             }
             status = ProxyStatus(rawValue: statusString) ?? .idle
-            if statusString.localizedCaseInsensitiveContains("TUNNEL") || statusString.localizedCaseInsensitiveContains("READY") {
-                staleRoomAutoRescanCount = 0
-            }
             appendLog("Status: \(statusString)")
         }
     }
@@ -605,32 +403,6 @@ class ProxyManager: ObservableObject {
                 self?.flushLogs()
             }
         }
-        maybeSendTelemetryLog(message)
-    }
-
-    private func maybeSendTelemetryLog(_ message: String) {
-        let lower = message.lowercased()
-        let shouldSend = lower.contains("error")
-            || lower.contains("failed")
-            || lower.contains("no free")
-            || lower.contains("bad_room")
-            || lower.contains("private-bus request_room sent: false")
-            || lower.contains("private-bus bad_room sent: false")
-        guard shouldSend, telemetryEnabled else { return }
-        discoveryScanner.sendTelemetry(
-            clientId: clientId,
-            level: (lower.contains("error") || lower.contains("failed") || lower.contains("false")) ? "error" : "info",
-            event: "client_log",
-            messageText: message,
-            room: currentDiscoveryRoom ?? callUrl,
-            meta: [
-                "status": status.rawValue,
-                "discovery_status": discoveryStatus,
-                "free_count": discoveredFreeCount,
-            ]
-        ) { [weak self] ok in
-            if !ok { self?.discoveryLogger.error("telemetry client_log send failed") }
-        }
     }
 
     private func flushLogs() {
@@ -640,72 +412,6 @@ class ProxyManager: ObservableObject {
         pendingLogs.removeAll()
         if logs.count > 100 {
             logs.removeFirst(logs.count - 100)
-        }
-    }
-
-    func copyLogs() {
-        flushLogs()
-        let text = logs.isEmpty ? "(empty log)" : logs.joined(separator: "\n")
-        UIPasteboard.general.string = text
-        showToast(NSLocalizedString("toast_logs_copied", comment: ""))
-    }
-
-
-    func installSystemVPNProfile() {
-        SystemVPNManager.shared.install(callURL: callUrl) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let message):
-                    self?.vpnStatusText = message
-                    self?.appendLog(message)
-                case .failure(let error):
-                    self?.vpnStatusText = "VPN install error: \(error.localizedDescription)"
-                    self?.appendLog("VPN install error: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-
-    func startSystemVPN() {
-        SystemVPNManager.shared.start(callURL: callUrl) { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let message):
-                    self?.vpnStatusText = message
-                    self?.appendLog(message)
-                case .failure(let error):
-                    self?.vpnStatusText = "VPN start error: \(error.localizedDescription)"
-                    self?.appendLog("VPN start error: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-
-    func stopSystemVPN() {
-        SystemVPNManager.shared.stop { [weak self] result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let message):
-                    self?.vpnStatusText = message
-                    self?.appendLog(message)
-                case .failure(let error):
-                    self?.vpnStatusText = "VPN stop error: \(error.localizedDescription)"
-                    self?.appendLog("VPN stop error: \(error.localizedDescription)")
-                }
-            }
-        }
-    }
-
-    func refreshSystemVPNStatus() {
-        vpnAvailable = SystemVPNManager.shared.isPacketTunnelBundled
-        guard vpnAvailable else {
-            vpnStatusText = "VPN extension is not included in this build"
-            return
-        }
-        SystemVPNManager.shared.status { [weak self] status in
-            DispatchQueue.main.async {
-                self?.vpnStatusText = status
-            }
         }
     }
 
@@ -724,39 +430,18 @@ class ProxyManager: ObservableObject {
     }
 
     func openTelegramProxy() {
-        var urlString = "tg://socks?server=127.0.0.1&port=\(socksPort)"
-        if socksAuthEnabled {
-            urlString += "&user=\(activeSocksUser)&pass=\(activeSocksPass)"
-        }
+        let urlString = "tg://socks?server=127.0.0.1&port=\(socksPort)&user=\(activeSocksUser)&pass=\(activeSocksPass)"
         if let url = URL(string: urlString) {
             UIApplication.shared.open(url)
         }
     }
 
-    var socks5ProxyUri: String {
-        if socksAuthEnabled {
-            return "socks5://\(activeSocksUser):\(activeSocksPass)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
-        }
-        return "socks5://127.0.0.1:\(socksPort)#WLB-\(socksPort)"
-    }
-
     func openHappProxy() {
-        UIPasteboard.general.string = socks5ProxyUri
-        guard let encoded = socks5ProxyUri.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let url = URL(string: "happ://add/\(encoded)") else {
-            showToast(NSLocalizedString("toast_happ_params_copied", comment: ""))
-            return
-        }
-        UIApplication.shared.open(url) { [weak self] opened in
-            DispatchQueue.main.async {
-                self?.showToast(opened ? NSLocalizedString("toast_happ_opened", comment: "") : NSLocalizedString("toast_happ_params_copied", comment: ""))
-            }
-        }
-    }
-
-    func copyProxyProfile() {
-        UIPasteboard.general.string = socks5ProxyUri
-        showToast(NSLocalizedString("toast_proxy_profile_copied", comment: ""))
+        let creds = "\(activeSocksUser):\(activeSocksPass)"
+        let credsB64 = Data(creds.utf8).base64EncodedString()
+        let proxyUri = "socks://\(credsB64)@127.0.0.1:\(socksPort)#WLB-\(socksPort)"
+        UIPasteboard.general.string = proxyUri
+        showToast(NSLocalizedString("toast_happ_params_copied", comment: ""))
     }
 
 }
