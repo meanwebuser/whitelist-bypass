@@ -112,6 +112,9 @@ func (o *TunnelObfuscator) dataHeader() []byte {
 }
 
 func (o *TunnelObfuscator) EncodeKeepalive() []byte {
+	if o == nil {
+		return nil
+	}
 	return o.keepaliveHeader()
 }
 
