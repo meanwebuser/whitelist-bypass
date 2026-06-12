@@ -170,7 +170,11 @@ func (t *VP8DataTunnel) writerLoop() {
 				var sample []byte
 				select {
 				case data := <-t.sendQueue:
-					sample = t.obf.EncodeData(data)
+					if t.obf != nil {
+						sample = t.obf.EncodeData(data)
+					} else {
+						sample = data
+					}
 					idleTicks = 0
 				default:
 					idleTicks++
@@ -178,7 +182,9 @@ func (t *VP8DataTunnel) writerLoop() {
 						continue
 					}
 					idleTicks = 0
-					sample = t.obf.EncodeKeepalive()
+					if t.obf != nil {
+						sample = t.obf.EncodeKeepalive()
+					}
 				}
 				if sample == nil {
 					continue
