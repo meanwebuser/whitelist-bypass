@@ -398,7 +398,7 @@ func (j *TelemostHeadlessJoiner) sendHello() {
 			"participantId": j.peerID, "roomId": j.roomID,
 			"serviceName": j.serviceName, "credentials": j.credentials,
 			"capabilitiesOffer": tmapi.CapabilitiesOffer,
-			"sdkInfo":             map[string]interface{}{"implementation": "browser", "version": "5.27.0", "userAgent": common.UserAgent, "hwConcurrency": 8},
+			"sdkInfo":             map[string]interface{}{"implementation": "browser", "version": "6.0.0", "userAgent": common.UserAgent, "hwConcurrency": 8},
 			"sdkInitializationId": uuid.New().String(),
 			"disablePublisher": false, "disableSubscriber": false, "disableSubscriberAudio": false,
 		},

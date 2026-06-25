@@ -57,10 +57,18 @@ func fetchConfig() (TMConfig, error) {
 		return cfg, fmt.Errorf("failed to fetch bundle: %w", err)
 	}
 
-	sdkVerRe := regexp.MustCompile(`goloom-sdk\.(\d+\.\d+\.\d+)\.js`)
-	if m := sdkVerRe.FindSubmatch(bundle); m != nil {
-		cfg.SDKVersion = string(m[1])
-	} else {
+	sdkVerPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`goloom_sdk_version:"(\d+\.\d+\.\d+)"`),
+		regexp.MustCompile(`"@yandex-video-platform/goloom-sdk":"(\d+\.\d+\.\d+)"`),
+		regexp.MustCompile(`goloom-sdk\.(\d+\.\d+\.\d+)\.js`),
+	}
+	for _, re := range sdkVerPatterns {
+		if m := re.FindSubmatch(bundle); m != nil {
+			cfg.SDKVersion = string(m[1])
+			break
+		}
+	}
+	if cfg.SDKVersion == "" {
 		return cfg, fmt.Errorf("goloom SDK version not found in bundle")
 	}
 
