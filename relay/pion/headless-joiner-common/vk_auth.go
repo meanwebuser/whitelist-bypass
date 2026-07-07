@@ -74,9 +74,9 @@ func RunVKAuth(joinLink string, displayName string, logFn func(string, ...any), 
 
 	cfg := &vkConfig{
 		AppID:           "6287487",
-		ApiVersion:      "5.280",
+		ApiVersion:      "5.282",
 		AppVersion:      "1.1",
-		ProtocolVersion: "6",
+		ProtocolVersion: "5",
 	}
 	logFn("vk-auth: appID=%s api=%s appVersion=%s proto=%s", cfg.AppID, cfg.ApiVersion, cfg.AppVersion, cfg.ProtocolVersion)
 

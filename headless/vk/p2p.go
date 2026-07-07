@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -187,8 +186,8 @@ func (p *P2PHandler) sendOfferToPeer(participantId int64) {
 		seq := p.bridge.vkSeq
 		raw := fmt.Sprintf(`{"command":"transmit-data","sequence":%d,"participantId":%d,"data":{"sdp":{"type":%q,"sdp":%s}}}`,
 			seq, participantId, offer.Type.String(), sdpStr)
-		if p.bridge.vkWs != nil {
-			p.bridge.vkWs.WriteMessage(websocket.TextMessage, []byte(raw))
+		if p.bridge.sfu != nil {
+			p.bridge.sfu.Send([]byte(raw))
 		}
 		p.bridge.mu.Unlock()
 		log.Printf("[vk-ws] -> transmit-data (offer)")
