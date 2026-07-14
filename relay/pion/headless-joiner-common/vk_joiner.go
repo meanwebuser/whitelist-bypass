@@ -15,10 +15,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 	"whitelist-bypass/relay/common"
 	"whitelist-bypass/relay/tunnel"
+	"whitelist-bypass/relay/wtsignal"
 )
 
 const (
@@ -57,6 +57,7 @@ type VKHeadlessAuthParams struct {
 
 type VKJoinResponse struct {
 	Endpoint   string `json:"endpoint"`
+	WtEndpoint string `json:"wt_endpoint"`
 	Token      string `json:"token"`
 	TurnServer struct {
 		URLs       []string `json:"urls"`
@@ -85,7 +86,7 @@ type VKHeadlessJoiner struct {
 
 	authParams   *VKHeadlessAuthParams
 	joinResp     *VKJoinResponse
-	vkWs         *websocket.Conn
+	sfu          *wtsignal.Conn
 	vkMu         sync.Mutex
 	vkSeq        int
 	remotePeerID *int64
@@ -217,12 +218,12 @@ func (h *VKHeadlessJoiner) isClosed() bool {
 
 func (h *VKHeadlessJoiner) resetSessionState() {
 	h.vkMu.Lock()
-	ws := h.vkWs
-	h.vkWs = nil
+	sfu := h.sfu
+	h.sfu = nil
 	h.vkSeq = 0
 	h.vkMu.Unlock()
-	if ws != nil {
-		ws.Close()
+	if sfu != nil {
+		sfu.Close()
 	}
 	if h.sym != nil {
 		h.sym.Stop()
@@ -252,17 +253,26 @@ func (h *VKHeadlessJoiner) Close() {
 	h.stopOnce.Do(func() { close(h.stopCh) })
 	StopCaptchaProxy()
 	h.vkMu.Lock()
-	ws := h.vkWs
-	h.vkWs = nil
+	sfu := h.sfu
+	h.sfu = nil
 	h.vkMu.Unlock()
-	if ws != nil {
-		ws.Close()
+	if sfu != nil {
+		sfu.Close()
 	}
 	if h.vp8tunnel != nil {
 		h.vp8tunnel.Stop()
 	}
 	if h.pc != nil {
 		h.pc.Close()
+	}
+}
+
+func (h *VKHeadlessJoiner) closeTransport() {
+	h.vkMu.Lock()
+	sfu := h.sfu
+	h.vkMu.Unlock()
+	if sfu != nil {
+		sfu.Close()
 	}
 }
 
@@ -373,7 +383,12 @@ func truncateBody(raw []byte) string {
 }
 
 func (h *VKHeadlessJoiner) connectSFU() {
-	parsed, err := url.Parse(h.joinResp.Endpoint)
+	endpoint := h.joinResp.WtEndpoint
+	if endpoint == "" {
+		h.logFn("headless: no wt_endpoint in join response, cannot connect")
+		return
+	}
+	parsed, err := url.Parse(endpoint)
 	if err != nil {
 		h.logFn("headless: bad endpoint URL: %s", common.MaskError(err))
 		return
@@ -387,40 +402,23 @@ func (h *VKHeadlessJoiner) connectSFU() {
 	}
 	h.logFn("headless: resolved %s -> %s", common.MaskAddr(hostname), common.MaskAddr(resolvedIP))
 
-	capabilities := "0"
-	if h.dualTrack {
-		capabilities = "2F7F"
-	}
-	wsURL := h.joinResp.Endpoint +
+	capabilities := "2F7F"
+	wtURL := endpoint +
 		"&platform=WEB" +
 		"&appVersion=" + h.authParams.AppVersion +
 		"&version=" + h.authParams.ProtocolVersion +
-		"&device=browser&capabilities=" + capabilities + "&clientType=VK&tgt=join"
+		"&device=browser&capabilities=" + capabilities + "&clientType=VK&tgt=join&compression=deflate-raw"
 
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
-		WriteBufferSize:  65536,
-		TLSClientConfig:  &tls.Config{InsecureSkipVerify: true, ServerName: hostname},
-		NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			_, port, _ := net.SplitHostPort(addr)
-			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, resolvedIP+":"+port)
-		},
-	}
-
-	header := http.Header{}
-	header.Set("User-Agent", common.UserAgent)
-	header.Set("Origin", "https://vk.com")
-
-	ws, _, err := dialer.Dial(wsURL, header)
+	sfu, err := wtsignal.Dial(wtURL, hostname, resolvedIP)
 	if err != nil {
-		h.logFn("headless: WS connect failed: %s", common.MaskError(err))
+		h.logFn("headless: WebTransport connect failed: %s", common.MaskError(err))
 		return
 	}
 	h.vkMu.Lock()
-	h.vkWs = ws
+	h.sfu = sfu
 	h.vkSeq = 0
 	h.vkMu.Unlock()
-	h.logFn("headless: WS connected")
+	h.logFn("headless: WebTransport connected")
 
 	h.vkSend("update-media-modifiers", map[string]interface{}{
 		"mediaModifiers": map[string]interface{}{"denoise": true, "denoiseAnn": true},
@@ -433,64 +431,52 @@ func (h *VKHeadlessJoiner) connectSFU() {
 		},
 	})
 
-	go h.pingLoop()
 	h.readLoop()
 }
 
 func (h *VKHeadlessJoiner) vkSend(command string, extra map[string]interface{}) {
 	h.vkMu.Lock()
 	defer h.vkMu.Unlock()
-	if h.vkWs == nil {
+	if h.sfu == nil {
 		return
 	}
 	h.vkSeq++
 	extra["command"] = command
 	extra["sequence"] = h.vkSeq
 	out, _ := json.Marshal(extra)
-	h.vkWs.WriteMessage(websocket.TextMessage, out)
+	h.sfu.Send(out)
 	h.logFn("headless: -> %s", command)
 }
 
 func (h *VKHeadlessJoiner) vkSendTransmitData(participantId int64, payload map[string]interface{}) {
 	h.vkMu.Lock()
 	defer h.vkMu.Unlock()
-	if h.vkWs == nil {
+	if h.sfu == nil {
 		return
 	}
 	h.vkSeq++
 	payloadJSON, _ := json.Marshal(payload)
 	out := fmt.Sprintf(`{"command":"transmit-data","sequence":%d,"participantId":%d,"data":%s}`,
 		h.vkSeq, participantId, payloadJSON)
-	h.vkWs.WriteMessage(websocket.TextMessage, []byte(out))
-}
-
-func (h *VKHeadlessJoiner) pingLoop() {
-	for {
-		time.Sleep(15 * time.Second)
-		h.vkMu.Lock()
-		ws := h.vkWs
-		h.vkMu.Unlock()
-		if ws == nil {
-			return
-		}
-		h.vkMu.Lock()
-		ws.WriteMessage(websocket.PingMessage, nil)
-		h.vkMu.Unlock()
-	}
+	h.sfu.Send([]byte(out))
 }
 
 func (h *VKHeadlessJoiner) readLoop() {
+	h.vkMu.Lock()
+	sfu := h.sfu
+	h.vkMu.Unlock()
+	if sfu == nil {
+		return
+	}
 	for {
-		_, msg, err := h.vkWs.ReadMessage()
+		msg, err := sfu.Recv()
 		if err != nil {
-			h.logFn("headless: WS closed: %s", common.MaskError(err))
+			h.logFn("headless: WebTransport closed: %s", common.MaskError(err))
 			h.Status.EmitStatus(common.StatusTunnelLost)
 			return
 		}
 		if string(msg) == "ping" {
-			h.vkMu.Lock()
-			h.vkWs.WriteMessage(websocket.TextMessage, []byte("pong"))
-			h.vkMu.Unlock()
+			sfu.Send([]byte("pong"))
 			continue
 		}
 		h.handleVKMessage(msg)
@@ -526,26 +512,16 @@ func (h *VKHeadlessJoiner) handleVKMessage(raw []byte) {
 			topo, _ := msg["topology"].(string)
 			h.logFn("headless: topology: %s", topo)
 			if topo != "" && topo != vkTopologyDirect {
-				h.logFn("headless: %s topology -> closing WS to reconnect and recover DIRECT", topo)
-				h.vkMu.Lock()
-				ws := h.vkWs
-				h.vkMu.Unlock()
-				if ws != nil {
-					ws.Close()
-				}
+				h.logFn("headless: %s topology -> closing transport to reconnect and recover DIRECT", topo)
+				h.closeTransport()
 			}
 		case "participant-joined", "participant-added":
 			h.logFn("headless: <- %s", notif)
 		case "participant-left":
 			h.logFn("headless: <- %s", notif)
 		case "hungup":
-			h.logFn("headless: peer hungup -> closing WS to reconnect")
-			h.vkMu.Lock()
-			ws := h.vkWs
-			h.vkMu.Unlock()
-			if ws != nil {
-				ws.Close()
-			}
+			h.logFn("headless: peer hungup -> closing transport to reconnect")
+			h.closeTransport()
 		}
 
 	case "response":
@@ -560,6 +536,10 @@ func (h *VKHeadlessJoiner) handleVKMessage(raw []byte) {
 }
 
 func (h *VKHeadlessJoiner) handleConnection(msg map[string]interface{}) {
+	if conv, ok := msg["conversation"].(map[string]interface{}); ok {
+		topo, _ := conv["topology"].(string)
+		h.logFn("headless: connection topology=%q", topo)
+	}
 	convParams, ok := msg["conversationParams"].(map[string]interface{})
 	if !ok {
 		return
@@ -659,13 +639,8 @@ func (h *VKHeadlessJoiner) initPC() {
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		h.logFn("headless: PC state: %s", state.String())
 		if state == webrtc.PeerConnectionStateFailed || state == webrtc.PeerConnectionStateDisconnected {
-			h.logFn("headless: PC %s, closing WS to trigger reconnect", state.String())
-			h.vkMu.Lock()
-			ws := h.vkWs
-			h.vkMu.Unlock()
-			if ws != nil {
-				ws.Close()
-			}
+			h.logFn("headless: PC %s, closing transport to trigger reconnect", state.String())
+			h.closeTransport()
 		}
 		if mode == "video" && state == webrtc.PeerConnectionStateConnected && h.vp8tunnel == nil {
 			h.reconnectAttempt.Store(0)
@@ -788,11 +763,11 @@ func (h *VKHeadlessJoiner) onTransmittedData(data map[string]interface{}) {
 			h.pc.SetLocalDescription(answer)
 			sdpJSON, _ := json.Marshal(answer.SDP)
 			h.vkMu.Lock()
-			if h.vkWs != nil {
+			if h.sfu != nil {
 				h.vkSeq++
 				raw := fmt.Sprintf(`{"command":"transmit-data","sequence":%d,"participantId":%d,"data":{"sdp":{"sdp":%s,"type":%q},"animojiVersion":2},"participantType":"USER"}`,
 					h.vkSeq, *h.remotePeerID, sdpJSON, answer.Type.String())
-				h.vkWs.WriteMessage(websocket.TextMessage, []byte(raw))
+				h.sfu.Send([]byte(raw))
 				h.logFn("headless: -> answer (seq=%d)", h.vkSeq)
 			}
 			h.vkMu.Unlock()

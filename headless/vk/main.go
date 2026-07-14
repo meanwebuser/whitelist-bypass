@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,10 +16,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
 	"whitelist-bypass/relay/common"
 	"whitelist-bypass/relay/tunnel"
+	"whitelist-bypass/relay/wtsignal"
 )
 
 const TopologyDirect = "DIRECT"
@@ -32,6 +33,7 @@ type CallInfo struct {
 	TurnServer TurnServer
 	StunServer StunServer
 	WSEndpoint string
+	WtEndpoint string
 }
 
 type TurnServer struct {
@@ -71,13 +73,14 @@ type OKAuthResponse struct {
 
 type JoinResponse struct {
 	Endpoint   string     `json:"endpoint"`
+	WtEndpoint string     `json:"wt_endpoint"`
 	TurnServer TurnServer `json:"turn_server"`
 	StunServer StunServer `json:"stun_server"`
 }
 
 type Bridge struct {
 	mu            sync.Mutex
-	vkWs          *websocket.Conn
+	sfu           *wtsignal.Conn
 	vkSeq         int
 	iceServers    []webrtc.ICEServer
 	topology      string
@@ -232,6 +235,7 @@ func joinExistingCall(cookieStr, vkLink string, cfg VKConfig) (*CallInfo, error)
 		TurnServer: joinResp.TurnServer,
 		StunServer: joinResp.StunServer,
 		WSEndpoint: joinResp.Endpoint,
+		WtEndpoint: joinResp.WtEndpoint,
 	}, nil
 }
 
@@ -314,13 +318,14 @@ func createAndJoinCall(cookieStr, peerId string, cfg VKConfig) (*CallInfo, error
 		CallID: c.CallID, JoinLink: c.JoinLink, ShortLink: c.ShortCredentials.LinkWithPassword,
 		OKJoinLink: c.OKJoinLink, TurnServer: joinResp.TurnServer, StunServer: joinResp.StunServer,
 		WSEndpoint: joinResp.Endpoint,
+		WtEndpoint: joinResp.WtEndpoint,
 	}, nil
 }
 
 func (b *Bridge) vkSend(command string, extra map[string]interface{}) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.vkWs == nil {
+	if b.sfu == nil {
 		return
 	}
 	b.vkSeq++
@@ -337,7 +342,7 @@ func (b *Bridge) vkSend(command string, extra map[string]interface{}) {
 		extra["sequence"] = seq
 		out, _ = json.Marshal(extra)
 	}
-	b.vkWs.WriteMessage(websocket.TextMessage, out)
+	b.sfu.Send(out)
 	log.Printf("[vk-ws] -> %s", command)
 }
 
@@ -356,7 +361,7 @@ func (b *Bridge) sendMediaSettings(screenSharing bool) {
 // screenshare mid-call. State resets to false on every WS reconnect.
 func (b *Bridge) setScreenSharing(enabled bool) {
 	b.mu.Lock()
-	if b.vkWs == nil || b.screenSharing == enabled {
+	if b.sfu == nil || b.screenSharing == enabled {
 		b.mu.Unlock()
 		return
 	}
@@ -385,6 +390,10 @@ func (b *Bridge) handleVKMessage(raw []byte) {
 
 		switch notif {
 		case "connection":
+			if conv, ok := msg["conversation"].(map[string]interface{}); ok {
+				topo, _ := conv["topology"].(string)
+				log.Printf("[vk-ws]    connection topology=%q", topo)
+			}
 			log.Println("[vk-ws]    TURN creds received")
 
 		case "transmitted-data":
@@ -436,8 +445,8 @@ func (b *Bridge) handleVKMessage(raw []byte) {
 			reason, _ := msg["reason"].(string)
 			log.Printf("[vk-ws]    Conversation closed: %s", reason)
 			b.mu.Lock()
-			if b.vkWs != nil {
-				b.vkWs.Close()
+			if b.sfu != nil {
+				b.sfu.Close()
 			}
 			b.mu.Unlock()
 
@@ -479,17 +488,22 @@ func buildICEServers(callInfo *CallInfo) []webrtc.ICEServer {
 	return servers
 }
 
-func (b *Bridge) connectVKWs(wsURL string) error {
-	vkHeader := http.Header{}
-	vkHeader.Set("User-Agent", common.UserAgent)
-	vkHeader.Set("Origin", "https://vk.com")
-	vkDialer := websocket.Dialer{WriteBufferSize: common.RTPBufSize}
-	vkWs, _, err := vkDialer.Dial(wsURL, vkHeader)
+func (b *Bridge) connectVKWs(wtURL string) error {
+	parsed, err := url.Parse(wtURL)
+	if err != nil {
+		return err
+	}
+	host := parsed.Hostname()
+	ips, err := net.LookupHost(host)
+	if err != nil || len(ips) == 0 {
+		return fmt.Errorf("resolve %s: %w", host, err)
+	}
+	sfu, err := wtsignal.Dial(wtURL, host, ips[0])
 	if err != nil {
 		return err
 	}
 	b.mu.Lock()
-	b.vkWs = vkWs
+	b.sfu = sfu
 	b.vkSeq = 0
 	b.mu.Unlock()
 	return nil
@@ -519,7 +533,7 @@ func (b *Bridge) bounceForServerTopology(reason string) {
 		b.suppressScreenshare = true
 	}
 	suppress := b.suppressScreenshare
-	ws := b.vkWs
+	sfu := b.sfu
 	b.mu.Unlock()
 
 	if suppress {
@@ -527,21 +541,25 @@ func (b *Bridge) bounceForServerTopology(reason string) {
 	} else {
 		log.Printf("[vk-ws]    %s -> manual reconnect #%d to recover DIRECT", reason, count)
 	}
-	if ws != nil {
-		ws.Close()
+	if sfu != nil {
+		sfu.Close()
 	}
 }
 
 func (b *Bridge) readLoop() error {
+	b.mu.Lock()
+	sfu := b.sfu
+	b.mu.Unlock()
+	if sfu == nil {
+		return fmt.Errorf("no transport")
+	}
 	for {
-		_, msg, err := b.vkWs.ReadMessage()
+		msg, err := sfu.Recv()
 		if err != nil {
 			return err
 		}
 		if string(msg) == "ping" {
-			b.mu.Lock()
-			b.vkWs.WriteMessage(websocket.TextMessage, []byte("pong"))
-			b.mu.Unlock()
+			sfu.Send([]byte("pong"))
 			continue
 		}
 		b.handleVKMessage(msg)
@@ -556,36 +574,26 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 	fmt.Printf("  protocol:  v%s sdk %s\n\n", cfg.ProtocolVersion, cfg.SDKVersion)
 
 	b.iceServers = buildICEServers(callInfo)
-	wsEndpoint := callInfo.WSEndpoint
+	wtEndpoint := callInfo.WtEndpoint
 
 	capabilities := "2F7F"
-	makeWSURL := func(ep string) string {
+	makeWtURL := func(ep string) string {
 		return ep +
 			"&platform=WEB" +
 			"&appVersion=" + cfg.AppVersion +
 			"&version=" + cfg.ProtocolVersion +
-			"&device=browser&capabilities=" + capabilities + "&clientType=VK&tgt=join"
+			"&device=browser&capabilities=" + capabilities + "&clientType=VK&tgt=join&compression=deflate-raw"
 	}
-
-	go func() {
-		for {
-			time.Sleep(15 * time.Second)
-			b.mu.Lock()
-			ws := b.vkWs
-			b.mu.Unlock()
-			if ws != nil {
-				b.mu.Lock()
-				ws.WriteMessage(websocket.PingMessage, nil)
-				b.mu.Unlock()
-			}
-		}
-	}()
 
 	for {
 		b.initRelay()
 
+		if wtEndpoint == "" {
+			log.Fatal("[vk-ws] no wt_endpoint in join response")
+		}
+
 		log.Println("[vk-ws] Connecting...")
-		if err := b.connectVKWs(makeWSURL(wsEndpoint)); err != nil {
+		if err := b.connectVKWs(makeWtURL(wtEndpoint)); err != nil {
 			log.Printf("[vk-ws] Connect failed: %s, retrying in 5s...", common.MaskError(err))
 			time.Sleep(5 * time.Second)
 			continue
@@ -602,7 +610,10 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 		log.Printf("[vk-ws] Closed: %s", common.MaskError(err))
 
 		b.mu.Lock()
-		b.vkWs = nil
+		if b.sfu != nil {
+			b.sfu.Close()
+		}
+		b.sfu = nil
 		b.mu.Unlock()
 
 		log.Println("[vk-ws] Rejoining in 3s...")
@@ -614,7 +625,7 @@ func (b *Bridge) run(callInfo *CallInfo, cookieStr string, cfg VKConfig) {
 			time.Sleep(5 * time.Second)
 			continue
 		}
-		wsEndpoint = joinResp.Endpoint
+		wtEndpoint = joinResp.WtEndpoint
 		callInfo.TurnServer = joinResp.TurnServer
 		callInfo.StunServer = joinResp.StunServer
 		b.iceServers = buildICEServers(callInfo)

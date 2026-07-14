@@ -13,10 +13,10 @@ type VKConfig struct {
 func fetchConfig() (VKConfig, error) {
 	cfg := VKConfig{
 		AppID:           "6287487",
-		APIVersion:      "5.280",
-		SDKVersion:      "2.8.6-beta.22",
+		APIVersion:      "5.282",
+		SDKVersion:      "2.8.11-beta.4",
 		AppVersion:      "1.1",
-		ProtocolVersion: "6",
+		ProtocolVersion: "5",
 	}
 	log.Printf("[config] app_id=%s api=%s sdk=%s app=%s proto=%s",
 		cfg.AppID, cfg.APIVersion, cfg.SDKVersion, cfg.AppVersion, cfg.ProtocolVersion)
