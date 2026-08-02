@@ -15,12 +15,18 @@ const (
 	kcpConvBase       = 0x77627374
 	kcpUpdateInterval = 10 * time.Millisecond
 	// One KCP segment must ride in a single RTP packet so a dropped packet
-	// loses only its own frame, not a two-packet frame that readVP8Track
-	// would discard whole. 1200 RTP budget - 1 VP8 descriptor - interframe
-	// header - 24 XChaCha20 nonce - 16 Poly1305 tag - 1 channel tag.
-	kcpSegmentMTU = 1200 - 1 - interframeHdrLen - 24 - 16 - 1
-	kcpReceiveBufSize = 128 * 1024
-	kcpStatsEvery     = 500
+	// loses only its own frame, not a fragmented frame that readVP8Track may
+	// discard whole after one lost packet. Pion gives its VP8 payloader the
+	// 1200-byte packet MTU minus the 12-byte base RTP header. Retain a 16-byte
+	// RTP-extension margin, then subtract the VP8 descriptor, authenticated
+	// envelope, XChaCha20 nonce, Poly1305 tag, and carrier channel byte.
+	kcpRTPPacketMTU       = 1200
+	kcpRTPBaseHeaderLen   = 12
+	kcpRTPExtensionBudget = 16
+	kcpVP8DescriptorLen   = 1
+	kcpSegmentMTU         = kcpRTPPacketMTU - kcpRTPBaseHeaderLen - kcpRTPExtensionBudget - kcpVP8DescriptorLen - interframeHdrLen - 24 - 16 - 1
+	kcpReceiveBufSize     = 128 * 1024
+	kcpStatsEvery         = 500
 
 	kcpWindowFloor      = 64
 	kcpWindowCeiling    = 512

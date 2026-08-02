@@ -302,6 +302,19 @@ func (t *VP8DataTunnel) writerLoop() {
 }
 
 func (t *VP8DataTunnel) HandleFrame(frame []byte) {
+	if t.obf == nil {
+		if len(frame) == 0 {
+			return
+		}
+		n := t.recvFrames.Add(1)
+		if common.Debug && (n <= 5 || n%500 == 0) {
+			t.logFn("vp8tunnel: recv raw frame #%d size=%d", n, len(frame))
+		}
+		if t.OnData != nil {
+			t.OnData(frame)
+		}
+		return
+	}
 	res := t.obf.Decode(frame)
 	if !res.HasFrame {
 		return
