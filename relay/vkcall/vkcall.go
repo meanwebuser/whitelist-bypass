@@ -305,7 +305,7 @@ func (c *Client) webToken(ctx context.Context, cookieHeader string) (string, err
 			AccessToken string `json:"access_token"`
 		} `json:"data"`
 	}
-	if err := c.postJSON(ctx, c.config.Endpoints.WebTokenURL, url.Values{
+	if err := c.getJSON(ctx, c.config.Endpoints.WebTokenURL, url.Values{
 		"version": {"1"},
 		"app_id":  {c.config.AppID},
 	}, map[string]string{"Cookie": cookieHeader}, "web_token", &response); err != nil {
@@ -315,6 +315,46 @@ func (c *Client) webToken(ctx context.Context, cookieHeader string) (string, err
 		return "", fmt.Errorf("vkcall: web_token response is incomplete")
 	}
 	return response.Data.AccessToken, nil
+}
+
+func (c *Client) getJSON(ctx context.Context, endpoint string, query url.Values, headers map[string]string, operation string, result any) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("vkcall: %s request: %w", operation, err)
+	}
+	values := parsed.Query()
+	for key, entries := range query {
+		values[key] = append([]string(nil), entries...)
+	}
+	parsed.RawQuery = values.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return fmt.Errorf("vkcall: %s request: %w", operation, err)
+	}
+	req.Header.Set("User-Agent", common.UserAgent)
+	req.Header.Set("Origin", "https://vk.ru")
+	req.Header.Set("Referer", "https://vk.ru/")
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	client := c.config.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("vkcall: %s: %w", operation, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("vkcall: %s: unexpected HTTP status %d", operation, resp.StatusCode)
+	}
+	decoder := json.NewDecoder(io.LimitReader(resp.Body, 4<<20))
+	if err := decoder.Decode(result); err != nil {
+		return fmt.Errorf("vkcall: %s decode: %w", operation, err)
+	}
+	return nil
 }
 
 func (c *Client) postJSON(ctx context.Context, endpoint string, form url.Values, headers map[string]string, operation string, result any) error {

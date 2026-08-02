@@ -22,52 +22,57 @@ func TestJoinExisting(t *testing.T) {
 		mu.Lock()
 		requests = append(requests, r.URL.Path+"?"+r.URL.RawQuery+":"+r.Form.Get("method"))
 		mu.Unlock()
-		if r.Method != http.MethodPost {
-			t.Errorf("method = %s, want POST", r.Method)
-		}
-		if got := r.Header.Get("Content-Type"); got != "application/x-www-form-urlencoded" {
-			t.Errorf("Content-Type = %q", got)
-		}
-
 		switch r.URL.Path {
 		case "/web-token":
-			if r.Form.Get("version") != "1" || r.Form.Get("app_id") != "app-id" {
-				t.Errorf("web token form = %v", r.Form)
+			if r.Method != http.MethodGet {
+				t.Errorf("web token method = %s, want GET", r.Method)
+			}
+			if r.URL.Query().Get("version") != "1" || r.URL.Query().Get("app_id") != "app-id" {
+				t.Errorf("web token query = %s", r.URL.RawQuery)
 			}
 			if r.Header.Get("Cookie") != "sid=secret" {
 				t.Errorf("cookie was not forwarded")
 			}
 			writeJSON(t, w, `{"data":{"access_token":"vk-token"}}`)
-		case "/settings":
-			assertBearer(t, r, "vk-token")
-			writeJSON(t, w, `{"response":{"settings":{"public_key":"app-key"}}}`)
-		case "/call-token":
-			assertBearer(t, r, "vk-token")
-			if r.Form.Get("env") != "production" {
-				t.Errorf("env = %q", r.Form.Get("env"))
-			}
-			writeJSON(t, w, `{"response":{"token":"anon-token","api_base_url":"`+serverURL(r)+`/call"}}`)
-		case "/call/fb.do":
-			switch r.Form.Get("method") {
-			case "auth.anonymLogin":
-				var data map[string]any
-				if err := json.Unmarshal([]byte(r.Form.Get("session_data")), &data); err != nil {
-					t.Fatalf("session data: %v", err)
-				}
-				if data["auth_token"] != "anon-token" || data["client_version"] != "1.1" {
-					t.Errorf("session data = %#v", data)
-				}
-				writeJSON(t, w, `{"session_key":"session-key"}`)
-			case "vchat.joinConversationByLink":
-				if r.Form.Get("joinLink") != "ok-join" || r.Form.Get("session_key") != "session-key" {
-					t.Errorf("join form = %v", r.Form)
-				}
-				writeJSON(t, w, `{"endpoint":"wss://ws.example","wt_endpoint":"wss://wt.example","turn_server":{"urls":["turn:example"],"username":"turn-user","credential":"turn-secret"},"stun_server":{"urls":["stun:example"]}}`)
-			default:
-				t.Errorf("unexpected call method %q", r.Form.Get("method"))
-			}
 		default:
-			t.Errorf("unexpected path %q", r.URL.Path)
+			if r.Method != http.MethodPost {
+				t.Errorf("method = %s, want POST", r.Method)
+			}
+			if got := r.Header.Get("Content-Type"); got != "application/x-www-form-urlencoded" {
+				t.Errorf("Content-Type = %q", got)
+			}
+			switch r.URL.Path {
+			case "/settings":
+				assertBearer(t, r, "vk-token")
+				writeJSON(t, w, `{"response":{"settings":{"public_key":"app-key"}}}`)
+			case "/call-token":
+				assertBearer(t, r, "vk-token")
+				if r.Form.Get("env") != "production" {
+					t.Errorf("env = %q", r.Form.Get("env"))
+				}
+				writeJSON(t, w, `{"response":{"token":"anon-token","api_base_url":"`+serverURL(r)+`/call"}}`)
+			case "/call/fb.do":
+				switch r.Form.Get("method") {
+				case "auth.anonymLogin":
+					var data map[string]any
+					if err := json.Unmarshal([]byte(r.Form.Get("session_data")), &data); err != nil {
+						t.Fatalf("session data: %v", err)
+					}
+					if data["auth_token"] != "anon-token" || data["client_version"] != "1.1" {
+						t.Errorf("session data = %#v", data)
+					}
+					writeJSON(t, w, `{"session_key":"session-key"}`)
+				case "vchat.joinConversationByLink":
+					if r.Form.Get("joinLink") != "ok-join" || r.Form.Get("session_key") != "session-key" {
+						t.Errorf("join form = %v", r.Form)
+					}
+					writeJSON(t, w, `{"endpoint":"wss://ws.example","wt_endpoint":"wss://wt.example","turn_server":{"urls":["turn:example"],"username":"turn-user","credential":"turn-secret"},"stun_server":{"urls":["stun:example"]}}`)
+				default:
+					t.Errorf("unexpected call method %q", r.Form.Get("method"))
+				}
+			default:
+				t.Errorf("unexpected path %q", r.URL.Path)
+			}
 		}
 	}))
 	defer server.Close()
@@ -102,7 +107,7 @@ func TestJoinExisting(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	want := []string{"/web-token?:", "/settings?:", "/call-token?:", "/call/fb.do?:auth.anonymLogin", "/call/fb.do?:vchat.joinConversationByLink"}
+	want := []string{"/web-token?app_id=app-id&version=1:", "/settings?:", "/call-token?:", "/call/fb.do?:auth.anonymLogin", "/call/fb.do?:vchat.joinConversationByLink"}
 	if strings.Join(requests, ",") != strings.Join(want, ",") {
 		t.Fatalf("requests = %v, want %v", requests, want)
 	}
@@ -164,6 +169,43 @@ func TestCreateAndJoin(t *testing.T) {
 	want := []string{"/web-token:", "/calls/start:", "/web-token:", "/settings:", "/call-token:", "/call/fb.do:auth.anonymLogin", "/call/fb.do:vchat.joinConversationByLink"}
 	if strings.Join(requests, ",") != strings.Join(want, ",") {
 		t.Fatalf("requests = %v, want %v", requests, want)
+	}
+}
+
+func TestWebTokenUsesQueryRequest(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("web token method = %s, want GET", r.Method)
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.URL.Query().Get("version") != "1" || r.URL.Query().Get("app_id") != "app-id" {
+			t.Errorf("web token query = %s", r.URL.RawQuery)
+		}
+		if r.Header.Get("Cookie") != "sid=secret" {
+			t.Errorf("cookie was not forwarded")
+		}
+		writeJSON(t, w, `{"data":{"access_token":"vk-token"}}`)
+	}))
+	defer server.Close()
+
+	client, err := New(Config{
+		AppID:      "app-id",
+		APIVersion: "5.282",
+		HTTPClient: server.Client(),
+		Endpoints:  Endpoints{WebTokenURL: server.URL},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	got, err := client.webToken(context.Background(), "sid=secret")
+	if err != nil {
+		t.Fatalf("webToken: %v", err)
+	}
+	if got != "vk-token" {
+		t.Fatalf("webToken = %q, want vk-token", got)
 	}
 }
 
