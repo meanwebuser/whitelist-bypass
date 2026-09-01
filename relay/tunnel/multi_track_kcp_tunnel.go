@@ -12,8 +12,10 @@ import (
 )
 
 const (
-	kcpConvBase       = 0x77627374
-	kcpUpdateInterval = 10 * time.Millisecond
+	kcpConvBase           = 0x77627374
+	kcpUpdateInterval     = 10 * time.Millisecond
+	kcpIdleUpdateInterval = 500 * time.Millisecond
+	kcpIdleAfterTicks     = 50
 	// One KCP segment must ride in a single RTP packet so a dropped packet
 	// loses only its own frame, not a fragmented frame that readVP8Track may
 	// discard whole after one lost packet. Pion gives its VP8 payloader the
@@ -152,6 +154,7 @@ type MultiTrackKCPTunnel struct {
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
+	nudge    chan struct{}
 
 	currentWindow atomic.Int32
 
@@ -171,6 +174,7 @@ func NewMultiTrackKCPTunnel(mt *MultiTrackTunnel, logFn func(string, ...any)) *M
 		convMap: make(map[uint32]*trackKCPSession),
 		connPin: make(map[uint32]int),
 		stopCh:  make(chan struct{}),
+		nudge:   make(chan struct{}, 1),
 	}
 	subs := mt.SubTunnels()
 	window := kcpWindowFloor
@@ -204,6 +208,7 @@ func (t *MultiTrackKCPTunnel) SendData(frame []byte) {
 		t.sendRaw(connID, frame)
 		return
 	}
+	t.wake()
 
 	t.mu.Lock()
 	if len(t.sessions) == 0 {
@@ -291,6 +296,7 @@ func (t *MultiTrackKCPTunnel) handleDecodedSegment(payload []byte) {
 		return
 	}
 	t.inputSegments.Add(1)
+	t.wake()
 	messages := session.input(body)
 	if callback == nil {
 		return
@@ -374,21 +380,52 @@ func (t *MultiTrackKCPTunnel) handleInnerClose() {
 	}
 }
 
+func (t *MultiTrackKCPTunnel) wake() {
+	select {
+	case t.nudge <- struct{}{}:
+	default:
+	}
+}
+
 func (t *MultiTrackKCPTunnel) updateLoop() {
 	ticker := time.NewTicker(kcpUpdateInterval)
 	defer ticker.Stop()
 	ticks := 0
+	idleTicks := 0
+	fast := true
 	for {
 		select {
 		case <-t.stopCh:
 			return
+		case <-t.nudge:
+			if !fast {
+				fast = true
+				idleTicks = 0
+				ticker.Reset(kcpUpdateInterval)
+			}
 		case <-ticker.C:
 			t.mu.Lock()
 			sessions := make([]*trackKCPSession, len(t.sessions))
 			copy(sessions, t.sessions)
 			t.mu.Unlock()
+			pending := 0
 			for _, session := range sessions {
 				session.update()
+				pending += session.waitSnd()
+			}
+			if pending > 0 {
+				idleTicks = 0
+				if !fast {
+					fast = true
+					ticker.Reset(kcpUpdateInterval)
+				}
+			} else if fast {
+				idleTicks++
+				if idleTicks >= kcpIdleAfterTicks {
+					fast = false
+					idleTicks = 0
+					ticker.Reset(kcpIdleUpdateInterval)
+				}
 			}
 			ticks++
 			if common.Debug && ticks%kcpStatsEvery == 0 && t.logFn != nil {
